@@ -42,6 +42,8 @@ class OuterTuneController extends ChangeNotifier {
   final List<StreamSubscription<dynamic>> _subscriptions =
       <StreamSubscription<dynamic>>[];
   final Map<String, LibrarySong> _transientSongsById = <String, LibrarySong>{};
+  bool _isDisposing = false;
+  bool _isDisposed = false;
 
   bool _initialized = false;
   bool _scanning = false;
@@ -56,6 +58,7 @@ class OuterTuneController extends ChangeNotifier {
   String _onlineQuery = '';
   int _onlineResultLimit = 0;
   bool _onlineHasMore = false;
+  int _onlineSearchRequestId = 0;
 
   AppSettings _settings = const AppSettings();
   List<String> _sources = <String>[];
@@ -73,7 +76,8 @@ class OuterTuneController extends ChangeNotifier {
       <String, List<LibrarySong>>{};
   final Map<String, String?> _ytMusicVideoIdCache = <String, String?>{};
   final Set<String> _smartQueueSongIds = <String>{};
-  int _playsSinceLastHomeRefresh = 0;
+  String? _activePlaybackSongId;
+  double _activePlaybackCompletionRatio = 0;
 
   List<String> _queueSongIds = <String>[];
   String _queueLabel = 'Now Playing';
@@ -201,6 +205,13 @@ class OuterTuneController extends ChangeNotifier {
     return result;
   }
 
+  List<PlaybackEntry> get validPlaybackHistory => _history
+      .where(
+        (PlaybackEntry entry) =>
+            entry.listenedToEnd || entry.completionRatio >= 0.88,
+      )
+      .toList(growable: false);
+
   List<AlbumCollection> get albums {
     final Map<String, List<LibrarySong>> grouped =
         <String, List<LibrarySong>>{};
@@ -318,6 +329,7 @@ class OuterTuneController extends ChangeNotifier {
   }
 
   Future<void> searchOnline(String query) async {
+    final int requestId = ++_onlineSearchRequestId;
     final String trimmed = query.trim();
     if (trimmed.isEmpty) {
       _onlineResults = <LibrarySong>[];
@@ -330,35 +342,57 @@ class OuterTuneController extends ChangeNotifier {
       return;
     }
 
-    await _performOnlineSearch(trimmed, limit: 20);
+    await _performOnlineSearch(trimmed, limit: 20, requestId: requestId);
   }
 
   Future<void> loadMoreOnlineResults() async {
     if (_onlineLoading || _onlineQuery.isEmpty || !_onlineHasMore) {
       return;
     }
-    await _performOnlineSearch(_onlineQuery, limit: _onlineResultLimit + 20);
+    await _performOnlineSearch(
+      _onlineQuery,
+      limit: _onlineResultLimit + 20,
+      requestId: _onlineSearchRequestId,
+    );
   }
 
-  Future<void> _performOnlineSearch(String query, {required int limit}) async {
+  Future<void> _performOnlineSearch(
+    String query, {
+    required int limit,
+    required int requestId,
+  }) async {
     _onlineLoading = true;
     _onlineError = null;
     _onlineQuery = query;
     notifyListeners();
 
     try {
-      _onlineResults = await _searchSongs(query, limit: limit, force: true);
+      final List<LibrarySong> results = await _searchSongs(
+        query,
+        limit: limit,
+        force: true,
+      );
+      if (requestId != _onlineSearchRequestId) {
+        return;
+      }
+      _onlineResults = results;
       _onlineResultLimit = limit;
       _onlineHasMore = _onlineResults.length >= limit;
       if (_onlineResults.isEmpty) {
         _onlineError = 'No online songs found right now.';
       }
     } catch (error) {
+      if (requestId != _onlineSearchRequestId) {
+        return;
+      }
       _onlineError = _friendlyOnlineError(error);
       _onlineResults = <LibrarySong>[];
       _onlineResultLimit = 0;
       _onlineHasMore = false;
     } finally {
+      if (requestId != _onlineSearchRequestId) {
+        return;
+      }
       _onlineLoading = false;
       notifyListeners();
     }
@@ -479,7 +513,6 @@ class OuterTuneController extends ChangeNotifier {
       );
 
       _homeFeed = expanded;
-      _playsSinceLastHomeRefresh = 0;
       if (_homeFeed.isEmpty) {
         _homeFeed = previousFeed;
         _homeError = previousFeed.isEmpty
@@ -1336,7 +1369,10 @@ class OuterTuneController extends ChangeNotifier {
     LibrarySong? seed,
     bool force = false,
   }) async {
-    if ((!_settings.smartQueueEnabled && !force) || _smartQueueLoading) {
+    if (_isDisposing ||
+        _isDisposed ||
+        (!_settings.smartQueueEnabled && !force) ||
+        _smartQueueLoading) {
       return;
     }
 
@@ -1360,7 +1396,7 @@ class OuterTuneController extends ChangeNotifier {
     LibrarySong anchor, {
     int limit = 6,
   }) async {
-    if (limit <= 0) {
+    if (limit <= 0 || _isDisposing || _isDisposed) {
       return;
     }
 
@@ -1372,6 +1408,9 @@ class OuterTuneController extends ChangeNotifier {
         anchor,
         limit: limit,
       );
+      if (_isDisposing || _isDisposed) {
+        return;
+      }
       final LibrarySong? fallbackAnchor = currentSong;
       if (predictions.isEmpty &&
           fallbackAnchor != null &&
@@ -1398,7 +1437,13 @@ class OuterTuneController extends ChangeNotifier {
       final Set<String> queuedIds = <String>{..._queueSongIds};
       int addedCount = 0;
       for (final LibrarySong song in predictions) {
+        if (_isDisposing || _isDisposed) {
+          return;
+        }
         final LibrarySong prepared = await _preparePlayableSong(song);
+        if (_isDisposing || _isDisposed) {
+          return;
+        }
         if (!queuedIds.add(prepared.id)) {
           continue;
         }
@@ -1469,13 +1514,14 @@ class OuterTuneController extends ChangeNotifier {
 
   LibrarySong? _primaryRecommendationSeed() {
     return currentSong ??
-        recentlyPlayedSongs.firstOrNull ??
+        _validHistorySongs().firstOrNull ??
         _rankedPreferenceSongs().firstOrNull;
   }
 
   List<_RecommendationQuery> _buildHomeQueries(LibrarySong? seedSong) {
     final List<_TasteSignal> artists = _preferenceArtists();
     final List<_TasteSignal> genres = _preferenceGenres();
+    final List<_LanguageSignal> languages = _preferredLanguagesFromValidHistory();
     final List<_RecommendationQuery> queries = <_RecommendationQuery>[];
 
     if (seedSong != null) {
@@ -1517,6 +1563,16 @@ class OuterTuneController extends ChangeNotifier {
       );
     }
 
+    for (final _LanguageSignal language in languages.take(1)) {
+      queries.add(
+        _RecommendationQuery(
+          title: '${language.label} focus',
+          subtitle: 'Picks tuned to your listening language',
+          query: '${language.queryToken} songs',
+        ),
+      );
+    }
+
     queries.addAll(const <_RecommendationQuery>[
       _RecommendationQuery(
         title: 'Trending now',
@@ -1535,6 +1591,7 @@ class OuterTuneController extends ChangeNotifier {
 
   List<_RecommendationQuery> _buildPredictionQueries(LibrarySong anchor) {
     final List<_TasteSignal> artists = _preferenceArtists();
+    final List<_LanguageSignal> languages = _preferredLanguagesFromValidHistory();
     final List<_RecommendationQuery> queries = <_RecommendationQuery>[
       _RecommendationQuery(
         title: 'Related to ${anchor.title}',
@@ -1570,6 +1627,17 @@ class OuterTuneController extends ChangeNotifier {
           title: 'Matches your taste',
           subtitle: 'Auto queue',
           query: '${artist.label} top songs',
+          anchor: anchor,
+        ),
+      );
+    }
+
+    for (final _LanguageSignal language in languages.take(1)) {
+      queries.add(
+        _RecommendationQuery(
+          title: '${language.label} queue',
+          subtitle: 'Auto queue',
+          query: '${anchor.artist} ${language.queryToken} songs',
           anchor: anchor,
         ),
       );
@@ -1657,7 +1725,7 @@ class OuterTuneController extends ChangeNotifier {
       }
     }
 
-    for (final LibrarySong recent in recentlyPlayedSongs.take(4)) {
+    for (final LibrarySong recent in _validHistorySongs().take(4)) {
       final String recentArtist = _normalizeToken(recent.artist);
       if (artist == recentArtist) {
         score += 2.2;
@@ -1717,6 +1785,11 @@ class OuterTuneController extends ChangeNotifier {
   }
 
   List<LibrarySong> _rankedPreferenceSongs() {
+    final Map<String, double> validHistoryBoost = <String, double>{};
+    for (final PlaybackEntry entry in validPlaybackHistory.take(120)) {
+      validHistoryBoost[entry.songId] =
+          (validHistoryBoost[entry.songId] ?? 0) + (1 + entry.completionRatio);
+    }
     final Map<String, LibrarySong> allSongs = <String, LibrarySong>{
       for (final LibrarySong song in _songs) song.id: song,
       ..._transientSongsById,
@@ -1725,15 +1798,93 @@ class OuterTuneController extends ChangeNotifier {
         .where((LibrarySong song) => _songPreferenceWeight(song) > 0)
         .toList();
     ranked.sort((LibrarySong a, LibrarySong b) {
-      final int scoreCompare = _songPreferenceWeight(
-        b,
-      ).compareTo(_songPreferenceWeight(a));
+      final double leftScore =
+          _songPreferenceWeight(a) + (validHistoryBoost[a.id] ?? 0) * 2.5;
+      final double rightScore =
+          _songPreferenceWeight(b) + (validHistoryBoost[b.id] ?? 0) * 2.5;
+      final int scoreCompare = rightScore.compareTo(leftScore);
       if (scoreCompare != 0) {
         return scoreCompare;
       }
       return b.addedAt.compareTo(a.addedAt);
     });
     return ranked;
+  }
+
+  List<LibrarySong> _validHistorySongs() {
+    final Set<String> seen = <String>{};
+    final List<LibrarySong> result = <LibrarySong>[];
+    for (final PlaybackEntry entry in validPlaybackHistory.take(120)) {
+      if (!seen.add(entry.songId)) {
+        continue;
+      }
+      final LibrarySong? song = songById(entry.songId);
+      if (song != null) {
+        result.add(song);
+      }
+    }
+    return result;
+  }
+
+  List<_LanguageSignal> _preferredLanguagesFromValidHistory() {
+    final Map<String, double> scores = <String, double>{};
+    for (final PlaybackEntry entry in validPlaybackHistory.take(120)) {
+      final LibrarySong? song = songById(entry.songId);
+      if (song == null) {
+        continue;
+      }
+      final String language = _detectSongLanguage(song);
+      final double weight = entry.listenedToEnd
+          ? 1.8
+          : math.max(0.3, entry.completionRatio);
+      scores[language] = (scores[language] ?? 0) + weight;
+    }
+    final double total = scores.values.fold(0, (double sum, double v) => sum + v);
+    if (total <= 0) {
+      return const <_LanguageSignal>[];
+    }
+    return scores.entries
+        .map(
+          (MapEntry<String, double> entry) => _LanguageSignal(
+            label: _languageLabel(entry.key),
+            queryToken: _languageQueryToken(entry.key),
+            score: entry.value / total,
+          ),
+        )
+        .toList()
+      ..sort((_LanguageSignal a, _LanguageSignal b) => b.score.compareTo(a.score));
+  }
+
+  String _detectSongLanguage(LibrarySong song) {
+    final String text = '${song.title} ${song.artist} ${song.album}';
+    if (RegExp(r'[\u0D80-\u0DFF]').hasMatch(text)) {
+      return 'si';
+    }
+    if (RegExp(r'[\u0B80-\u0BFF]').hasMatch(text)) {
+      return 'ta';
+    }
+    if (RegExp(r'[\u0900-\u097F]').hasMatch(text)) {
+      return 'hi';
+    }
+    return 'en';
+  }
+
+  String _languageLabel(String language) {
+    return switch (language) {
+      'si' => 'Sinhala',
+      'ta' => 'Tamil',
+      'hi' => 'Hindi',
+      _ => 'English',
+    };
+  }
+
+  String _languageQueryToken(String language) {
+    return switch (language) {
+      'si' => 'sinhala',
+      'ta' => 'tamil',
+      'hi' => 'hindi',
+      _ => 'english',
+    };
   }
 
   double _songPreferenceWeight(LibrarySong song) {
@@ -1828,6 +1979,9 @@ class OuterTuneController extends ChangeNotifier {
   void _attachPlayerListeners() {
     _subscriptions.add(
       _player.stream.playing.listen((dynamic value) {
+        if (_isDisposing || _isDisposed) {
+          return;
+        }
         _isPlaying = value as bool;
         notifyListeners();
       }),
@@ -1835,7 +1989,11 @@ class OuterTuneController extends ChangeNotifier {
 
     _subscriptions.add(
       _player.stream.position.listen((dynamic value) {
+        if (_isDisposing || _isDisposed) {
+          return;
+        }
         _position = value as Duration;
+        _updateActivePlaybackProgress();
         _syncQueueIndexFromPlayerState();
         notifyListeners();
       }),
@@ -1843,6 +2001,9 @@ class OuterTuneController extends ChangeNotifier {
 
     _subscriptions.add(
       _player.stream.duration.listen((dynamic value) {
+        if (_isDisposing || _isDisposed) {
+          return;
+        }
         _duration = value as Duration;
         notifyListeners();
       }),
@@ -1850,6 +2011,9 @@ class OuterTuneController extends ChangeNotifier {
 
     _subscriptions.add(
       _player.stream.shuffle.listen((dynamic value) {
+        if (_isDisposing || _isDisposed) {
+          return;
+        }
         _isShuffleEnabled = value as bool;
         notifyListeners();
       }),
@@ -1857,6 +2021,9 @@ class OuterTuneController extends ChangeNotifier {
 
     _subscriptions.add(
       _player.stream.playlistMode.listen((dynamic value) {
+        if (_isDisposing || _isDisposed) {
+          return;
+        }
         _repeatMode = value as PlaylistMode;
         notifyListeners();
       }),
@@ -1864,6 +2031,9 @@ class OuterTuneController extends ChangeNotifier {
 
     _subscriptions.add(
       _player.stream.error.listen((dynamic value) {
+        if (_isDisposing || _isDisposed) {
+          return;
+        }
         _errorMessage = value as String;
         notifyListeners();
       }),
@@ -1871,6 +2041,9 @@ class OuterTuneController extends ChangeNotifier {
 
     _subscriptions.add(
       _player.stream.playlist.listen((dynamic value) {
+        if (_isDisposing || _isDisposed) {
+          return;
+        }
         final Playlist playlist = value as Playlist;
         _queueSongIds = playlist.medias
             .map((Media media) => media.extras?['songId'] as String?)
@@ -1891,6 +2064,9 @@ class OuterTuneController extends ChangeNotifier {
   }
 
   void _syncQueueIndexFromPlayerState() {
+    if (_isDisposing || _isDisposed) {
+      return;
+    }
     if (_queueSongIds.isEmpty) {
       return;
     }
@@ -1906,7 +2082,7 @@ class OuterTuneController extends ChangeNotifier {
     if (song != null && song.id != _lastTrackedSongId) {
       _trackPlayback(song.id);
     }
-    unawaited(_maybeExtendSmartQueue(seed: song));
+    unawaited(_maybeExtendSmartQueue(seed: song, force: true));
   }
 
   LibrarySong? songById(String id) {
@@ -1977,11 +2153,9 @@ class OuterTuneController extends ChangeNotifier {
     _queueLabel = 'Now Playing';
     _lastTrackedSongId = null;
     _smartQueueSongIds.clear();
-    _playsSinceLastHomeRefresh = 0;
     await _player.stop();
     await _saveSnapshot();
     notifyListeners();
-    unawaited(refreshHomeFeed(force: true));
   }
 
   Future<void> _rescanAllSources() async {
@@ -2029,7 +2203,6 @@ class OuterTuneController extends ChangeNotifier {
           ? 'No supported audio files found in the selected sources.'
           : 'Imported ${scanned.length} tracks from ${_sources.length} source(s).';
       await _saveSnapshot();
-      unawaited(refreshHomeFeed(force: true));
     } catch (error, stackTrace) {
       debugPrintStack(stackTrace: stackTrace);
       _errorMessage = '$error';
@@ -2423,7 +2596,6 @@ class OuterTuneController extends ChangeNotifier {
     _settings = _settings.copyWith(ytMusicAuthJson: normalized ?? '');
     await _saveSnapshot();
     await _recreateYtMusicClient();
-    await refreshHomeFeed(force: true);
     notifyListeners();
   }
 
@@ -2431,7 +2603,6 @@ class OuterTuneController extends ChangeNotifier {
     _settings = _settings.copyWith(ytMusicAuthJson: '');
     await _saveSnapshot();
     await _recreateYtMusicClient();
-    await refreshHomeFeed(force: true);
     notifyListeners();
   }
 
@@ -2522,6 +2693,7 @@ class OuterTuneController extends ChangeNotifier {
 
   void _trackPlayback(String songId) {
     final DateTime now = DateTime.now();
+    _finalizeActivePlaybackSession(nextSongId: songId);
     final int index = _songs.indexWhere(
       (LibrarySong song) => song.id == songId,
     );
@@ -2541,16 +2713,52 @@ class OuterTuneController extends ChangeNotifier {
       }
     }
 
-    _history = <PlaybackEntry>[
-      PlaybackEntry(songId: songId, playedAt: now),
-      ..._history,
-    ].take(300).toList();
-    _playsSinceLastHomeRefresh += 1;
+    _activePlaybackSongId = songId;
+    _activePlaybackCompletionRatio = 0;
     _lastTrackedSongId = songId;
     unawaited(_saveSnapshot());
-    if (_playsSinceLastHomeRefresh >= 5) {
-      unawaited(refreshHomeFeed(force: true));
+  }
+
+  void _updateActivePlaybackProgress() {
+    final LibrarySong? song = currentSong;
+    if (song == null) {
+      return;
     }
+    _activePlaybackSongId ??= song.id;
+    if (_activePlaybackSongId != song.id) {
+      _finalizeActivePlaybackSession(nextSongId: song.id);
+      _activePlaybackSongId = song.id;
+      _activePlaybackCompletionRatio = 0;
+    }
+    final int durationMs = math.max(song.durationMs, _duration.inMilliseconds);
+    if (durationMs <= 0) {
+      return;
+    }
+    final double ratio = _position.inMilliseconds / durationMs;
+    if (ratio > _activePlaybackCompletionRatio) {
+      _activePlaybackCompletionRatio = ratio.clamp(0, 1);
+    }
+  }
+
+  void _finalizeActivePlaybackSession({String? nextSongId}) {
+    final String? songId = _activePlaybackSongId;
+    if (songId == null || songId == nextSongId) {
+      return;
+    }
+    final DateTime now = DateTime.now();
+    final double ratio = _activePlaybackCompletionRatio.clamp(0, 1);
+    final bool listenedToEnd = ratio >= 0.88;
+    _history = <PlaybackEntry>[
+      PlaybackEntry(
+        songId: songId,
+        playedAt: now,
+        completionRatio: ratio,
+        listenedToEnd: listenedToEnd,
+      ),
+      ..._history,
+    ].take(300).toList();
+    _activePlaybackSongId = null;
+    _activePlaybackCompletionRatio = 0;
   }
 
   Future<void> _loadSnapshot() async {
@@ -2642,13 +2850,20 @@ class OuterTuneController extends ChangeNotifier {
   }
 
   @override
-  Future<void> dispose() async {
-    for (final StreamSubscription<dynamic> subscription in _subscriptions) {
-      await subscription.cancel();
+  void dispose() {
+    if (_isDisposed || _isDisposing) {
+      return;
     }
+    _isDisposing = true;
+    _finalizeActivePlaybackSession();
+    for (final StreamSubscription<dynamic> subscription in _subscriptions) {
+      unawaited(subscription.cancel());
+    }
+    _subscriptions.clear();
     _ytMusic?.close();
     _yt.close();
-    await _player.dispose();
+    unawaited(_player.dispose());
+    _isDisposed = true;
     super.dispose();
   }
 }
@@ -2678,6 +2893,18 @@ class _TasteSignal {
   const _TasteSignal(this.label, this.score);
 
   final String label;
+  final double score;
+}
+
+class _LanguageSignal {
+  const _LanguageSignal({
+    required this.label,
+    required this.queryToken,
+    required this.score,
+  });
+
+  final String label;
+  final String queryToken;
   final double score;
 }
 

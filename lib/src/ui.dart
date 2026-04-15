@@ -267,7 +267,6 @@ class _HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<_HomeScreen> {
   final ScrollController _scroll = ScrollController();
-  bool _loadingMore = false;
 
   @override
   void initState() {
@@ -283,17 +282,7 @@ class _HomeScreenState extends State<_HomeScreen> {
   }
 
   Future<void> _onScroll() async {
-    if (_loadingMore) return;
-    if (!mounted) return;
-    // Load more when close to bottom.
-    if (_scroll.position.extentAfter > 700) return;
-    if (widget.controller.homeLoading) return;
-    _loadingMore = true;
-    try {
-      await widget.controller.loadMoreHomeFeed(desiredTotal: 12);
-    } finally {
-      _loadingMore = false;
-    }
+    // Home recommendations are intentionally static for this app session.
   }
 
   @override
@@ -373,9 +362,8 @@ class _HomeScreenState extends State<_HomeScreen> {
           if (homeFeedPending)
             const _KineticListSkeleton(count: 4)
           else
-            _ProgressiveListReveal(
-              itemCount: mayYouLike.length,
-              itemBuilder: (BuildContext context, int index) {
+            Column(
+              children: List<Widget>.generate(mayYouLike.length, (int index) {
                 final LibrarySong song = mayYouLike[index];
                 return _KineticPopularTrackTile(
                   index: index + 1,
@@ -388,7 +376,7 @@ class _HomeScreenState extends State<_HomeScreen> {
                     }
                   },
                 );
-              },
+              }),
             ),
           if (jumpBackIn.isNotEmpty) ...<Widget>[
             const SizedBox(height: 18),
@@ -1477,9 +1465,9 @@ class _MayYouLikeScreen extends StatefulWidget {
 class _MayYouLikeScreenState extends State<_MayYouLikeScreen> {
   static const int _pageSize = 4;
   static const int _initialLoadSize = 10;
+  static const int _maxItems = 50;
 
   final ScrollController _scroll = ScrollController();
-  bool _loadingMore = false;
   int _visibleCount = _pageSize;
 
   @override
@@ -1499,89 +1487,34 @@ class _MayYouLikeScreenState extends State<_MayYouLikeScreen> {
   }
 
   Future<void> _onScroll() async {
-    if (_loadingMore) return;
     if (!mounted) return;
     if (_scroll.position.extentAfter > 220) return;
-    await _loadUntilVisibleCount(_visibleCount + _pageSize);
+    final int total = _allItems.length;
+    if (_visibleCount >= total) {
+      return;
+    }
+    setState(() {
+      _visibleCount = math.min(_visibleCount + _pageSize, total);
+    });
   }
 
-  Future<void> _ensureInitialItems() async {
+  List<LibrarySong> get _allItems =>
+      _buildMayYouLike(widget.controller.homeFeed).take(_maxItems).toList();
+
+  void _ensureInitialItems() {
     if (!mounted) {
       return;
     }
-    final int available = _buildMayYouLike(widget.controller.homeFeed).length;
-    if (available >= _initialLoadSize) {
-      setState(() {
-        _visibleCount = _initialLoadSize;
-      });
-      return;
-    }
-    await _loadUntilVisibleCount(_initialLoadSize);
-  }
-
-  Future<void> _loadUntilVisibleCount(int targetVisible) async {
-    if (_loadingMore) return;
-    if (mounted) {
-      setState(() => _loadingMore = true);
-    } else {
-      _loadingMore = true;
-    }
-    try {
-      final OuterTuneController controller = widget.controller;
-      int available = _buildMayYouLike(controller.homeFeed).length;
-
-      // Even when we already have buffered songs locally, show 4 placeholders
-      // first so UX always feels "loading in batches of 4".
-      if (available >= targetVisible) {
-        await Future<void>.delayed(const Duration(milliseconds: 240));
-      }
-
-      int attempts = 0;
-      int stagnantPasses = 0;
-
-      while (available < targetVisible && attempts < 10) {
-        if (controller.homeLoading) {
-          break;
-        }
-        attempts += 1;
-        final int before = available;
-        await controller.loadMoreHomeFeed(
-          desiredTotal: controller.homeFeed.length + 4,
-        );
-        available = _buildMayYouLike(controller.homeFeed).length;
-
-        if (available <= before) {
-          stagnantPasses += 1;
-        } else {
-          stagnantPasses = 0;
-        }
-
-        // Give a couple retries before concluding no more data.
-        if (stagnantPasses >= 2) {
-          break;
-        }
-      }
-
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _visibleCount = math.min(targetVisible, available);
-      });
-    } finally {
-      if (mounted) {
-        setState(() => _loadingMore = false);
-      } else {
-        _loadingMore = false;
-      }
-    }
+    final int available = _allItems.length;
+    setState(() {
+      _visibleCount = math.min(_initialLoadSize, available);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final OuterTuneController controller = widget.controller;
-    final List<LibrarySong> items = _buildMayYouLike(controller.homeFeed);
+    final List<LibrarySong> items = _allItems;
     final List<LibrarySong> visibleItems = items
         .take(math.min(_visibleCount, items.length))
         .toList(growable: false);
@@ -1614,11 +1547,10 @@ class _MayYouLikeScreenState extends State<_MayYouLikeScreen> {
               ],
             ),
             const SizedBox(height: 10),
-            if (items.isEmpty && (controller.homeLoading || _loadingMore))
+            if (items.isEmpty && controller.homeLoading)
               const _KineticListSkeleton(count: 8),
-            _ProgressiveListReveal(
-              itemCount: visibleItems.length,
-              itemBuilder: (BuildContext context, int index) {
+            Column(
+              children: List<Widget>.generate(visibleItems.length, (int index) {
                 final LibrarySong song = visibleItems[index];
                 return _KineticPopularTrackTile(
                   index: index + 1,
@@ -1631,9 +1563,9 @@ class _MayYouLikeScreenState extends State<_MayYouLikeScreen> {
                     }
                   },
                 );
-              },
+              }),
             ),
-            if (controller.homeLoading || _loadingMore) ...<Widget>[
+            if (controller.homeLoading && items.isEmpty) ...<Widget>[
               const SizedBox(height: 12),
               const _KineticListSkeleton(count: 4),
             ],
@@ -2524,10 +2456,12 @@ class _SearchScreen extends StatefulWidget {
 }
 
 class _SearchScreenState extends State<_SearchScreen> {
+  static const Duration _searchDebounceDuration = Duration(milliseconds: 250);
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _urlController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final List<String> _recentSearches = <String>[];
+  Timer? _searchDebounce;
 
   @override
   void initState() {
@@ -2537,6 +2471,7 @@ class _SearchScreenState extends State<_SearchScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _searchController.dispose();
@@ -2560,7 +2495,13 @@ class _SearchScreenState extends State<_SearchScreen> {
   void _runSearch(String value) {
     final String trimmed = value.trim();
     setState(() {});
-    widget.controller.searchOnline(trimmed);
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(_searchDebounceDuration, () {
+      if (!mounted) {
+        return;
+      }
+      unawaited(widget.controller.searchOnline(trimmed));
+    });
   }
 
   void _rememberSearch(String value) {
@@ -2683,6 +2624,7 @@ class _SearchScreenState extends State<_SearchScreen> {
     final List<LibrarySong> topResults = _mergeSearchResults(
       songs,
       widget.controller.onlineResults,
+      query: _searchController.text,
     );
 
     return DecoratedBox(
@@ -2877,6 +2819,7 @@ class _SearchScreenState extends State<_SearchScreen> {
 List<LibrarySong> _mergeSearchResults(
   List<LibrarySong> localResults,
   List<LibrarySong> onlineResults,
+  {required String query}
 ) {
   final List<LibrarySong> merged = <LibrarySong>[];
   final Set<String> seen = <String>{};
@@ -2911,6 +2854,56 @@ List<LibrarySong> _mergeSearchResults(
       merged.add(song);
     }
   }
+
+  final String normalizedQuery = query.trim().toLowerCase();
+  if (normalizedQuery.isEmpty) {
+    return merged;
+  }
+
+  int score(LibrarySong song) {
+    final String title = song.title.trim().toLowerCase();
+    final String artist = song.artist.trim().toLowerCase();
+    final String album = song.album.trim().toLowerCase();
+    final String full = '$title $artist $album';
+
+    int value = 0;
+    if (title == normalizedQuery) {
+      value += 220;
+    }
+    if (artist == normalizedQuery) {
+      value += 110;
+    }
+    if (title.startsWith(normalizedQuery)) {
+      value += 80;
+    }
+    if (artist.startsWith(normalizedQuery)) {
+      value += 42;
+    }
+    if (album.startsWith(normalizedQuery)) {
+      value += 24;
+    }
+    if (title.contains(normalizedQuery)) {
+      value += 20;
+    }
+    if (full.contains(' $normalizedQuery ')) {
+      value += 18;
+    }
+    if (full.contains(normalizedQuery)) {
+      value += 8;
+    }
+    if (song.isRemote) {
+      value += 2;
+    }
+    return value;
+  }
+
+  merged.sort((LibrarySong a, LibrarySong b) {
+    final int scoreCompare = score(b).compareTo(score(a));
+    if (scoreCompare != 0) {
+      return scoreCompare;
+    }
+    return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+  });
   return merged;
 }
 

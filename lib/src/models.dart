@@ -311,15 +311,24 @@ class UserPlaylist {
 }
 
 class PlaybackEntry {
-  const PlaybackEntry({required this.songId, required this.playedAt});
+  const PlaybackEntry({
+    required this.songId,
+    required this.playedAt,
+    this.completionRatio = 0,
+    this.listenedToEnd = false,
+  });
 
   final String songId;
   final DateTime playedAt;
+  final double completionRatio;
+  final bool listenedToEnd;
 
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
       'songId': songId,
       'playedAt': playedAt.toIso8601String(),
+      'completionRatio': completionRatio,
+      'listenedToEnd': listenedToEnd,
     };
   }
 
@@ -329,6 +338,8 @@ class PlaybackEntry {
       playedAt:
           DateTime.tryParse(json['playedAt'] as String? ?? '') ??
           DateTime.now(),
+      completionRatio: (json['completionRatio'] as num?)?.toDouble() ?? 0,
+      listenedToEnd: json['listenedToEnd'] as bool? ?? false,
     );
   }
 }
