@@ -19,6 +19,17 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+subprojects {
+    // Workaround for Windows file-lock issues in transitive Android library lint tasks.
+    tasks.matching { task ->
+        task.name == "lintVitalAnalyzeRelease" ||
+            task.name == "lintAnalyzeRelease" ||
+            task.name == "lintRelease"
+    }.configureEach {
+        enabled = false
+    }
+}
+
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }

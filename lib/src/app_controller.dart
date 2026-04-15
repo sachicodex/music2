@@ -8,6 +8,7 @@ import 'package:collection/collection.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
@@ -16,10 +17,14 @@ import 'package:ytmusicapi_dart/auth/browser.dart' as ytm_browser;
 import 'package:ytmusicapi_dart/ytmusicapi_dart.dart';
 import 'package:ytmusicapi_dart/enums.dart' as ytm;
 
+import 'media_notification_service.dart';
 import 'models.dart';
 
 class OuterTuneController extends ChangeNotifier {
-  OuterTuneController() : _player = Player(), _yt = YoutubeExplode();
+  OuterTuneController({MusicNotificationService? notificationService})
+    : _player = Player(),
+      _yt = YoutubeExplode(),
+      _notificationService = notificationService;
   static const int _smartQueueBatchSize = 10;
 
   static const List<String> supportedExtensions = <String>[
@@ -37,6 +42,7 @@ class OuterTuneController extends ChangeNotifier {
 
   final Player _player;
   final YoutubeExplode _yt;
+  final MusicNotificationService? _notificationService;
   YTMusic? _ytMusic;
   final Uuid _uuid = const Uuid();
   final List<StreamSubscription<dynamic>> _subscriptions =
@@ -322,10 +328,25 @@ class OuterTuneController extends ChangeNotifier {
     await _loadSnapshot();
     await _recreateYtMusicClient();
     await _player.setRate(_settings.playbackRate);
+    // Never block app startup on Android runtime permission UI.
+    unawaited(_ensureNotificationPermission());
+    _bindNotificationActions();
     _attachPlayerListeners();
     _initialized = true;
+    _publishNotificationState();
     notifyListeners();
     unawaited(refreshHomeFeed());
+  }
+
+  Future<void> _ensureNotificationPermission() async {
+    if (!Platform.isAndroid) {
+      return;
+    }
+    final PermissionStatus status = await Permission.notification.status;
+    if (status.isGranted || status.isLimited) {
+      return;
+    }
+    await Permission.notification.request();
   }
 
   Future<void> searchOnline(String query) async {
@@ -390,11 +411,10 @@ class OuterTuneController extends ChangeNotifier {
       _onlineResultLimit = 0;
       _onlineHasMore = false;
     } finally {
-      if (requestId != _onlineSearchRequestId) {
-        return;
+      if (requestId == _onlineSearchRequestId) {
+        _onlineLoading = false;
+        notifyListeners();
       }
-      _onlineLoading = false;
-      notifyListeners();
     }
   }
 
@@ -448,7 +468,6 @@ class OuterTuneController extends ChangeNotifier {
       );
       if (focusSection != null) {
         sections.add(focusSection);
-        _publishHomeFeedProgress(sections);
         consumedIds.addAll(
           focusSection.songs.take(4).map((LibrarySong song) => song.id),
         );
@@ -466,7 +485,6 @@ class OuterTuneController extends ChangeNotifier {
         );
         if (radioSection != null) {
           sections.add(radioSection);
-          _publishHomeFeedProgress(sections);
           consumedIds.addAll(
             radioSection.songs.take(4).map((LibrarySong song) => song.id),
           );
@@ -482,7 +500,6 @@ class OuterTuneController extends ChangeNotifier {
           await _buildYtMusicHomeSections(excludedIds: consumedIds);
       for (final HomeFeedSection section in ytmHomeSections) {
         sections.add(section);
-        _publishHomeFeedProgress(sections);
         consumedIds.addAll(
           section.songs.take(4).map((LibrarySong song) => song.id),
         );
@@ -509,7 +526,6 @@ class OuterTuneController extends ChangeNotifier {
         force: force,
         already: sections,
         desiredCount: 6,
-        onProgress: _publishHomeFeedProgress,
       );
 
       _homeFeed = expanded;
@@ -1521,27 +1537,7 @@ class OuterTuneController extends ChangeNotifier {
   List<_RecommendationQuery> _buildHomeQueries(LibrarySong? seedSong) {
     final List<_TasteSignal> artists = _preferenceArtists();
     final List<_TasteSignal> genres = _preferenceGenres();
-    final List<_LanguageSignal> languages = _preferredLanguagesFromValidHistory();
     final List<_RecommendationQuery> queries = <_RecommendationQuery>[];
-
-    if (seedSong != null) {
-      queries.add(
-        _RecommendationQuery(
-          title: 'Made for you',
-          subtitle: 'Online picks tuned from ${seedSong.artist}',
-          query: '${seedSong.artist} popular songs',
-          anchor: seedSong,
-        ),
-      );
-      queries.add(
-        _RecommendationQuery(
-          title: 'Because you played ${seedSong.title}',
-          subtitle: 'Keep the same lane going',
-          query: '${seedSong.artist} ${seedSong.title} song radio',
-          anchor: seedSong,
-        ),
-      );
-    }
 
     for (final _TasteSignal artist in artists.take(2)) {
       queries.add(
@@ -1559,16 +1555,6 @@ class OuterTuneController extends ChangeNotifier {
           title: '${genre.label} picks',
           subtitle: 'Online discoveries near your taste',
           query: '${genre.label} songs',
-        ),
-      );
-    }
-
-    for (final _LanguageSignal language in languages.take(1)) {
-      queries.add(
-        _RecommendationQuery(
-          title: '${language.label} focus',
-          subtitle: 'Picks tuned to your listening language',
-          query: '${language.queryToken} songs',
         ),
       );
     }
@@ -2190,6 +2176,7 @@ class OuterTuneController extends ChangeNotifier {
           return;
         }
         _isPlaying = value as bool;
+        _publishNotificationState();
         notifyListeners();
       }),
     );
@@ -2202,6 +2189,7 @@ class OuterTuneController extends ChangeNotifier {
         _position = value as Duration;
         _updateActivePlaybackProgress();
         _syncQueueIndexFromPlayerState();
+        _publishNotificationState();
         notifyListeners();
       }),
     );
@@ -2212,6 +2200,7 @@ class OuterTuneController extends ChangeNotifier {
           return;
         }
         _duration = value as Duration;
+        _publishNotificationState();
         notifyListeners();
       }),
     );
@@ -2265,8 +2254,28 @@ class OuterTuneController extends ChangeNotifier {
           _trackPlayback(song.id);
         }
         unawaited(_maybeExtendSmartQueue(seed: song, force: true));
+        _publishNotificationState();
         notifyListeners();
       }),
+    );
+  }
+
+  void _bindNotificationActions() {
+    final MusicNotificationService? service = _notificationService;
+    if (service == null) {
+      return;
+    }
+    service.onPlayPause = togglePlayback;
+    service.onNext = nextTrack;
+    service.onPrevious = previousTrack;
+  }
+
+  void _publishNotificationState() {
+    _notificationService?.updateFromState(
+      song: currentSong,
+      playing: _isPlaying,
+      position: _position,
+      duration: _duration,
     );
   }
 
@@ -3067,6 +3076,13 @@ class OuterTuneController extends ChangeNotifier {
       unawaited(subscription.cancel());
     }
     _subscriptions.clear();
+    final MusicNotificationService? service = _notificationService;
+    if (service != null) {
+      service.onPlayPause = null;
+      service.onNext = null;
+      service.onPrevious = null;
+      unawaited(service.stop());
+    }
     _ytMusic?.close();
     _yt.close();
     unawaited(_player.dispose());
