@@ -1332,8 +1332,11 @@ class OuterTuneController extends ChangeNotifier {
     return ytm_browser.setupBrowser(headersRaw: input);
   }
 
-  Future<void> _maybeExtendSmartQueue({LibrarySong? seed}) async {
-    if (!_settings.smartQueueEnabled || _smartQueueLoading) {
+  Future<void> _maybeExtendSmartQueue({
+    LibrarySong? seed,
+    bool force = false,
+  }) async {
+    if ((!_settings.smartQueueEnabled && !force) || _smartQueueLoading) {
       return;
     }
 
@@ -1833,6 +1836,7 @@ class OuterTuneController extends ChangeNotifier {
     _subscriptions.add(
       _player.stream.position.listen((dynamic value) {
         _position = value as Duration;
+        _syncQueueIndexFromPlayerState();
         notifyListeners();
       }),
     );
@@ -1880,10 +1884,29 @@ class OuterTuneController extends ChangeNotifier {
         if (song != null && song.id != _lastTrackedSongId) {
           _trackPlayback(song.id);
         }
-        unawaited(_maybeExtendSmartQueue(seed: song));
+        unawaited(_maybeExtendSmartQueue(seed: song, force: true));
         notifyListeners();
       }),
     );
+  }
+
+  void _syncQueueIndexFromPlayerState() {
+    if (_queueSongIds.isEmpty) {
+      return;
+    }
+    final int nextIndex = _player.state.playlist.index.clamp(
+      0,
+      _queueSongIds.length - 1,
+    );
+    if (nextIndex == _queueIndex) {
+      return;
+    }
+    _queueIndex = nextIndex;
+    final LibrarySong? song = currentSong;
+    if (song != null && song.id != _lastTrackedSongId) {
+      _trackPlayback(song.id);
+    }
+    unawaited(_maybeExtendSmartQueue(seed: song));
   }
 
   LibrarySong? songById(String id) {
@@ -2184,7 +2207,7 @@ class OuterTuneController extends ChangeNotifier {
     _queueIndex = safeIndex;
     await _player.open(Playlist(medias, index: safeIndex));
     _trackPlayback(preparedSongs[safeIndex].id);
-    unawaited(_maybeExtendSmartQueue(seed: preparedSongs[safeIndex]));
+    unawaited(_maybeExtendSmartQueue(seed: preparedSongs[safeIndex], force: true));
     notifyListeners();
   }
 
@@ -2258,7 +2281,7 @@ class OuterTuneController extends ChangeNotifier {
     _queueIndex = 0;
     await _player.open(Playlist(<Media>[_mediaForSong(song)]));
     _trackPlayback(song.id);
-    unawaited(_maybeExtendSmartQueue(seed: song));
+    unawaited(_maybeExtendSmartQueue(seed: song, force: true));
     notifyListeners();
   }
 
@@ -2324,7 +2347,7 @@ class OuterTuneController extends ChangeNotifier {
     } else {
       _queueIndex = _queueIndex.clamp(0, _queueSongIds.length - 1);
     }
-    unawaited(_maybeExtendSmartQueue());
+    unawaited(_maybeExtendSmartQueue(force: true));
     notifyListeners();
   }
 
