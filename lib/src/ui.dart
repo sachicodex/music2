@@ -76,6 +76,19 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
   LibraryFilter _libraryFilter = LibraryFilter.all;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      unawaited(
+        context.read<OuterTuneController>().ensureNotificationPermissionIfNeeded(),
+      );
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final OuterTuneController controller = context.watch<OuterTuneController>();
     final bool wide = MediaQuery.sizeOf(context).width >= 960;

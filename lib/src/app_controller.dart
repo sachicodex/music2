@@ -17,14 +17,13 @@ import 'package:ytmusicapi_dart/auth/browser.dart' as ytm_browser;
 import 'package:ytmusicapi_dart/ytmusicapi_dart.dart';
 import 'package:ytmusicapi_dart/enums.dart' as ytm;
 
-import 'media_notification_service.dart';
+import 'android_media_notification_bridge.dart';
 import 'models.dart';
 
 class OuterTuneController extends ChangeNotifier {
-  OuterTuneController({MusicNotificationService? notificationService})
+  OuterTuneController()
     : _player = Player(),
-      _yt = YoutubeExplode(),
-      _notificationService = notificationService;
+      _yt = YoutubeExplode();
   static const int _smartQueueBatchSize = 10;
 
   static const List<String> supportedExtensions = <String>[
@@ -42,7 +41,7 @@ class OuterTuneController extends ChangeNotifier {
 
   final Player _player;
   final YoutubeExplode _yt;
-  final MusicNotificationService? _notificationService;
+  StreamSubscription<String>? _notificationActionSubscription;
   YTMusic? _ytMusic;
   final Uuid _uuid = const Uuid();
   final List<StreamSubscription<dynamic>> _subscriptions =
@@ -347,6 +346,10 @@ class OuterTuneController extends ChangeNotifier {
       return;
     }
     await Permission.notification.request();
+  }
+
+  Future<void> ensureNotificationPermissionIfNeeded() async {
+    await _ensureNotificationPermission();
   }
 
   Future<void> searchOnline(String query) async {
@@ -2261,22 +2264,30 @@ class OuterTuneController extends ChangeNotifier {
   }
 
   void _bindNotificationActions() {
-    final MusicNotificationService? service = _notificationService;
-    if (service == null) {
+    if (!AndroidMediaNotificationBridge.isSupported) {
       return;
     }
-    service.onPlayPause = togglePlayback;
-    service.onNext = nextTrack;
-    service.onPrevious = previousTrack;
+    _notificationActionSubscription?.cancel();
+    _notificationActionSubscription = AndroidMediaNotificationBridge.actionStream().listen((
+      String action,
+    ) {
+      if (AndroidMediaNotificationBridge.isToggleAction(action)) {
+        unawaited(togglePlayback());
+      } else if (AndroidMediaNotificationBridge.isNextAction(action)) {
+        unawaited(nextTrack());
+      } else if (AndroidMediaNotificationBridge.isPreviousAction(action)) {
+        unawaited(previousTrack());
+      }
+    });
   }
 
   void _publishNotificationState() {
-    _notificationService?.updateFromState(
+    unawaited(AndroidMediaNotificationBridge.updatePlayback(
       song: currentSong,
-      playing: _isPlaying,
+      isPlaying: _isPlaying,
       position: _position,
       duration: _duration,
-    );
+    ));
   }
 
   void _syncQueueIndexFromPlayerState() {
@@ -3076,13 +3087,9 @@ class OuterTuneController extends ChangeNotifier {
       unawaited(subscription.cancel());
     }
     _subscriptions.clear();
-    final MusicNotificationService? service = _notificationService;
-    if (service != null) {
-      service.onPlayPause = null;
-      service.onNext = null;
-      service.onPrevious = null;
-      unawaited(service.stop());
-    }
+    unawaited(_notificationActionSubscription?.cancel());
+    _notificationActionSubscription = null;
+    unawaited(AndroidMediaNotificationBridge.stop());
     _ytMusic?.close();
     _yt.close();
     unawaited(_player.dispose());
