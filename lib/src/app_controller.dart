@@ -92,6 +92,7 @@ class OuterTuneController extends ChangeNotifier {
   PlaylistMode _repeatMode = PlaylistMode.none;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
+  LibrarySong? _pendingSelectionSong;
 
   String? _lastTrackedSongId;
 
@@ -142,6 +143,8 @@ class OuterTuneController extends ChangeNotifier {
     }
     return songById(_queueSongIds[_queueIndex]);
   }
+
+  LibrarySong? get miniPlayerSong => currentSong ?? _pendingSelectionSong;
 
   bool isSmartQueueSong(String songId) => _smartQueueSongIds.contains(songId);
 
@@ -465,21 +468,6 @@ class OuterTuneController extends ChangeNotifier {
       final List<HomeFeedSection> sections = <HomeFeedSection>[];
       final Set<String> consumedIds = <String>{};
       final Set<String> consumedKeys = <String>{};
-
-      final HomeFeedSection? focusSection = await _buildFocusHomeSection(
-        excludedIds: consumedIds,
-      );
-      if (focusSection != null) {
-        sections.add(focusSection);
-        consumedIds.addAll(
-          focusSection.songs.take(4).map((LibrarySong song) => song.id),
-        );
-        consumedKeys.addAll(
-          focusSection.songs
-              .take(8)
-              .map((LibrarySong song) => _songIdentityKey(song)),
-        );
-      }
 
       if (seedSong != null) {
         final HomeFeedSection? radioSection = await _buildYtMusicRadioSection(
@@ -895,29 +883,6 @@ class OuterTuneController extends ChangeNotifier {
     bool force = false,
   }) async {
     return _searchYouTubeMusicOnly(query, limit: limit, force: force);
-  }
-
-  Future<HomeFeedSection?> _buildFocusHomeSection({
-    required Set<String> excludedIds,
-  }) async {
-    final List<LibrarySong> songs = await _searchYtMusicSongs(
-      'focus music',
-      limit: 12,
-    );
-    final List<LibrarySong> ranked = _rankRecommendedSongs(
-      songs,
-      excludedIds: excludedIds,
-      limit: 10,
-    );
-    if (ranked.length < 4) {
-      return null;
-    }
-    return HomeFeedSection(
-      title: 'Focus now',
-      subtitle: 'YouTube Music picks for deep work and concentration',
-      query: 'focus music',
-      songs: ranked,
-    );
   }
 
   Future<HomeFeedSection?> _buildYtMusicRadioSection(
@@ -1562,19 +1527,6 @@ class OuterTuneController extends ChangeNotifier {
       );
     }
 
-    queries.addAll(const <_RecommendationQuery>[
-      _RecommendationQuery(
-        title: 'Trending now',
-        subtitle: 'Fresh online music to start from',
-        query: 'trending songs',
-      ),
-      _RecommendationQuery(
-        title: 'Chill rotation',
-        subtitle: 'Easy listens when you want a softer queue',
-        query: 'chill songs',
-      ),
-    ]);
-
     return queries;
   }
 
@@ -2168,8 +2120,16 @@ class OuterTuneController extends ChangeNotifier {
   }
 
   Future<void> playOnlineSong(LibrarySong song) async {
-    final LibrarySong prepared = await _preparePlayableSong(song);
-    await _openPreparedSong(prepared, label: 'YouTube');
+    _pendingSelectionSong = song;
+    notifyListeners();
+    try {
+      final LibrarySong prepared = await _preparePlayableSong(song);
+      await _openPreparedSong(prepared, label: 'YouTube');
+    } catch (_) {
+      _pendingSelectionSong = null;
+      notifyListeners();
+      rethrow;
+    }
   }
 
   void _attachPlayerListeners() {
@@ -2253,6 +2213,9 @@ class OuterTuneController extends ChangeNotifier {
           _queueSongIds.isEmpty ? 0 : _queueSongIds.length - 1,
         );
         final LibrarySong? song = currentSong;
+        if (song != null) {
+          _pendingSelectionSong = null;
+        }
         if (song != null && song.id != _lastTrackedSongId) {
           _trackPlayback(song.id);
         }
@@ -2594,21 +2557,31 @@ class OuterTuneController extends ChangeNotifier {
     }
 
     final int safeIndex = startIndex.clamp(0, songs.length - 1);
-    final List<LibrarySong> preparedSongs = <LibrarySong>[];
-    for (final LibrarySong song in songs) {
-      preparedSongs.add(await _preparePlayableSong(song));
-    }
-
-    final List<Media> medias = preparedSongs.map(_mediaForSong).toList();
-
-    _smartQueueSongIds.clear();
-    _queueSongIds = preparedSongs.map((LibrarySong song) => song.id).toList();
-    _queueLabel = label;
-    _queueIndex = safeIndex;
-    await _player.open(Playlist(medias, index: safeIndex));
-    _trackPlayback(preparedSongs[safeIndex].id);
-    unawaited(_maybeExtendSmartQueue(seed: preparedSongs[safeIndex], force: true));
+    _pendingSelectionSong = songs[safeIndex];
     notifyListeners();
+    try {
+      final List<LibrarySong> preparedSongs = <LibrarySong>[];
+      for (final LibrarySong song in songs) {
+        preparedSongs.add(await _preparePlayableSong(song));
+      }
+
+      final List<Media> medias = preparedSongs.map(_mediaForSong).toList();
+
+      _smartQueueSongIds.clear();
+      _queueSongIds = preparedSongs.map((LibrarySong song) => song.id).toList();
+      _queueLabel = label;
+      _queueIndex = safeIndex;
+      await _player.open(Playlist(medias, index: safeIndex));
+      _trackPlayback(preparedSongs[safeIndex].id);
+      unawaited(
+        _maybeExtendSmartQueue(seed: preparedSongs[safeIndex], force: true),
+      );
+      notifyListeners();
+    } catch (_) {
+      _pendingSelectionSong = null;
+      notifyListeners();
+      rethrow;
+    }
   }
 
   Future<void> playSong(LibrarySong song, {String label = 'Song'}) async {
@@ -2674,15 +2647,23 @@ class OuterTuneController extends ChangeNotifier {
     LibrarySong song, {
     required String label,
   }) async {
-    _rememberTransientSong(song);
-    _smartQueueSongIds.clear();
-    _queueSongIds = <String>[song.id];
-    _queueLabel = label;
-    _queueIndex = 0;
-    await _player.open(Playlist(<Media>[_mediaForSong(song)]));
-    _trackPlayback(song.id);
-    unawaited(_maybeExtendSmartQueue(seed: song, force: true));
+    _pendingSelectionSong = song;
     notifyListeners();
+    _rememberTransientSong(song);
+    try {
+      _smartQueueSongIds.clear();
+      _queueSongIds = <String>[song.id];
+      _queueLabel = label;
+      _queueIndex = 0;
+      await _player.open(Playlist(<Media>[_mediaForSong(song)]));
+      _trackPlayback(song.id);
+      unawaited(_maybeExtendSmartQueue(seed: song, force: true));
+      notifyListeners();
+    } catch (_) {
+      _pendingSelectionSong = null;
+      notifyListeners();
+      rethrow;
+    }
   }
 
   Media _mediaForSong(LibrarySong song) {
@@ -2811,6 +2792,20 @@ class OuterTuneController extends ChangeNotifier {
     if (value) {
       unawaited(_maybeExtendSmartQueue());
     }
+    notifyListeners();
+  }
+
+  Future<void> setCrossfadeSeconds(int seconds) async {
+    const Set<int> allowed = <int>{0, 3, 5, 7};
+    final int normalized = allowed.contains(seconds) ? seconds : 0;
+    _settings = _settings.copyWith(crossfadeSeconds: normalized);
+    await _saveSnapshot();
+    notifyListeners();
+  }
+
+  Future<void> setGaplessPlayback(bool value) async {
+    _settings = _settings.copyWith(gaplessPlayback: value);
+    await _saveSnapshot();
     notifyListeners();
   }
 

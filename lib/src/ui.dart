@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -302,7 +303,12 @@ class _HomeScreenState extends State<_HomeScreen> {
   Widget build(BuildContext context) {
     final OuterTuneController controller = widget.controller;
 
-    final List<HomeFeedSection> feed = controller.homeFeed;
+    final List<HomeFeedSection> feed = controller.homeFeed
+        .where((HomeFeedSection section) {
+          final String key = section.title.trim().toLowerCase();
+          return key != 'trending now' && key != 'chill rotation';
+        })
+        .toList(growable: false);
     final bool homeFeedPending = controller.homeLoading && feed.isEmpty;
     // MAY YOU LIKE should feel like YT Music: mixed across shelves, deduped,
     // and not stuck in a single recurring category.
@@ -322,6 +328,7 @@ class _HomeScreenState extends State<_HomeScreen> {
     final _FeaturedHeroData featured = _pickFeaturedHero(
       context: context,
       controller: controller,
+      feed: feed,
       mayYouLike: mayYouLikeFull,
     );
 
@@ -337,10 +344,15 @@ class _HomeScreenState extends State<_HomeScreen> {
           end: Alignment.bottomCenter,
         ),
       ),
-      child: ListView(
-        controller: _scroll,
-        padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
-        children: <Widget>[
+      child: RefreshIndicator(
+        color: const Color(0xFFFF8A2A),
+        backgroundColor: const Color(0xFF2A1007),
+        onRefresh: () => controller.refreshHomeFeed(force: true),
+        child: ListView(
+          controller: _scroll,
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
+          children: <Widget>[
           const SizedBox(height: 6),
           _KineticTopBar(onOpenSearch: widget.onOpenSearch),
           const SizedBox(height: 14),
@@ -452,11 +464,12 @@ class _HomeScreenState extends State<_HomeScreen> {
           ],
           // Infinite feed: render remaining shelves as scroll continues.
           ..._buildMoreShelves(controller: controller, skipCount: 1),
-          if (controller.homeLoading) ...<Widget>[
-            const SizedBox(height: 16),
-            const Opacity(opacity: 0.8, child: _HomeFeedSkeleton()),
+            if (controller.homeLoading) ...<Widget>[
+              const SizedBox(height: 16),
+              const Opacity(opacity: 0.8, child: _HomeFeedSkeleton()),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -466,7 +479,12 @@ List<Widget> _buildMoreShelves({
   required OuterTuneController controller,
   int skipCount = 0,
 }) {
-  final List<HomeFeedSection> sections = controller.homeFeed;
+  final List<HomeFeedSection> sections = controller.homeFeed
+      .where((HomeFeedSection section) {
+        final String key = section.title.trim().toLowerCase();
+        return key != 'trending now' && key != 'chill rotation';
+      })
+      .toList(growable: false);
   if (sections.length <= skipCount) return <Widget>[];
 
   return sections
@@ -663,6 +681,13 @@ bool _isFilteredSuggestion(LibrarySong song) {
     'healing',
     'meditation',
     'sleep',
+    'study music',
+    'focus music',
+    'focus for work',
+    'deep focus',
+    'concentration',
+    'productivity',
+    'zen',
     'alpha waves',
     'beta waves',
     'theta',
@@ -708,87 +733,28 @@ class _FeaturedHeroData {
 _FeaturedHeroData _pickFeaturedHero({
   required BuildContext context,
   required OuterTuneController controller,
+  required List<HomeFeedSection> feed,
   required List<LibrarySong> mayYouLike,
 }) {
-  // Prefer a "playlist users may like" feel:
-  // - If user has playlists, feature the most recently updated one.
-  // - Else, if user has favorites, feature Favorites.
-  // - Else, feature the top suggestion song (mayYouLike).
-  final UserPlaylist? newestPlaylist = controller.playlists.isEmpty
-      ? null
-      : (List<UserPlaylist>.from(controller.playlists)..sort(
-              (UserPlaylist a, UserPlaylist b) =>
-                  b.updatedAt.compareTo(a.updatedAt),
-            ))
-            .first;
+  final Set<String> seen = <String>{};
+  final List<LibrarySong> personalizedSongs = <LibrarySong>[
+    ...controller.favoriteSongs.take(8),
+    ...controller.topPlayedSongs.take(12),
+    ...mayYouLike,
+  ].where((LibrarySong song) {
+    final String key = '${song.id}|${song.title}|${song.artist}';
+    return seen.add(key);
+  }).toList(growable: false);
 
-  if (newestPlaylist != null) {
-    final List<LibrarySong> songs = controller.songsForPlaylist(newestPlaylist);
-    final String? imageUrl = songs
-        .map((LibrarySong s) => s.artworkUrl)
-        .whereType<String>()
-        .firstOrNull;
-    final String subtitle = songs.isEmpty
-        ? 'A playlist picked from your library'
-        : '${songs.length} tracks • updated recently';
-
-    return _FeaturedHeroData(
-      badge: 'PLAYLIST YOU MAY LIKE',
-      title: newestPlaylist.name.toUpperCase(),
-      subtitle: subtitle,
-      imageUrl: imageUrl,
-      onListenNow: () => controller.playPlaylist(newestPlaylist),
-      onDetails: () {
-        Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (BuildContext context) => _PlaylistScreen(
-              controller: controller,
-              title: newestPlaylist.name,
-              songs: songs,
-              playlist: newestPlaylist,
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  final List<LibrarySong> favorites = controller.favoriteSongs;
-  if (favorites.isNotEmpty) {
-    final String? imageUrl = favorites
-        .map((LibrarySong s) => s.artworkUrl)
-        .whereType<String>()
-        .firstOrNull;
-    return _FeaturedHeroData(
-      badge: 'YOUR FAVORITES',
-      title: 'FAVORITES',
-      subtitle: '${favorites.length} liked tracks',
-      imageUrl: imageUrl,
-      onListenNow: () => controller.playSongs(favorites, label: 'Favorites'),
-      onDetails: () {
-        Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (BuildContext context) => _PlaylistScreen(
-              controller: controller,
-              title: 'Favorites',
-              songs: favorites,
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  final LibrarySong? songWithArt = mayYouLike
+  final LibrarySong? songWithArt = personalizedSongs
       .where((LibrarySong s) => (s.artworkUrl ?? '').trim().isNotEmpty)
       .firstOrNull;
-  final LibrarySong? song = songWithArt ?? mayYouLike.firstOrNull;
+  final LibrarySong? song = songWithArt ?? personalizedSongs.firstOrNull;
   if (song != null) {
     return _FeaturedHeroData(
-      badge: 'ARTIST OF THE MONTH',
-      title: song.artist.toUpperCase(),
-      subtitle:
-          'Experience the synthesized evolution\nof hyper-soul in the new album\n"${song.album}".',
+      badge: 'SONG FOR YOU',
+      title: song.title.toUpperCase(),
+      subtitle: '${song.artist} • ${song.album}',
       imageUrl: song.artworkUrl,
       onListenNow: () {
         if (song.isRemote) {
@@ -802,8 +768,8 @@ _FeaturedHeroData _pickFeaturedHero({
           MaterialPageRoute<void>(
             builder: (BuildContext context) => _PopularTracksScreen(
               controller: controller,
-              title: song.artist.toUpperCase(),
-              songs: mayYouLike,
+              title: 'SONGS FOR YOU',
+              songs: personalizedSongs,
             ),
           ),
         );
@@ -1071,7 +1037,7 @@ class _KineticHeroCard extends StatelessWidget {
                                 ),
                               ),
                               child: Text(
-                                'DETAILS',
+                                'SHOW DETAILS',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: Theme.of(context).textTheme.labelLarge
@@ -2973,219 +2939,401 @@ class _SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 28),
-      children: <Widget>[
-        _SectionHeader(title: 'Appearance'),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
+    const Color pageTop = Color(0xFF210A03);
+    const Color pageBottom = Color(0xFF100402);
+    const Color card = Color(0xFF2A1007);
+    const Color cardEdge = Color(0xFF3A170C);
+    const Color titleColor = Color(0xFFFFE6D5);
+    const Color subtitleColor = Color(0xFFC89373);
+    const Color accent = Color(0xFFFF8A2A);
+
+    final int crossfadeSeconds = controller.settings.crossfadeSeconds;
+    final bool gapless = controller.settings.gaplessPlayback;
+
+    Future<void> pickCrossfade() async {
+      final int? selected = await showModalBottomSheet<int>(
+        context: context,
+        backgroundColor: const Color(0xFF1C0904),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        builder: (BuildContext context) {
+          const List<int> options = <int>[0, 3, 5, 7];
+          return SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    'Crossfade',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: titleColor,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ...options.map((int value) {
+                    final bool active = value == crossfadeSeconds;
+                    return ListTile(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      onTap: () => Navigator.of(context).pop(value),
+                      title: Text(
+                        value == 0 ? 'Off' : '${value}s',
+                        style: TextStyle(
+                          color: active ? accent : titleColor,
+                          fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                      ),
+                      trailing: active
+                          ? const Icon(Icons.check_rounded, color: accent)
+                          : null,
+                    );
+                  }),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+      if (selected != null) {
+        await controller.setCrossfadeSeconds(selected);
+      }
+    }
+
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: <Color>[pageTop, pageBottom],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+      ),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const CircleAvatar(
+                radius: 14,
+                backgroundColor: Color(0xFF4F220D),
+                child: Icon(Icons.music_note_rounded, color: accent, size: 16),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'PULSE',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: titleColor,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1,
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                onPressed: () {},
+                icon: const Icon(Icons.settings_rounded, color: accent),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Container(
+            decoration: BoxDecoration(
+              color: card,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: cardEdge),
+            ),
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: <Widget>[
+                Container(
+                  width: 86,
+                  height: 86,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF4A1D0E),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(
+                    Icons.account_circle_rounded,
+                    color: Color(0xFFFFC8A1),
+                    size: 66,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        'PREMIUM SUBSCRIBER',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: subtitleColor,
+                          letterSpacing: 2,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'ALEX RIVERS',
+                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          color: titleColor,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'alex.rivers@pulse.audio',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: subtitleColor,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton(
+                        onPressed: () {},
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: cardEdge),
+                          foregroundColor: titleColor,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 8,
+                          ),
+                          backgroundColor: const Color(0xFF51220E),
+                        ),
+                        child: const Text('EDIT PROFILE'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Container(
+            decoration: BoxDecoration(
+              color: card,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: cardEdge),
+            ),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Row(
                   children: <Widget>[
-                    const Icon(Icons.palette_outlined),
-                    const SizedBox(width: 12),
-                    const Text('Theme mode'),
-                    const Spacer(),
-                    DropdownButton<ThemeMode>(
-                      value: controller.settings.themeMode,
-                      items: const <DropdownMenuItem<ThemeMode>>[
-                        DropdownMenuItem<ThemeMode>(
-                          value: ThemeMode.system,
-                          child: Text('System'),
-                        ),
-                        DropdownMenuItem<ThemeMode>(
-                          value: ThemeMode.light,
-                          child: Text('Light'),
-                        ),
-                        DropdownMenuItem<ThemeMode>(
-                          value: ThemeMode.dark,
-                          child: Text('Dark'),
-                        ),
-                      ],
-                      onChanged: (ThemeMode? value) {
-                        if (value != null) {
-                          controller.setThemeMode(value);
-                        }
-                      },
+                    const Icon(Icons.person_outline_rounded, color: subtitleColor),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Account',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: titleColor,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                SwitchListTile(
-                  value: controller.settings.denseLibrary,
-                  onChanged: controller.setDenseLibrary,
-                  title: const Text('Dense lists'),
-                  contentPadding: EdgeInsets.zero,
+                const SizedBox(height: 14),
+                _ProfileRow(
+                  title: 'Subscription Plan',
+                  subtitle: 'Your current billing cycle ends Oct 12',
+                  trailing: 'Ultra High-Fi',
                 ),
-                SwitchListTile(
-                  value: controller.settings.useGridView,
-                  onChanged: controller.setGridView,
-                  title: const Text('Prefer grid in library'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 20),
-        _SectionHeader(title: 'Playback'),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  'Playback rate ${controller.settings.playbackRate.toStringAsFixed(2)}x',
-                ),
-                Slider(
-                  value: controller.settings.playbackRate,
-                  min: 0.5,
-                  max: 1.5,
-                  divisions: 10,
-                  onChanged: controller.setPlaybackRate,
-                ),
-                SwitchListTile(
-                  value: controller.settings.smartQueueEnabled,
-                  onChanged: controller.setSmartQueueEnabled,
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Smart queue autoplay'),
-                  subtitle: const Text(
-                    'Predict and append the next songs automatically.',
-                  ),
+                const Divider(color: cardEdge, height: 20),
+                _ProfileRow(
+                  title: 'Payment Method',
+                  subtitle: 'Default card for renewals',
+                  trailing: '• • • •  4421',
                 ),
               ],
             ),
           ),
-        ),
-        const SizedBox(height: 20),
-        _SectionHeader(title: 'YouTube Music'),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
+          const SizedBox(height: 14),
+          Container(
+            decoration: BoxDecoration(
+              color: card,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: cardEdge),
+            ),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    const Icon(Icons.slow_motion_video_rounded, color: subtitleColor),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Playback',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: titleColor,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(
-                    controller.hasYtMusicAuth
-                        ? Icons.verified_user_rounded
-                        : Icons.cloud_off_rounded,
-                  ),
                   title: Text(
-                    controller.hasYtMusicAuth
-                        ? 'Personalized YT Music enabled'
-                        : 'Using anonymous YT Music',
+                    'Crossfade',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: titleColor,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   subtitle: Text(
-                    controller.hasYtMusicAuth
-                        ? 'Home shelves and radio can use your real YouTube Music account context.'
-                        : 'Paste browser request headers to get recommendations closer to your real YT Music home.',
+                    'Smooth transition between tracks',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: subtitleColor,
+                    ),
                   ),
-                ),
-                if (controller.ytMusicAuthError != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
+                  trailing: GestureDetector(
+                    onTap: pickCrossfade,
                     child: Text(
-                      controller.ytMusicAuthError!,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.error,
+                      crossfadeSeconds == 0 ? 'Off' : '${crossfadeSeconds}s',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: accent,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
                   ),
-                Text(
-                  'Paste copied request headers from a logged-in `music.youtube.com` request. They are stored locally on this device.',
-                  style: Theme.of(context).textTheme.bodySmall,
+                  onTap: pickCrossfade,
                 ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: <Widget>[
-                    FilledButton.icon(
-                      onPressed: () =>
-                          _showYtMusicAuthDialog(context, controller),
-                      icon: const Icon(Icons.vpn_key_rounded),
-                      label: Text(
-                        controller.hasYtMusicAuth
-                            ? 'Update headers'
-                            : 'Add headers',
-                      ),
+                const Divider(color: cardEdge, height: 10),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    'Gapless Playback',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: titleColor,
+                      fontWeight: FontWeight.w700,
                     ),
-                    if (controller.hasYtMusicAuth)
-                      OutlinedButton.icon(
-                        onPressed: controller.clearYtMusicAuth,
-                        icon: const Icon(Icons.delete_outline_rounded),
-                        label: const Text('Clear headers'),
-                      ),
-                  ],
+                  ),
+                  subtitle: Text(
+                    'Remove silence between album tracks',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: subtitleColor,
+                    ),
+                  ),
+                  trailing: Switch(
+                    value: gapless,
+                    activeThumbColor: accent,
+                    activeTrackColor: const Color(0xFF9D4D18),
+                    inactiveThumbColor: const Color(0xFFD8A98A),
+                    inactiveTrackColor: const Color(0xFF5C2A17),
+                    onChanged: controller.setGaplessPlayback,
+                  ),
                 ),
               ],
             ),
           ),
-        ),
-        const SizedBox(height: 20),
-        _SectionHeader(title: 'Library Sources'),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
+          const SizedBox(height: 14),
+          Container(
+            decoration: BoxDecoration(
+              color: card,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: cardEdge),
+            ),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: <Widget>[
-                    FilledButton.icon(
-                      onPressed: controller.importFiles,
-                      icon: const Icon(Icons.audio_file_rounded),
-                      label: const Text('Import files'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: controller.importFolder,
-                      icon: const Icon(Icons.folder_open_rounded),
-                      label: const Text('Import folder'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: controller.rescanLibrary,
-                      icon: const Icon(Icons.refresh_rounded),
-                      label: const Text('Rescan'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                if (controller.sources.isEmpty)
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text('No import sources saved yet.'),
-                  ),
-                ...controller.sources.map(
-                  (String source) => ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.folder_copy_outlined),
-                    title: Text(source),
-                    trailing: IconButton(
-                      onPressed: () => controller.removeSource(source),
-                      icon: const Icon(Icons.delete_outline_rounded),
-                    ),
+                Text(
+                  'Pulse Audio v4.2.1-stable',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: subtitleColor,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: controller.clearLibrary,
-                    icon: const Icon(Icons.delete_sweep_rounded),
-                    label: const Text('Clear library'),
+                const SizedBox(height: 2),
+                Text(
+                  'Proudly built for music enthusiasts.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: subtitleColor.withValues(alpha: 0.8),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'PRIVACY      TERMS      CREDITS',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: subtitleColor,
+                    letterSpacing: 1.4,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 22),
+          Center(
+            child: OutlinedButton(
+              onPressed: () {},
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(220, 42),
+                side: const BorderSide(color: cardEdge),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                foregroundColor: accent,
+              ),
+              child: const Text('SIGN OUT OF PULSE'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileRow extends StatelessWidget {
+  const _ProfileRow({
+    required this.title,
+    required this.subtitle,
+    required this.trailing,
+  });
+
+  final String title;
+  final String subtitle;
+  final String trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    const Color titleColor = Color(0xFFFFE6D5);
+    const Color subtitleColor = Color(0xFFC89373);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: titleColor,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: subtitleColor,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(
+            trailing,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: titleColor,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ),
@@ -4520,7 +4668,7 @@ class _MiniPlayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final LibrarySong? song = controller.currentSong;
+    final LibrarySong? song = controller.miniPlayerSong;
     if (song == null) {
       return const SizedBox.shrink();
     }
@@ -4911,80 +5059,6 @@ Future<void> _showAddToPlaylistDialog(
       );
     },
   );
-}
-
-Future<void> _showYtMusicAuthDialog(
-  BuildContext context,
-  OuterTuneController controller,
-) async {
-  final TextEditingController input = TextEditingController(
-    text: controller.settings.ytMusicAuthJson ?? '',
-  );
-  final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
-
-  await showDialog<void>(
-    context: context,
-    builder: (BuildContext dialogContext) {
-      return AlertDialog(
-        title: const Text('YouTube Music headers'),
-        content: SizedBox(
-          width: 560,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                'Paste either the copied raw request headers from a logged-in `music.youtube.com` request or the saved JSON header object.',
-                style: Theme.of(dialogContext).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: input,
-                minLines: 8,
-                maxLines: 16,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  hintText:
-                      'cookie: ...\nx-goog-authuser: 0\nauthorization: SAPISIDHASH ...',
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              try {
-                await controller.updateYtMusicAuth(input.text);
-                if (!dialogContext.mounted) {
-                  return;
-                }
-                Navigator.of(dialogContext).pop();
-                messenger.showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      controller.hasYtMusicAuth
-                          ? 'YouTube Music personalization updated.'
-                          : 'YouTube Music personalization cleared.',
-                    ),
-                  ),
-                );
-              } catch (error) {
-                messenger.showSnackBar(SnackBar(content: Text('$error')));
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      );
-    },
-  );
-
-  input.dispose();
 }
 
 List<Color> _gradientFor(String seed, ColorScheme scheme) {

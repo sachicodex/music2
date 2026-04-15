@@ -5,7 +5,7 @@ enum AppDestination {
   library('Library', Icons.library_music_rounded, Icons.library_music_outlined),
   search('Search', Icons.manage_search_rounded, Icons.search_rounded),
   history('History', Icons.history_rounded, Icons.history_toggle_off_rounded),
-  settings('Settings', Icons.tune_rounded, Icons.tune_outlined);
+  settings('Profile', Icons.account_circle_rounded, Icons.person_outline_rounded);
 
   const AppDestination(this.label, this.selectedIcon, this.unselectedIcon);
 
@@ -34,6 +34,8 @@ class AppSettings {
     this.useGridView = true,
     this.playbackRate = 1.0,
     this.smartQueueEnabled = true,
+    this.crossfadeSeconds = 0,
+    this.gaplessPlayback = true,
     this.ytMusicAuthJson,
   });
 
@@ -42,6 +44,8 @@ class AppSettings {
   final bool useGridView;
   final double playbackRate;
   final bool smartQueueEnabled;
+  final int crossfadeSeconds;
+  final bool gaplessPlayback;
   final String? ytMusicAuthJson;
 
   ThemeMode get themeMode {
@@ -57,6 +61,8 @@ class AppSettings {
     bool? useGridView,
     double? playbackRate,
     bool? smartQueueEnabled,
+    int? crossfadeSeconds,
+    bool? gaplessPlayback,
     String? ytMusicAuthJson,
   }) {
     return AppSettings(
@@ -65,6 +71,8 @@ class AppSettings {
       useGridView: useGridView ?? this.useGridView,
       playbackRate: playbackRate ?? this.playbackRate,
       smartQueueEnabled: smartQueueEnabled ?? this.smartQueueEnabled,
+      crossfadeSeconds: crossfadeSeconds ?? this.crossfadeSeconds,
+      gaplessPlayback: gaplessPlayback ?? this.gaplessPlayback,
       ytMusicAuthJson: ytMusicAuthJson ?? this.ytMusicAuthJson,
     );
   }
@@ -76,6 +84,8 @@ class AppSettings {
       'useGridView': useGridView,
       'playbackRate': playbackRate,
       'smartQueueEnabled': smartQueueEnabled,
+      'crossfadeSeconds': crossfadeSeconds,
+      'gaplessPlayback': gaplessPlayback,
       'ytMusicAuthJson': ytMusicAuthJson,
     };
   }
@@ -91,6 +101,8 @@ class AppSettings {
       useGridView: json['useGridView'] as bool? ?? true,
       playbackRate: (json['playbackRate'] as num?)?.toDouble() ?? 1.0,
       smartQueueEnabled: json['smartQueueEnabled'] as bool? ?? true,
+      crossfadeSeconds: (json['crossfadeSeconds'] as num?)?.toInt() ?? 0,
+      gaplessPlayback: json['gaplessPlayback'] as bool? ?? true,
       ytMusicAuthJson: json['ytMusicAuthJson'] as String?,
     );
   }
