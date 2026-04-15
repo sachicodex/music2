@@ -1592,6 +1592,7 @@ class OuterTuneController extends ChangeNotifier {
   List<_RecommendationQuery> _buildPredictionQueries(LibrarySong anchor) {
     final List<_TasteSignal> artists = _preferenceArtists();
     final List<_LanguageSignal> languages = _preferredLanguagesFromValidHistory();
+    final _SessionContext session = _sessionContext();
     final List<_RecommendationQuery> queries = <_RecommendationQuery>[
       _RecommendationQuery(
         title: 'Related to ${anchor.title}',
@@ -1642,6 +1643,14 @@ class OuterTuneController extends ChangeNotifier {
         ),
       );
     }
+    queries.add(
+      _RecommendationQuery(
+        title: '${session.label} flow',
+        subtitle: 'Auto queue',
+        query: '${anchor.artist} ${session.query} songs',
+        anchor: anchor,
+      ),
+    );
 
     queries.add(
       _RecommendationQuery(
@@ -1699,10 +1708,15 @@ class OuterTuneController extends ChangeNotifier {
     double score = song.playCount.toDouble();
     final String title = _normalizeToken(song.title);
     final String artist = _normalizeToken(song.artist);
+    final String language = _detectSongLanguage(song);
+    final _SessionContext session = _sessionContext();
+    final Set<String> recentQueueArtists = _recentQueueArtistKeys();
+    final Set<String> recentQueueSongs = _recentQueueSongKeys();
 
     if (anchor != null) {
       final String anchorTitle = _normalizeToken(anchor.title);
       final String anchorArtist = _normalizeToken(anchor.artist);
+      final String anchorLanguage = _detectSongLanguage(anchor);
       if (artist == anchorArtist) {
         score += 9;
       } else if (artist.contains(anchorArtist) ||
@@ -1713,6 +1727,10 @@ class OuterTuneController extends ChangeNotifier {
       if (title.contains(anchorTitle) || anchorTitle.contains(title)) {
         score -= 6;
       }
+      if (language == anchorLanguage) {
+        score += 2.4;
+      }
+      score += _vibeSimilarityScore(anchor, song);
     }
 
     for (final _TasteSignal taste in _preferenceArtists().take(4)) {
@@ -1732,11 +1750,200 @@ class OuterTuneController extends ChangeNotifier {
       }
     }
 
+    final double completionAffinity = _completionAffinity(song.id);
+    score += completionAffinity * 8.5;
+    if (completionAffinity < 0.25) {
+      score -= 5.5;
+    }
+
+    // Psychology-inspired balance:
+    // - Familiarity (known artists/songs) builds comfort.
+    // - Novelty (new but adjacent songs) prevents boredom.
+    score += _noveltyBalanceBoost(song, completionAffinity: completionAffinity);
+
+    // Avoid fatigue from repeating same artist/song too tightly in queue.
+    if (recentQueueArtists.contains(artist)) {
+      score -= 7.2;
+    }
+    if (recentQueueSongs.contains(_songIdentityKey(song))) {
+      score -= 12;
+    }
+
+    // Session-aware mood tuning (time/day context) similar to autoplay systems.
+    if (_vibeTokens(song).contains(session.vibeToken)) {
+      score += 2.6;
+    }
+
     if (song.durationMs > 0) {
-      score += 0.2;
+      score += 0.4;
+      score += _durationContinuityBoost(song, anchor: anchor);
     }
 
     return score;
+  }
+
+  double _completionAffinity(String songId) {
+    double total = 0;
+    double weighted = 0;
+    for (final PlaybackEntry entry in _history.take(220)) {
+      if (entry.songId != songId) {
+        continue;
+      }
+      final double weight = entry.listenedToEnd ? 1.4 : 1;
+      total += weight;
+      weighted += weight * entry.completionRatio.clamp(0, 1);
+    }
+    if (total <= 0) {
+      return 0.5;
+    }
+    return (weighted / total).clamp(0, 1);
+  }
+
+  double _noveltyBalanceBoost(
+    LibrarySong song, {
+    required double completionAffinity,
+  }) {
+    final bool known = song.playCount > 0 || completionAffinity >= 0.65;
+    final bool fresh = song.playCount == 0 && completionAffinity < 0.45;
+    final double familiarityNeed = _familiarityNeed();
+    if (known) {
+      return 3.0 * familiarityNeed;
+    }
+    if (fresh) {
+      return 3.0 * (1 - familiarityNeed);
+    }
+    return 1.2;
+  }
+
+  double _familiarityNeed() {
+    final List<PlaybackEntry> recent = _history.take(30).toList(growable: false);
+    if (recent.isEmpty) {
+      return 0.55;
+    }
+    final double avgCompletion =
+        recent.fold<double>(0, (double sum, PlaybackEntry e) => sum + e.completionRatio) /
+        recent.length;
+    // If recent completion is low, lean more familiar.
+    return (0.75 - (avgCompletion * 0.35)).clamp(0.35, 0.8);
+  }
+
+  Set<String> _recentQueueArtistKeys() {
+    final int start = math.max(0, _queueIndex - 3);
+    final int end = math.min(_queueSongIds.length, _queueIndex + 3);
+    final Set<String> result = <String>{};
+    for (int i = start; i < end; i += 1) {
+      final LibrarySong? song = songById(_queueSongIds[i]);
+      if (song == null) {
+        continue;
+      }
+      result.add(_normalizeToken(song.artist));
+    }
+    return result;
+  }
+
+  Set<String> _recentQueueSongKeys() {
+    final int start = math.max(0, _queueIndex - 3);
+    final int end = math.min(_queueSongIds.length, _queueIndex + 3);
+    final Set<String> result = <String>{};
+    for (int i = start; i < end; i += 1) {
+      final LibrarySong? song = songById(_queueSongIds[i]);
+      if (song == null) {
+        continue;
+      }
+      result.add(_songIdentityKey(song));
+    }
+    return result;
+  }
+
+  double _vibeSimilarityScore(LibrarySong anchor, LibrarySong candidate) {
+    final Set<String> left = _vibeTokens(anchor);
+    final Set<String> right = _vibeTokens(candidate);
+    if (left.isEmpty || right.isEmpty) {
+      return 0;
+    }
+    final int overlap = left.intersection(right).length;
+    return overlap * 1.7;
+  }
+
+  Set<String> _vibeTokens(LibrarySong song) {
+    final String text =
+        '${song.title} ${song.artist} ${song.album} ${song.genre ?? ''}'.toLowerCase();
+    const Map<String, List<String>> map = <String, List<String>>{
+      'chill': <String>['chill', 'calm', 'ambient', 'lofi', 'acoustic', 'soft'],
+      'focus': <String>['focus', 'study', 'instrumental', 'piano'],
+      'energy': <String>['party', 'dance', 'edm', 'remix', 'club', 'hype'],
+      'sad': <String>['sad', 'heartbreak', 'broken', 'lonely'],
+      'romance': <String>['love', 'romance', 'feel', 'kiss'],
+      'devotional': <String>['worship', 'devotional', 'spiritual', 'bhakti'],
+    };
+    final Set<String> result = <String>{};
+    for (final MapEntry<String, List<String>> entry in map.entries) {
+      if (entry.value.any(text.contains)) {
+        result.add(entry.key);
+      }
+    }
+    return result;
+  }
+
+  double _durationContinuityBoost(LibrarySong song, {LibrarySong? anchor}) {
+    final int seconds = song.duration.inSeconds;
+    if (seconds <= 0) {
+      return 0;
+    }
+    if (anchor == null || anchor.duration.inSeconds <= 0) {
+      return (seconds >= 120 && seconds <= 300) ? 1.2 : 0.2;
+    }
+    final int delta = (seconds - anchor.duration.inSeconds).abs();
+    if (delta <= 40) {
+      return 2.1;
+    }
+    if (delta <= 90) {
+      return 1.1;
+    }
+    if (delta > 220) {
+      return -0.8;
+    }
+    return 0;
+  }
+
+  _SessionContext _sessionContext() {
+    final DateTime now = DateTime.now();
+    final int hour = now.hour;
+    final bool weekend =
+        now.weekday == DateTime.saturday || now.weekday == DateTime.sunday;
+    if (hour < 6) {
+      return const _SessionContext(
+        label: 'Late night',
+        query: 'chill night',
+        vibeToken: 'chill',
+      );
+    }
+    if (hour < 11) {
+      return const _SessionContext(
+        label: 'Morning',
+        query: 'fresh upbeat',
+        vibeToken: 'focus',
+      );
+    }
+    if (hour < 17) {
+      return const _SessionContext(
+        label: 'Daytime',
+        query: 'focus vibe',
+        vibeToken: 'focus',
+      );
+    }
+    if (hour < 22) {
+      return _SessionContext(
+        label: weekend ? 'Weekend evening' : 'Evening',
+        query: weekend ? 'party energy' : 'chill evening',
+        vibeToken: weekend ? 'energy' : 'chill',
+      );
+    }
+    return const _SessionContext(
+      label: 'Night',
+      query: 'mellow songs',
+      vibeToken: 'chill',
+    );
   }
 
   List<_TasteSignal> _preferenceArtists() {
@@ -2906,6 +3113,18 @@ class _LanguageSignal {
   final String label;
   final String queryToken;
   final double score;
+}
+
+class _SessionContext {
+  const _SessionContext({
+    required this.label,
+    required this.query,
+    required this.vibeToken,
+  });
+
+  final String label;
+  final String query;
+  final String vibeToken;
 }
 
 class _ScoredSong {
