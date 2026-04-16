@@ -103,7 +103,7 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
             child: _buildPage(context, controller),
           ),
         ),
-        if (controller.currentSong != null)
+        if (controller.miniPlayerSong != null)
           _MiniPlayer(
             controller: controller,
             onOpenPlayer: () => _openPlayer(context, controller),
@@ -4682,6 +4682,8 @@ class _MiniPlayer extends StatelessWidget {
     final double safeProgress = progress.isFinite
         ? progress.clamp(0.0, 1.0)
         : 0.0;
+    final bool showPauseIcon =
+        controller.isPlaying && !controller.miniPlayerSelectionLoading;
 
     const Color shell = Color(0xFF100502);
     const Color card = Color(0xFF2A1209);
@@ -4725,6 +4727,17 @@ class _MiniPlayer extends StatelessWidget {
                         ? Image.network(
                             song.artworkUrl!,
                             fit: BoxFit.cover,
+                            loadingBuilder:
+                                (
+                                  BuildContext context,
+                                  Widget child,
+                                  ImageChunkEvent? loadingProgress,
+                                ) {
+                                  if (loadingProgress == null) {
+                                    return child;
+                                  }
+                                  return const _MiniArtworkFallback();
+                                },
                             errorBuilder:
                                 (
                                   BuildContext context,
@@ -4780,13 +4793,13 @@ class _MiniPlayer extends StatelessWidget {
                                               color: accent,
                                             ),
                                             child: Icon(
-                                              controller.isPlaying
+                                              showPauseIcon
                                                   ? Icons.pause_rounded
                                                   : Icons.play_arrow_rounded,
                                               color: Colors.black,
                                               size: compact
                                                   ? 22
-                                                  : controller.isPlaying
+                                                  : showPauseIcon
                                                   ? 24
                                                   : 28,
                                             ),

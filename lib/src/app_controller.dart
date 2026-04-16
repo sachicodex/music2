@@ -144,7 +144,15 @@ class OuterTuneController extends ChangeNotifier {
     return songById(_queueSongIds[_queueIndex]);
   }
 
-  LibrarySong? get miniPlayerSong => currentSong ?? _pendingSelectionSong;
+  LibrarySong? get miniPlayerSong => _pendingSelectionSong ?? currentSong;
+  bool get miniPlayerSelectionLoading {
+    final LibrarySong? pending = _pendingSelectionSong;
+    if (pending == null) {
+      return false;
+    }
+    final LibrarySong? active = currentSong;
+    return active == null || active.id != pending.id;
+  }
 
   bool isSmartQueueSong(String songId) => _smartQueueSongIds.contains(songId);
 
@@ -2123,6 +2131,7 @@ class OuterTuneController extends ChangeNotifier {
     _pendingSelectionSong = song;
     notifyListeners();
     try {
+      await _player.stop();
       final LibrarySong prepared = await _preparePlayableSong(song);
       await _openPreparedSong(prepared, label: 'YouTube');
     } catch (_) {
@@ -2213,7 +2222,8 @@ class OuterTuneController extends ChangeNotifier {
           _queueSongIds.isEmpty ? 0 : _queueSongIds.length - 1,
         );
         final LibrarySong? song = currentSong;
-        if (song != null) {
+        final LibrarySong? pending = _pendingSelectionSong;
+        if (song != null && (pending == null || pending.id == song.id)) {
           _pendingSelectionSong = null;
         }
         if (song != null && song.id != _lastTrackedSongId) {
@@ -2560,6 +2570,7 @@ class OuterTuneController extends ChangeNotifier {
     _pendingSelectionSong = songs[safeIndex];
     notifyListeners();
     try {
+      await _player.stop();
       final List<LibrarySong> preparedSongs = <LibrarySong>[];
       for (final LibrarySong song in songs) {
         preparedSongs.add(await _preparePlayableSong(song));
