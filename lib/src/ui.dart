@@ -247,10 +247,6 @@ class _HomeScreenState extends State<_HomeScreen> {
         .take(4)
         .toList(growable: false);
 
-    final List<LibrarySong> newReleasesAll = _newReleaseSongs(controller);
-    final List<LibrarySong> newReleases = newReleasesAll
-        .take(4)
-        .toList(growable: false);
     final _FeaturedHeroData featured = _pickFeaturedHero(
       context: context,
       controller: controller,
@@ -350,40 +346,6 @@ class _HomeScreenState extends State<_HomeScreen> {
                   } else {
                     controller.playSong(song, label: 'Jump back in');
                   }
-                },
-              ),
-            ],
-            if (newReleases.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 18),
-              _KineticSectionHeader(
-                title: 'NEW RELEASES',
-                onViewAll: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (BuildContext context) => _NewReleasesScreen(
-                        controller: controller,
-                        songs: newReleasesAll,
-                      ),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 10),
-              _ProgressiveListReveal(
-                itemCount: newReleases.length,
-                itemBuilder: (BuildContext context, int index) {
-                  final LibrarySong song = newReleases[index];
-                  return _KineticPopularTrackTile(
-                    index: index + 1,
-                    song: song,
-                    onTap: () {
-                      if (song.isRemote) {
-                        controller.playOnlineSong(song);
-                      } else {
-                        controller.playSong(song, label: 'New releases');
-                      }
-                    },
-                  );
                 },
               ),
             ],
@@ -495,19 +457,6 @@ HomeFeedSection? _pickSingleArtistSection(List<HomeFeedSection> sections) {
     return a.title.toLowerCase().compareTo(b.title.toLowerCase());
   });
   return artistSections.first;
-}
-
-List<LibrarySong> _newReleaseSongs(OuterTuneController controller) {
-  final List<LibrarySong> sorted = List<LibrarySong>.from(
-    controller.recentlyAddedSongs,
-  )..sort((LibrarySong a, LibrarySong b) => b.addedAt.compareTo(a.addedAt));
-
-  final Set<String> seen = <String>{};
-  return <LibrarySong>[
-    for (final LibrarySong song in sorted)
-      if (seen.add('${song.artist.toLowerCase()}::${song.title.toLowerCase()}'))
-        song,
-  ];
 }
 
 class _SearchGenreShelf {
@@ -1877,65 +1826,6 @@ class _KineticHeroSkeleton extends StatelessWidget {
             ),
           );
         },
-      ),
-    );
-  }
-}
-
-class _NewReleasesScreen extends StatelessWidget {
-  const _NewReleasesScreen({required this.controller, required this.songs});
-
-  final OuterTuneController controller;
-  final List<LibrarySong> songs;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0B0A0C),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(
-                    Icons.arrow_back_rounded,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  'NEW RELEASES',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.1,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            _ProgressiveListReveal(
-              itemCount: songs.length,
-              itemBuilder: (BuildContext context, int index) {
-                final LibrarySong song = songs[index];
-                return _KineticPopularTrackTile(
-                  index: index + 1,
-                  song: song,
-                  onTap: () {
-                    if (song.isRemote) {
-                      controller.playOnlineSong(song);
-                    } else {
-                      controller.playSong(song, label: 'New releases');
-                    }
-                  },
-                );
-              },
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -3639,7 +3529,8 @@ class _PlayerScreenState extends State<_PlayerScreen> {
     return AnimatedBuilder(
       animation: controller,
       builder: (BuildContext context, _) {
-        final LibrarySong? song = controller.currentSong;
+        final LibrarySong? song =
+            controller.miniPlayerSong ?? controller.currentSong;
         if (song == null) {
           return const Scaffold(
             body: Center(child: Text('Nothing is playing.')),
