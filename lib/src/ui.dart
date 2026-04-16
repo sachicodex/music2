@@ -84,7 +84,9 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
         return;
       }
       unawaited(
-        context.read<OuterTuneController>().ensureNotificationPermissionIfNeeded(),
+        context
+            .read<OuterTuneController>()
+            .ensureNotificationPermissionIfNeeded(),
       );
     });
   }
@@ -353,117 +355,121 @@ class _HomeScreenState extends State<_HomeScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
           children: <Widget>[
-          const SizedBox(height: 6),
-          _KineticTopBar(onOpenSearch: widget.onOpenSearch),
-          const SizedBox(height: 14),
-          if (homeFeedPending)
-            const _KineticHeroSkeleton()
-          else
-            _KineticHeroCard(
-              badge: featured.badge,
-              title: featured.title,
-              subtitle: featured.subtitle,
-              imageUrl: featured.imageUrl,
-              onListenNow: featured.onListenNow,
-              onDetails: featured.onDetails,
-            ),
-          const SizedBox(height: 18),
-          _KineticSectionHeader(
-            title: 'MAY YOU LIKE',
-            onViewAll: () {
-              if (mayYouLikeFull.isEmpty) {
-                widget.onOpenSearch();
-                return;
-              }
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (BuildContext context) =>
-                      _MayYouLikeScreen(controller: controller),
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 10),
-          if (homeFeedPending)
-            const _KineticListSkeleton(count: 4)
-          else
-            Column(
-              children: List<Widget>.generate(mayYouLike.length, (int index) {
-                final LibrarySong song = mayYouLike[index];
-                return _KineticPopularTrackTile(
-                  index: index + 1,
-                  song: song,
-                  onTap: () {
-                    if (song.isRemote) {
-                      controller.playOnlineSong(song);
-                    } else {
-                      controller.playSong(song, label: 'May you like');
-                    }
-                  },
-                );
-              }),
-            ),
-          if (jumpBackIn.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 6),
+            _KineticTopBar(onOpenSearch: widget.onOpenSearch),
+            const SizedBox(height: 14),
+            if (homeFeedPending)
+              const _KineticHeroSkeleton()
+            else
+              _KineticHeroCard(
+                badge: featured.badge,
+                title: featured.title,
+                subtitle: featured.subtitle,
+                imageUrl: featured.imageUrl,
+                onListenNow: featured.onListenNow,
+                onDetails: featured.onDetails,
+              ),
             const SizedBox(height: 18),
             _KineticSectionHeader(
-              title: 'JUMP BACK IN',
+              title: 'MAY YOU LIKE',
               onViewAll: () {
+                if (mayYouLikeFull.isEmpty) {
+                  widget.onOpenSearch();
+                  return;
+                }
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(
                     builder: (BuildContext context) =>
-                        _RecentPlaysScreen(controller: controller),
+                        _MayYouLikeScreen(controller: controller),
                   ),
                 );
               },
             ),
             const SizedBox(height: 10),
-            _KineticJumpBackGrid(
-              items: jumpBackIn,
-              onTapItem: (LibrarySong song) {
-                if (song.isRemote) {
-                  controller.playOnlineSong(song);
-                } else {
-                  controller.playSong(song, label: 'Jump back in');
-                }
-              },
-            ),
-          ],
-          if (newReleases.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 18),
-            _KineticSectionHeader(
-              title: 'NEW RELEASES',
-              onViewAll: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (BuildContext context) => _NewReleasesScreen(
-                      controller: controller,
-                      songs: newReleasesAll,
+            if (homeFeedPending)
+              const _KineticListSkeleton(count: 4)
+            else
+              Column(
+                children: List<Widget>.generate(mayYouLike.length, (int index) {
+                  final LibrarySong song = mayYouLike[index];
+                  return _KineticPopularTrackTile(
+                    index: index + 1,
+                    song: song,
+                    onTap: () {
+                      if (song.isRemote) {
+                        controller.playOnlineSong(song);
+                      } else {
+                        controller.playSong(song, label: 'May you like');
+                      }
+                    },
+                  );
+                }),
+              ),
+            if (jumpBackIn.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 18),
+              _KineticSectionHeader(
+                title: 'JUMP BACK IN',
+                onViewAll: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (BuildContext context) =>
+                          _RecentPlaysScreen(controller: controller),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
+              const SizedBox(height: 10),
+              _KineticJumpBackGrid(
+                items: jumpBackIn,
+                onTapItem: (LibrarySong song) {
+                  if (song.isRemote) {
+                    controller.playOnlineSong(song);
+                  } else {
+                    controller.playSong(song, label: 'Jump back in');
+                  }
+                },
+              ),
+            ],
+            if (newReleases.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 18),
+              _KineticSectionHeader(
+                title: 'NEW RELEASES',
+                onViewAll: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (BuildContext context) => _NewReleasesScreen(
+                        controller: controller,
+                        songs: newReleasesAll,
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 10),
+              _ProgressiveListReveal(
+                itemCount: newReleases.length,
+                itemBuilder: (BuildContext context, int index) {
+                  final LibrarySong song = newReleases[index];
+                  return _KineticPopularTrackTile(
+                    index: index + 1,
+                    song: song,
+                    onTap: () {
+                      if (song.isRemote) {
+                        controller.playOnlineSong(song);
+                      } else {
+                        controller.playSong(song, label: 'New releases');
+                      }
+                    },
+                  );
+                },
+              ),
+            ],
+            // Infinite feed: render remaining shelves as scroll continues.
+            ..._buildMoreShelves(
+              context: context,
+              controller: controller,
+              skipCount: 1,
             ),
-            const SizedBox(height: 10),
-            _ProgressiveListReveal(
-              itemCount: newReleases.length,
-              itemBuilder: (BuildContext context, int index) {
-                final LibrarySong song = newReleases[index];
-                return _KineticPopularTrackTile(
-                  index: index + 1,
-                  song: song,
-                  onTap: () {
-                    if (song.isRemote) {
-                      controller.playOnlineSong(song);
-                    } else {
-                      controller.playSong(song, label: 'New releases');
-                    }
-                  },
-                );
-              },
-            ),
-          ],
-          // Infinite feed: render remaining shelves as scroll continues.
-          ..._buildMoreShelves(controller: controller, skipCount: 1),
             if (controller.homeLoading) ...<Widget>[
               const SizedBox(height: 16),
               const Opacity(opacity: 0.8, child: _HomeFeedSkeleton()),
@@ -476,6 +482,7 @@ class _HomeScreenState extends State<_HomeScreen> {
 }
 
 List<Widget> _buildMoreShelves({
+  required BuildContext context,
   required OuterTuneController controller,
   int skipCount = 0,
 }) {
@@ -485,9 +492,20 @@ List<Widget> _buildMoreShelves({
         return key != 'trending now' && key != 'chill rotation';
       })
       .toList(growable: false);
-  if (sections.length <= skipCount) return <Widget>[];
+  final HomeFeedSection? featuredArtistSection = _pickSingleArtistSection(
+    sections,
+  );
+  final List<HomeFeedSection> normalizedSections = sections
+      .where((HomeFeedSection section) {
+        if (_isArtistNamedSection(section)) {
+          return identical(section, featuredArtistSection);
+        }
+        return true;
+      })
+      .toList(growable: false);
+  if (normalizedSections.length <= skipCount) return <Widget>[];
 
-  return sections
+  return normalizedSections
       .skip(skipCount)
       .map((HomeFeedSection section) {
         final List<LibrarySong> songs = section.songs
@@ -500,7 +518,17 @@ List<Widget> _buildMoreShelves({
             children: <Widget>[
               _KineticSectionHeader(
                 title: section.title.toUpperCase(),
-                onViewAll: () {},
+                onViewAll: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (BuildContext context) => _PopularTracksScreen(
+                        controller: controller,
+                        title: section.title.toUpperCase(),
+                        songs: section.songs,
+                      ),
+                    ),
+                  );
+                },
               ),
               const SizedBox(height: 8),
               ...songs.asMap().entries.map((MapEntry<int, LibrarySong> e) {
@@ -522,6 +550,28 @@ List<Widget> _buildMoreShelves({
         );
       })
       .toList(growable: false);
+}
+
+bool _isArtistNamedSection(HomeFeedSection section) {
+  final String title = section.title.trim().toLowerCase();
+  return title.startsWith('from ') && !title.contains('youtube music');
+}
+
+HomeFeedSection? _pickSingleArtistSection(List<HomeFeedSection> sections) {
+  final List<HomeFeedSection> artistSections = sections
+      .where(_isArtistNamedSection)
+      .toList(growable: false);
+  if (artistSections.isEmpty) {
+    return null;
+  }
+  artistSections.sort((HomeFeedSection a, HomeFeedSection b) {
+    final int songCompare = b.songs.length.compareTo(a.songs.length);
+    if (songCompare != 0) {
+      return songCompare;
+    }
+    return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+  });
+  return artistSections.first;
 }
 
 List<LibrarySong> _newReleaseSongs(OuterTuneController controller) {
@@ -645,6 +695,56 @@ List<LibrarySong> _buildMayYouLike(List<HomeFeedSection> feed) {
   return ranked;
 }
 
+List<LibrarySong> _buildMonthlyTrendingNow({
+  required OuterTuneController controller,
+  required List<LibrarySong> fallback,
+}) {
+  final List<LibrarySong> seed = controller.trendingNowSongs.isNotEmpty
+      ? List<LibrarySong>.from(controller.trendingNowSongs)
+      : List<LibrarySong>.from(fallback);
+  final Set<String> seen = <String>{};
+  final List<LibrarySong> unique = <LibrarySong>[
+    for (final LibrarySong song in seed)
+      if (seen.add('${song.artist.toLowerCase()}::${song.title.toLowerCase()}'))
+        song,
+  ];
+
+  final String region = controller.trendingNowRegionLabel.toLowerCase();
+  final List<LibrarySong> ranked = List<LibrarySong>.from(unique);
+  ranked.sort((LibrarySong a, LibrarySong b) {
+    final int left = _monthlyTrendingScore(a, region: region);
+    final int right = _monthlyTrendingScore(b, region: region);
+    final int compare = right.compareTo(left);
+    if (compare != 0) {
+      return compare;
+    }
+    return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+  });
+  return ranked;
+}
+
+int _monthlyTrendingScore(LibrarySong song, {required String region}) {
+  int score = 0;
+  final String text = '${song.title} ${song.artist} ${song.album}'
+      .toLowerCase();
+  score += _hasArtwork(song) * 6;
+  score += _durationScore(song) * 2;
+  if (song.playCount > 0) {
+    score += math.min(song.playCount, 24);
+  }
+  if (song.lastPlayedAt != null &&
+      DateTime.now().difference(song.lastPlayedAt!).inDays <= 31) {
+    score += 5;
+  }
+  if (region.isNotEmpty && region != 'your region' && text.contains(region)) {
+    score += 4;
+  }
+  if (text.contains('official') || text.contains('viral')) {
+    score += 2;
+  }
+  return score;
+}
+
 int _hasArtwork(LibrarySong song) {
   return (song.artworkUrl ?? '').trim().isEmpty ? 0 : 1;
 }
@@ -737,14 +837,17 @@ _FeaturedHeroData _pickFeaturedHero({
   required List<LibrarySong> mayYouLike,
 }) {
   final Set<String> seen = <String>{};
-  final List<LibrarySong> personalizedSongs = <LibrarySong>[
-    ...controller.favoriteSongs.take(8),
-    ...controller.topPlayedSongs.take(12),
-    ...mayYouLike,
-  ].where((LibrarySong song) {
-    final String key = '${song.id}|${song.title}|${song.artist}';
-    return seen.add(key);
-  }).toList(growable: false);
+  final List<LibrarySong> personalizedSongs =
+      <LibrarySong>[
+            ...controller.favoriteSongs.take(8),
+            ...controller.topPlayedSongs.take(12),
+            ...mayYouLike,
+          ]
+          .where((LibrarySong song) {
+            final String key = '${song.id}|${song.title}|${song.artist}';
+            return seen.add(key);
+          })
+          .toList(growable: false);
 
   final LibrarySong? songWithArt = personalizedSongs
       .where((LibrarySong s) => (s.artworkUrl ?? '').trim().isNotEmpty)
@@ -820,7 +923,7 @@ class _KineticTopBar extends StatelessWidget {
         ),
         const Spacer(),
         IconButton(
-          onPressed: onOpenSearch,
+          onPressed: () {},
           icon: const Icon(Icons.settings_rounded, color: Colors.white),
         ),
       ],
@@ -1894,8 +1997,8 @@ class _SearchPulseHeader extends StatelessWidget {
         ),
         const Spacer(),
         IconButton(
-          onPressed: onOpenSettings,
           icon: const Icon(Icons.settings_rounded, color: Color(0xFFFF8A2A)),
+          onPressed: () {},
         ),
       ],
     );
@@ -2441,11 +2544,25 @@ class _SearchScreenState extends State<_SearchScreen> {
   final ScrollController _scrollController = ScrollController();
   final List<String> _recentSearches = <String>[];
   Timer? _searchDebounce;
+  bool _requestedTrending = false;
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _requestedTrending) {
+        return;
+      }
+      _requestedTrending = true;
+      final Locale locale = Localizations.localeOf(context);
+      unawaited(
+        widget.controller.loadTrendingNow(
+          languageCode: locale.languageCode,
+          countryCode: locale.countryCode,
+        ),
+      );
+    });
   }
 
   @override
@@ -2596,7 +2713,11 @@ class _SearchScreenState extends State<_SearchScreen> {
         .toList();
     final List<LibrarySong> trendingSongs = _buildMayYouLike(
       widget.controller.homeFeed,
-    ).take(5).toList(growable: false);
+    );
+    final List<LibrarySong> monthlyTrendingSongs = _buildMonthlyTrendingNow(
+      controller: widget.controller,
+      fallback: trendingSongs,
+    ).take(7).toList(growable: false);
     final List<_SearchGenreShelf> browseShelves = _buildSearchGenreShelves(
       widget.controller,
     );
@@ -2729,20 +2850,45 @@ class _SearchScreenState extends State<_SearchScreen> {
             ),
             const SizedBox(height: 34),
             const _SearchSectionTitle('Trending Now'),
+            const SizedBox(height: 6),
+            Text(
+              '${DateFormat('MMMM').format(DateTime.now())} • ${widget.controller.trendingNowRegionLabel}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: const Color(0xFFD1A793),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
             const SizedBox(height: 18),
-            if (trendingSongs.isEmpty)
+            if (monthlyTrendingSongs.isEmpty &&
+                !widget.controller.trendingNowLoading)
               Text(
-                'Play songs to build search recommendations.',
+                'Trending songs are loading for Sri Lanka.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: const Color(0xFFD1A793),
                 ),
               )
             else
-              ...trendingSongs.asMap().entries.map(
+              ...monthlyTrendingSongs.asMap().entries.map(
                 (MapEntry<int, LibrarySong> entry) => _SearchTrendingTile(
                   rank: entry.key + 1,
                   song: entry.value,
                   controller: widget.controller,
+                ),
+              ),
+            if (widget.controller.trendingNowLoading)
+              const Padding(
+                padding: EdgeInsets.only(top: 12),
+                child: _OnlineSongResultsSkeleton(),
+              ),
+            if (widget.controller.trendingNowError != null &&
+                monthlyTrendingSongs.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Text(
+                  widget.controller.trendingNowError!,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: const Color(0xFFFFA27C),
+                  ),
                 ),
               ),
           ] else ...<Widget>[
@@ -2797,9 +2943,9 @@ class _SearchScreenState extends State<_SearchScreen> {
 
 List<LibrarySong> _mergeSearchResults(
   List<LibrarySong> localResults,
-  List<LibrarySong> onlineResults,
-  {required String query}
-) {
+  List<LibrarySong> onlineResults, {
+  required String query,
+}) {
   final List<LibrarySong> merged = <LibrarySong>[];
   final Set<String> seen = <String>{};
 
@@ -2986,7 +3132,9 @@ class _SettingsScreen extends StatelessWidget {
                         value == 0 ? 'Off' : '${value}s',
                         style: TextStyle(
                           color: active ? accent : titleColor,
-                          fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                          fontWeight: active
+                              ? FontWeight.w700
+                              : FontWeight.w500,
                         ),
                       ),
                       trailing: active
@@ -3078,17 +3226,18 @@ class _SettingsScreen extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         'ALEX RIVERS',
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          color: titleColor,
-                          fontWeight: FontWeight.w900,
-                        ),
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(
+                              color: titleColor,
+                              fontWeight: FontWeight.w900,
+                            ),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         'alex.rivers@pulse.audio',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: subtitleColor,
-                        ),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.copyWith(color: subtitleColor),
                       ),
                       const SizedBox(height: 10),
                       OutlinedButton(
@@ -3123,7 +3272,10 @@ class _SettingsScreen extends StatelessWidget {
               children: <Widget>[
                 Row(
                   children: <Widget>[
-                    const Icon(Icons.person_outline_rounded, color: subtitleColor),
+                    const Icon(
+                      Icons.person_outline_rounded,
+                      color: subtitleColor,
+                    ),
                     const SizedBox(width: 10),
                     Text(
                       'Account',
@@ -3162,7 +3314,10 @@ class _SettingsScreen extends StatelessWidget {
               children: <Widget>[
                 Row(
                   children: <Widget>[
-                    const Icon(Icons.slow_motion_video_rounded, color: subtitleColor),
+                    const Icon(
+                      Icons.slow_motion_video_rounded,
+                      color: subtitleColor,
+                    ),
                     const SizedBox(width: 10),
                     Text(
                       'Playback',
@@ -3185,9 +3340,9 @@ class _SettingsScreen extends StatelessWidget {
                   ),
                   subtitle: Text(
                     'Smooth transition between tracks',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: subtitleColor,
-                    ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: subtitleColor),
                   ),
                   trailing: GestureDetector(
                     onTap: pickCrossfade,
@@ -3213,9 +3368,9 @@ class _SettingsScreen extends StatelessWidget {
                   ),
                   subtitle: Text(
                     'Remove silence between album tracks',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: subtitleColor,
-                    ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: subtitleColor),
                   ),
                   trailing: Switch(
                     value: gapless,
@@ -3319,9 +3474,9 @@ class _ProfileRow extends StatelessWidget {
               const SizedBox(height: 2),
               Text(
                 subtitle,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: subtitleColor,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: subtitleColor),
               ),
             ],
           ),
@@ -3379,6 +3534,17 @@ class _PlayerScreenState extends State<_PlayerScreen> {
     );
   }
 
+  void _handlePlayerVerticalDrag(DragEndDetails details) {
+    final double velocity = details.primaryVelocity ?? 0;
+    if (velocity > 380) {
+      Navigator.of(context).maybePop();
+      return;
+    }
+    if (velocity < -380) {
+      _showQueueSheet();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final OuterTuneController controller = widget.controller;
@@ -3415,6 +3581,7 @@ class _PlayerScreenState extends State<_PlayerScreen> {
           body: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onLongPress: _showQueueSheet,
+            onVerticalDragEnd: _handlePlayerVerticalDrag,
             child: DecoratedBox(
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
@@ -3462,12 +3629,7 @@ class _PlayerScreenState extends State<_PlayerScreen> {
                                     ),
                                   ),
                                 ),
-                                IconButton(
-                                  onPressed: _showQueueSheet,
-                                  icon: const Icon(Icons.more_vert_rounded),
-                                  color: accent,
-                                  iconSize: 24,
-                                ),
+                                const SizedBox(width: 48),
                               ],
                             ),
                             const SizedBox(height: 26),
@@ -3666,6 +3828,17 @@ class _PlayerScreenState extends State<_PlayerScreen> {
                                 ),
                               ],
                             ),
+                            const SizedBox(height: 10),
+                            Center(
+                              child: IconButton(
+                                onPressed: _showQueueSheet,
+                                icon: const Icon(
+                                  Icons.keyboard_arrow_up_rounded,
+                                ),
+                                color: textPrimary.withValues(alpha: 0.92),
+                                iconSize: 34,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -3830,16 +4003,13 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Center(
-            child: Container(
-              width: 52,
-              height: 5,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(999),
-              ),
+            child: IconButton(
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(Icons.keyboard_arrow_down_rounded),
+              color: textPrimary.withValues(alpha: 0.92),
+              iconSize: 34,
             ),
           ),
-          const SizedBox(height: 16),
           Text(
             'Queue',
             style: GoogleFonts.splineSans(
@@ -3860,6 +4030,7 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
               fontWeight: FontWeight.w500,
             ),
           ),
+          const SizedBox(height: 6),
           if (loading) ...<Widget>[
             const SizedBox(height: 12),
             Row(
@@ -3913,8 +4084,16 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
                         Navigator.of(context).pop();
                       }
                     },
+                    onLongPress: () async {
+                      await controller.removeFromQueue(index);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Removed from queue')),
+                        );
+                      }
+                    },
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
                       child: Row(
                         children: <Widget>[
                           ClipRRect(
@@ -3969,13 +4148,6 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
                                   ),
                                 ),
                               ],
-                            ),
-                          ),
-                          IconButton(
-                            onPressed: () => controller.removeFromQueue(index),
-                            icon: Icon(
-                              Icons.close_rounded,
-                              color: textPrimary.withValues(alpha: 0.78),
                             ),
                           ),
                         ],
@@ -4682,8 +4854,8 @@ class _MiniPlayer extends StatelessWidget {
     final double safeProgress = progress.isFinite
         ? progress.clamp(0.0, 1.0)
         : 0.0;
-    final bool showPauseIcon =
-        controller.isPlaying && !controller.miniPlayerSelectionLoading;
+    final bool isMiniLoading = controller.miniPlayerSelectionLoading;
+    final bool showPauseIcon = controller.isPlaying && !isMiniLoading;
 
     const Color shell = Color(0xFF100502);
     const Color card = Color(0xFF2A1209);
@@ -4753,101 +4925,112 @@ class _MiniPlayer extends StatelessWidget {
                 const SizedBox(width: 14),
                 Expanded(
                   child: LayoutBuilder(
-                    builder:
-                        (BuildContext context, BoxConstraints constraints) {
-                          final bool compact = constraints.maxWidth < 250;
-                          final double playButtonSize = compact ? 42 : 48;
+                    builder: (BuildContext context, BoxConstraints constraints) {
+                      final bool compact = constraints.maxWidth < 250;
+                      final double playButtonSize = compact ? 42 : 48;
 
-                          return Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Row(
                             children: <Widget>[
-                              Row(
-                                children: <Widget>[
-                                  Expanded(
-                                    child: Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: <Widget>[
-                                        _MiniPlayerIcon(
-                                          icon: Icons.shuffle_rounded,
-                                          color: controller.isShuffleEnabled
-                                              ? accent
-                                              : inactive,
-                                          onPressed: controller.toggleShuffle,
-                                          compact: compact,
-                                        ),
-                                        _MiniPlayerIcon(
-                                          icon: Icons.skip_previous_rounded,
-                                          color: inactive,
-                                          onPressed: controller.previousTrack,
-                                          compact: compact,
-                                        ),
-                                        GestureDetector(
-                                          onTap: controller.togglePlayback,
-                                          child: Container(
-                                            width: playButtonSize,
-                                            height: playButtonSize,
-                                            decoration: const BoxDecoration(
-                                              shape: BoxShape.circle,
-                                              color: accent,
-                                            ),
-                                            child: Icon(
-                                              showPauseIcon
-                                                  ? Icons.pause_rounded
-                                                  : Icons.play_arrow_rounded,
-                                              color: Colors.black,
-                                              size: compact
-                                                  ? 22
-                                                  : showPauseIcon
-                                                  ? 24
-                                                  : 28,
-                                            ),
-                                          ),
-                                        ),
-                                        _MiniPlayerIcon(
-                                          icon: Icons.skip_next_rounded,
-                                          color: inactive,
-                                          onPressed: controller.nextTrack,
-                                          compact: compact,
-                                        ),
-                                        _MiniPlayerIcon(
-                                          icon: _repeatIcon(
-                                            controller.repeatMode,
-                                          ),
-                                          color: inactive,
-                                          onPressed: controller.cycleRepeatMode,
-                                          compact: compact,
-                                        ),
-                                      ],
+                              Expanded(
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: <Widget>[
+                                    _MiniPlayerIcon(
+                                      icon: Icons.shuffle_rounded,
+                                      color: controller.isShuffleEnabled
+                                          ? accent
+                                          : inactive,
+                                      onPressed: controller.toggleShuffle,
+                                      compact: compact,
                                     ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(999),
-                                child: SizedBox(
-                                  height: 5,
-                                  width: double.infinity,
-                                  child: ColoredBox(
-                                    color: track,
-                                    child: Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: FractionallySizedBox(
-                                        widthFactor: safeProgress,
-                                        alignment: Alignment.centerLeft,
-                                        child: const SizedBox.expand(
-                                          child: ColoredBox(color: accent),
+                                    _MiniPlayerIcon(
+                                      icon: Icons.skip_previous_rounded,
+                                      color: inactive,
+                                      onPressed: controller.previousTrack,
+                                      compact: compact,
+                                    ),
+                                    GestureDetector(
+                                      onTap: controller.togglePlayback,
+                                      child: Container(
+                                        width: playButtonSize,
+                                        height: playButtonSize,
+                                        decoration: const BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: accent,
                                         ),
+                                        child: isMiniLoading
+                                            ? Center(
+                                                child: SizedBox(
+                                                  width: compact ? 18 : 20,
+                                                  height: compact ? 18 : 20,
+                                                  child: const CircularProgressIndicator(
+                                                    strokeWidth: 2.4,
+                                                    valueColor:
+                                                        AlwaysStoppedAnimation<
+                                                          Color
+                                                        >(Colors.black),
+                                                  ),
+                                                ),
+                                              )
+                                            : Icon(
+                                                showPauseIcon
+                                                    ? Icons.pause_rounded
+                                                    : Icons.play_arrow_rounded,
+                                                color: Colors.black,
+                                                size: compact
+                                                    ? 22
+                                                    : showPauseIcon
+                                                    ? 24
+                                                    : 28,
+                                              ),
                                       ),
+                                    ),
+                                    _MiniPlayerIcon(
+                                      icon: Icons.skip_next_rounded,
+                                      color: inactive,
+                                      onPressed: controller.nextTrack,
+                                      compact: compact,
+                                    ),
+                                    _MiniPlayerIcon(
+                                      icon: _repeatIcon(controller.repeatMode),
+                                      color: inactive,
+                                      onPressed: controller.cycleRepeatMode,
+                                      compact: compact,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(999),
+                            child: SizedBox(
+                              height: 5,
+                              width: double.infinity,
+                              child: ColoredBox(
+                                color: track,
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: FractionallySizedBox(
+                                    widthFactor: safeProgress,
+                                    alignment: Alignment.centerLeft,
+                                    child: const SizedBox.expand(
+                                      child: ColoredBox(color: accent),
                                     ),
                                   ),
                                 ),
                               ),
-                            ],
-                          );
-                        },
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
               ],

@@ -53,17 +53,20 @@ class OuterTuneController extends ChangeNotifier {
   bool _initialized = false;
   bool _scanning = false;
   bool _onlineLoading = false;
+  bool _trendingNowLoading = false;
   bool _homeLoading = false;
   bool _smartQueueLoading = false;
   String? _statusMessage;
   String? _errorMessage;
   String? _onlineError;
+  String? _trendingNowError;
   String? _homeError;
   String? _ytMusicAuthError;
   String _onlineQuery = '';
   int _onlineResultLimit = 0;
   bool _onlineHasMore = false;
   int _onlineSearchRequestId = 0;
+  int _trendingNowRequestId = 0;
 
   AppSettings _settings = const AppSettings();
   List<String> _sources = <String>[];
@@ -71,6 +74,8 @@ class OuterTuneController extends ChangeNotifier {
   List<UserPlaylist> _playlists = <UserPlaylist>[];
   List<PlaybackEntry> _history = <PlaybackEntry>[];
   List<LibrarySong> _onlineResults = <LibrarySong>[];
+  List<LibrarySong> _trendingNowSongs = <LibrarySong>[];
+  String _trendingNowRegionLabel = 'Your region';
   List<HomeFeedSection> _homeFeed = <HomeFeedSection>[];
   int _homeQueryCursor = 0;
   final Set<String> _homeConsumedIdentityKeys = <String>{};
@@ -99,11 +104,13 @@ class OuterTuneController extends ChangeNotifier {
   bool get initialized => _initialized;
   bool get scanning => _scanning;
   bool get onlineLoading => _onlineLoading;
+  bool get trendingNowLoading => _trendingNowLoading;
   bool get homeLoading => _homeLoading;
   bool get smartQueueLoading => _smartQueueLoading;
   String? get statusMessage => _statusMessage;
   String? get errorMessage => _errorMessage;
   String? get onlineError => _onlineError;
+  String? get trendingNowError => _trendingNowError;
   String? get homeError => _homeError;
   String? get ytMusicAuthError => _ytMusicAuthError;
   bool get onlineHasMore => _onlineHasMore;
@@ -119,6 +126,9 @@ class OuterTuneController extends ChangeNotifier {
   List<LibrarySong> get songs => List<LibrarySong>.unmodifiable(_songs);
   List<LibrarySong> get onlineResults =>
       List<LibrarySong>.unmodifiable(_onlineResults);
+  List<LibrarySong> get trendingNowSongs =>
+      List<LibrarySong>.unmodifiable(_trendingNowSongs);
+  String get trendingNowRegionLabel => _trendingNowRegionLabel;
   List<HomeFeedSection> get homeFeed =>
       List<HomeFeedSection>.unmodifiable(_homeFeed);
   List<UserPlaylist> get playlists =>
@@ -440,6 +450,83 @@ class OuterTuneController extends ChangeNotifier {
     _onlineResultLimit = 0;
     _onlineHasMore = false;
     notifyListeners();
+  }
+
+  Future<void> loadTrendingNow({
+    required String languageCode,
+    String? countryCode,
+    bool force = false,
+  }) async {
+    final int requestId = ++_trendingNowRequestId;
+    final String normalizedLanguage = languageCode.trim().toLowerCase();
+    final String normalizedCountry = ((countryCode ?? '').trim().isEmpty
+            ? 'LK'
+            : countryCode!)
+        .trim()
+        .toUpperCase();
+    final String languageToken = _localeLanguageQueryToken(normalizedLanguage);
+    final String regionLabel = _regionLabelFromCountryCode(normalizedCountry);
+
+    if (_trendingNowSongs.isNotEmpty &&
+        !force &&
+        !_trendingNowLoading &&
+        _trendingNowRegionLabel == regionLabel) {
+      return;
+    }
+
+    _trendingNowLoading = true;
+    _trendingNowError = null;
+    _trendingNowRegionLabel = regionLabel;
+    notifyListeners();
+
+    try {
+      final List<String> queries = <String>[
+        if (normalizedCountry.isNotEmpty)
+          '$languageToken top songs in $regionLabel this month',
+        if (normalizedCountry.isNotEmpty)
+          'youtube music trending in $regionLabel',
+        if (normalizedCountry == 'LK') 'sinhala trending songs sri lanka',
+        if (normalizedCountry == 'LK') 'tamil trending songs sri lanka',
+        '$languageToken viral songs this month',
+        'youtube music charts $languageToken',
+        'most popular songs this month',
+      ];
+
+      final List<LibrarySong> candidates = <LibrarySong>[];
+      for (int index = 0; index < queries.length; index += 1) {
+        final List<LibrarySong> results = await _searchSongs(
+          queries[index],
+          limit: 24,
+          force: force || index > 0,
+        );
+        candidates.addAll(results);
+      }
+
+      if (requestId != _trendingNowRequestId) {
+        return;
+      }
+
+      _trendingNowSongs = _rankTrendingNowCandidates(
+        candidates,
+        languageCode: normalizedLanguage,
+        countryCode: normalizedCountry,
+        limit: 18,
+      );
+      if (_trendingNowSongs.isEmpty) {
+        _trendingNowError = 'Trending songs are unavailable right now.';
+      }
+    } catch (error) {
+      if (requestId != _trendingNowRequestId) {
+        return;
+      }
+      _trendingNowError = _friendlyOnlineError(error);
+      _trendingNowSongs = <LibrarySong>[];
+    } finally {
+      if (requestId == _trendingNowRequestId) {
+        _trendingNowLoading = false;
+        notifyListeners();
+      }
+    }
   }
 
   static const double _ytMusicPrimaryRatio = 0.8;
@@ -1120,6 +1207,83 @@ class OuterTuneController extends ChangeNotifier {
         .take(limit)
         .map((_ScoredSong item) => item.song)
         .toList(growable: false);
+  }
+
+  List<LibrarySong> _rankTrendingNowCandidates(
+    List<LibrarySong> songs, {
+    required String languageCode,
+    required String countryCode,
+    required int limit,
+  }) {
+    final Set<String> seenKeys = <String>{};
+    final String expectedLanguage = _localeToLanguageBucket(languageCode);
+    final String rankingQuery = '$countryCode $languageCode top songs'.trim();
+    final List<_ScoredSong> ranked = <_ScoredSong>[];
+
+    for (final LibrarySong song in songs) {
+      final String key = _songIdentityKey(song);
+      if (!seenKeys.add(key)) {
+        continue;
+      }
+
+      double score = _onlineSearchScore(song, query: rankingQuery);
+      if (_detectSongLanguage(song) == expectedLanguage) {
+        score += 7.5;
+      }
+      if ((song.artworkUrl ?? '').trim().isNotEmpty) {
+        score += 2.2;
+      }
+      final int seconds = song.duration.inSeconds;
+      if (seconds >= 120 && seconds <= 360) {
+        score += 1.4;
+      } else if (seconds > 0 && seconds < 75) {
+        score -= 2.8;
+      }
+      ranked.add(_ScoredSong(song, score));
+    }
+
+    ranked.sort((_ScoredSong a, _ScoredSong b) {
+      final int scoreCompare = b.score.compareTo(a.score);
+      if (scoreCompare != 0) {
+        return scoreCompare;
+      }
+      return a.song.title.toLowerCase().compareTo(b.song.title.toLowerCase());
+    });
+
+    return ranked
+        .take(limit)
+        .map((_ScoredSong item) => item.song)
+        .toList(growable: false);
+  }
+
+  String _localeLanguageQueryToken(String languageCode) {
+    return switch (languageCode) {
+      'si' => 'sinhala',
+      'ta' => 'tamil',
+      'hi' => 'hindi',
+      _ => 'english',
+    };
+  }
+
+  String _localeToLanguageBucket(String languageCode) {
+    return switch (languageCode) {
+      'si' => 'si',
+      'ta' => 'ta',
+      'hi' => 'hi',
+      _ => 'en',
+    };
+  }
+
+  String _regionLabelFromCountryCode(String countryCode) {
+    return switch (countryCode) {
+      'LK' => 'Sri Lanka',
+      'IN' => 'India',
+      'US' => 'United States',
+      'GB' => 'United Kingdom',
+      'CA' => 'Canada',
+      'AU' => 'Australia',
+      _ => countryCode.isEmpty ? 'Your region' : countryCode,
+    };
   }
 
   double _onlineSearchScore(LibrarySong song, {required String query}) {
@@ -2343,6 +2507,10 @@ class OuterTuneController extends ChangeNotifier {
     _playlists = <UserPlaylist>[];
     _history = <PlaybackEntry>[];
     _onlineResults = <LibrarySong>[];
+    _trendingNowSongs = <LibrarySong>[];
+    _trendingNowRegionLabel = 'Your region';
+    _trendingNowError = null;
+    _trendingNowLoading = false;
     _homeFeed = <HomeFeedSection>[];
     _transientSongsById.clear();
     _searchCache.clear();
