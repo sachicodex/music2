@@ -155,20 +155,14 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
         onOpenSearch: () =>
             setState(() => _destination = AppDestination.search),
       ),
-      AppDestination.library =>
-        controller.songs.isEmpty
-            ? _EmptyLibraryState(
-                key: const ValueKey<String>('empty_library'),
-                controller: controller,
-              )
-            : _LibraryScreen(
-                key: const ValueKey<String>('library'),
-                controller: controller,
-                filter: _libraryFilter,
-                onFilterChanged: (LibraryFilter value) {
-                  setState(() => _libraryFilter = value);
-                },
-              ),
+      AppDestination.library => _LibraryScreen(
+        key: const ValueKey<String>('library'),
+        controller: controller,
+        filter: _libraryFilter,
+        onFilterChanged: (LibraryFilter value) {
+          setState(() => _libraryFilter = value);
+        },
+      ),
       AppDestination.search => _SearchScreen(
         key: const ValueKey<String>('search'),
         controller: controller,
@@ -193,76 +187,6 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
         builder: (BuildContext context) =>
             _PlayerScreen(controller: controller),
       ),
-    );
-  }
-}
-
-class _EmptyLibraryState extends StatelessWidget {
-  const _EmptyLibraryState({super.key, required this.controller});
-
-  final OuterTuneController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme scheme = theme.colorScheme;
-
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: <Widget>[
-        Container(
-          padding: const EdgeInsets.all(28),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(32),
-            gradient: LinearGradient(
-              colors: <Color>[
-                scheme.primaryContainer,
-                scheme.tertiaryContainer,
-                scheme.surfaceContainerHighest,
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text('OuterTune Flutter', style: theme.textTheme.displaySmall),
-              const SizedBox(height: 12),
-              Text(
-                'Pure Flutter port focused on the local-library experience. Import audio files or a folder to build your library on Windows and Android.',
-                style: theme.textTheme.bodyLarge,
-              ),
-              const SizedBox(height: 24),
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: <Widget>[
-                  FilledButton.icon(
-                    onPressed: controller.importFiles,
-                    icon: const Icon(Icons.queue_music_rounded),
-                    label: const Text('Import files'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: controller.importFolder,
-                    icon: const Icon(Icons.folder_open_rounded),
-                    label: const Text('Import folder'),
-                  ),
-                ],
-              ),
-              if (controller.statusMessage != null) ...<Widget>[
-                const SizedBox(height: 16),
-                Text(
-                  controller.statusMessage!,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ],
     );
   }
 }
@@ -367,7 +291,6 @@ class _HomeScreenState extends State<_HomeScreen> {
                 subtitle: featured.subtitle,
                 imageUrl: featured.imageUrl,
                 onListenNow: featured.onListenNow,
-                onDetails: featured.onDetails,
               ),
             const SizedBox(height: 18),
             _KineticSectionHeader(
@@ -769,6 +692,9 @@ int _titleScore(LibrarySong song) {
 }
 
 bool _isFilteredSuggestion(LibrarySong song) {
+  if (song.isDisliked) {
+    return true;
+  }
   final String text = '${song.title} ${song.artist} ${song.album}'
       .toLowerCase()
       .replaceAll(RegExp(r'\s+'), ' ')
@@ -818,7 +744,6 @@ class _FeaturedHeroData {
     required this.title,
     required this.subtitle,
     required this.onListenNow,
-    required this.onDetails,
     this.imageUrl,
   });
 
@@ -827,7 +752,6 @@ class _FeaturedHeroData {
   final String subtitle;
   final String? imageUrl;
   final VoidCallback onListenNow;
-  final VoidCallback onDetails;
 }
 
 _FeaturedHeroData _pickFeaturedHero({
@@ -836,28 +760,16 @@ _FeaturedHeroData _pickFeaturedHero({
   required List<HomeFeedSection> feed,
   required List<LibrarySong> mayYouLike,
 }) {
-  final Set<String> seen = <String>{};
-  final List<LibrarySong> personalizedSongs =
-      <LibrarySong>[
-            ...controller.favoriteSongs.take(8),
-            ...controller.topPlayedSongs.take(12),
-            ...mayYouLike,
-          ]
-          .where((LibrarySong song) {
-            final String key = '${song.id}|${song.title}|${song.artist}';
-            return seen.add(key);
-          })
-          .toList(growable: false);
-
-  final LibrarySong? songWithArt = personalizedSongs
-      .where((LibrarySong s) => (s.artworkUrl ?? '').trim().isNotEmpty)
-      .firstOrNull;
-  final LibrarySong? song = songWithArt ?? personalizedSongs.firstOrNull;
+  final LibrarySong? song = _pickAdvancedHeroSong(
+    controller: controller,
+    feed: feed,
+    mayYouLike: mayYouLike,
+  );
   if (song != null) {
     return _FeaturedHeroData(
-      badge: 'SONG FOR YOU',
+      badge: 'PICK FOR YOU',
       title: song.title.toUpperCase(),
-      subtitle: '${song.artist} • ${song.album}',
+      subtitle: song.artist.trim().isEmpty ? song.album : song.artist,
       imageUrl: song.artworkUrl,
       onListenNow: () {
         if (song.isRemote) {
@@ -866,27 +778,179 @@ _FeaturedHeroData _pickFeaturedHero({
           controller.playSong(song, label: 'Home');
         }
       },
-      onDetails: () {
-        Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (BuildContext context) => _PopularTracksScreen(
-              controller: controller,
-              title: 'SONGS FOR YOU',
-              songs: personalizedSongs,
-            ),
-          ),
-        );
-      },
     );
   }
 
   return _FeaturedHeroData(
     badge: 'DISCOVER',
     title: 'KINETIC',
-    subtitle: 'Search and play songs to personalize your home feed.',
+    subtitle: 'Search and play songs to unlock smarter recommendations.',
     onListenNow: controller.importFolder,
-    onDetails: controller.importFiles,
   );
+}
+
+LibrarySong? _pickAdvancedHeroSong({
+  required OuterTuneController controller,
+  required List<HomeFeedSection> feed,
+  required List<LibrarySong> mayYouLike,
+}) {
+  final Set<String> historyIds = controller.history
+      .map((PlaybackEntry entry) => entry.songId)
+      .toSet();
+  final List<LibrarySong> historySongs = controller.history
+      .map((PlaybackEntry entry) => controller.songById(entry.songId))
+      .whereType<LibrarySong>()
+      .toList(growable: false);
+
+  final Set<String> seen = <String>{};
+  final List<LibrarySong> candidates =
+      <LibrarySong>[
+            ...mayYouLike,
+            for (final HomeFeedSection section in feed) ...section.songs,
+            ...controller.onlineResults,
+          ]
+          .where((LibrarySong song) {
+            final String key =
+                '${song.title.toLowerCase()}::${song.artist.toLowerCase()}';
+            return seen.add(key);
+          })
+          .toList(growable: false);
+  if (candidates.isEmpty) {
+    return null;
+  }
+
+  final Map<String, double> artistAffinity = <String, double>{};
+  final Map<String, double> genreAffinity = <String, double>{};
+  final Map<String, double> languageAffinity = <String, double>{};
+  final Map<String, double> vibeAffinity = <String, double>{};
+
+  for (int i = 0; i < historySongs.length; i += 1) {
+    final LibrarySong song = historySongs[i];
+    final double weight = math.max(1, 28 - i).toDouble();
+    final String artist = song.artist.trim().toLowerCase();
+    final String genre = (song.genre ?? '').trim().toLowerCase();
+    final String language = _songLanguageToken(song);
+    if (artist.isNotEmpty) {
+      artistAffinity[artist] = (artistAffinity[artist] ?? 0) + weight;
+    }
+    if (genre.isNotEmpty) {
+      genreAffinity[genre] = (genreAffinity[genre] ?? 0) + weight;
+    }
+    languageAffinity[language] = (languageAffinity[language] ?? 0) + weight;
+    for (final String token in _heroVibeTokens(song)) {
+      vibeAffinity[token] = (vibeAffinity[token] ?? 0) + (weight * 0.7);
+    }
+  }
+
+  final List<LibrarySong> favorites = controller.likedSongs
+      .take(12)
+      .toList(growable: false);
+  for (int i = 0; i < favorites.length; i += 1) {
+    final LibrarySong song = favorites[i];
+    final String artist = song.artist.trim().toLowerCase();
+    if (artist.isNotEmpty) {
+      artistAffinity[artist] = (artistAffinity[artist] ?? 0) + (12 - i);
+    }
+  }
+
+  final List<_HeroCandidateScore> ranked =
+      candidates
+          .map((LibrarySong song) {
+            double score = 0;
+            final String artist = song.artist.trim().toLowerCase();
+            final String genre = (song.genre ?? '').trim().toLowerCase();
+            final String language = _songLanguageToken(song);
+            final bool unheard =
+                !historyIds.contains(song.id) && song.playCount == 0;
+            final bool mostlyUnheard = !historyIds.contains(song.id);
+
+            if (unheard) {
+              score += 80;
+            } else if (mostlyUnheard) {
+              score += 42;
+            } else {
+              score -= 18;
+            }
+
+            score += artistAffinity[artist] ?? 0;
+            score += (genreAffinity[genre] ?? 0) * 0.9;
+            score += (languageAffinity[language] ?? 0) * 0.8;
+            for (final String vibe in _heroVibeTokens(song)) {
+              score += vibeAffinity[vibe] ?? 0;
+            }
+
+            if ((song.artworkUrl ?? '').trim().isNotEmpty) {
+              score += 6;
+            }
+            final int seconds = song.duration.inSeconds;
+            if (seconds >= 120 && seconds <= 360) {
+              score += 5;
+            } else if (seconds > 0 && seconds < 480) {
+              score += 2;
+            }
+            if (song.isRemote) {
+              score += 2;
+            }
+            if (_isFilteredSuggestion(song)) {
+              score -= 30;
+            }
+
+            return _HeroCandidateScore(song: song, score: score);
+          })
+          .toList(growable: false)
+        ..sort((_HeroCandidateScore a, _HeroCandidateScore b) {
+          final int scoreCompare = b.score.compareTo(a.score);
+          if (scoreCompare != 0) {
+            return scoreCompare;
+          }
+          return a.song.title.toLowerCase().compareTo(
+            b.song.title.toLowerCase(),
+          );
+        });
+
+  return ranked.firstOrNull?.song;
+}
+
+String _songLanguageToken(LibrarySong song) {
+  final String text =
+      '${song.title} ${song.artist} ${song.album} ${song.genre ?? ''}'.trim();
+  if (RegExp(r'[඀-෿]').hasMatch(text)) {
+    return 'sinhala';
+  }
+  if (RegExp(r'[஀-௿]').hasMatch(text)) {
+    return 'tamil';
+  }
+  if (RegExp(r'[a-zA-Z]').hasMatch(text)) {
+    return 'english';
+  }
+  return 'unknown';
+}
+
+Set<String> _heroVibeTokens(LibrarySong song) {
+  final String text =
+      '${song.title} ${song.artist} ${song.album} ${song.genre ?? ''}'
+          .toLowerCase();
+  final Set<String> tokens = <String>{};
+  const Map<String, List<String>> groups = <String, List<String>>{
+    'chill': <String>['chill', 'calm', 'soft', 'acoustic', 'lofi'],
+    'energy': <String>['dance', 'party', 'energy', 'anthem', 'beat'],
+    'romance': <String>['love', 'romance', 'heart', 'feel', 'melody'],
+    'sad': <String>['sad', 'cry', 'pain', 'broken', 'lonely'],
+    'focus': <String>['focus', 'study', 'piano', 'instrumental'],
+  };
+  groups.forEach((String vibe, List<String> words) {
+    if (words.any(text.contains)) {
+      tokens.add(vibe);
+    }
+  });
+  return tokens;
+}
+
+class _HeroCandidateScore {
+  const _HeroCandidateScore({required this.song, required this.score});
+
+  final LibrarySong song;
+  final double score;
 }
 
 class _KineticTopBar extends StatelessWidget {
@@ -938,7 +1002,6 @@ class _KineticHeroCard extends StatelessWidget {
     required this.subtitle,
     required this.imageUrl,
     required this.onListenNow,
-    required this.onDetails,
   });
 
   final String badge;
@@ -946,7 +1009,6 @@ class _KineticHeroCard extends StatelessWidget {
   final String subtitle;
   final String? imageUrl;
   final VoidCallback onListenNow;
-  final VoidCallback onDetails;
 
   @override
   Widget build(BuildContext context) {
@@ -965,6 +1027,7 @@ class _KineticHeroCard extends StatelessWidget {
                     child: Image.network(
                       imageUrl!,
                       fit: BoxFit.cover,
+                      filterQuality: FilterQuality.high,
                       errorBuilder:
                           (
                             BuildContext context,
@@ -1081,74 +1144,36 @@ class _KineticHeroCard extends StatelessWidget {
                         ),
                       ),
                       SizedBox(height: compact ? 8 : 12),
-                      Row(
-                        children: <Widget>[
-                          Expanded(
-                            child: FilledButton(
-                              onPressed: onListenNow,
-                              style: FilledButton.styleFrom(
-                                backgroundColor: const Color(0xFFE06A2D),
-                                foregroundColor: Colors.black,
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: compact ? 8 : 10,
-                                ),
-                                minimumSize: Size(0, compact ? 38 : 42),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(18),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: <Widget>[
-                                  const Icon(
-                                    Icons.play_arrow_rounded,
-                                    size: 18,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Flexible(
-                                    child: Text(
-                                      'LISTEN NOW',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .labelLarge
-                                          ?.copyWith(letterSpacing: 1.2),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                      FilledButton(
+                        onPressed: onListenNow,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFFE06A2D),
+                          foregroundColor: Colors.black,
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: compact ? 8 : 10,
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: onDetails,
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.white,
-                                side: BorderSide(
-                                  color: Colors.white.withValues(alpha: 0.22),
-                                ),
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: compact ? 8 : 10,
-                                ),
-                                minimumSize: Size(0, compact ? 38 : 42),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(18),
-                                ),
-                              ),
+                          minimumSize: Size(double.infinity, compact ? 38 : 42),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: <Widget>[
+                            const Icon(Icons.play_arrow_rounded, size: 18),
+                            const SizedBox(width: 6),
+                            Flexible(
                               child: Text(
-                                'SHOW DETAILS',
+                                'LISTEN NOW',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: Theme.of(context).textTheme.labelLarge
                                     ?.copyWith(letterSpacing: 1.2),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -1545,67 +1570,20 @@ class _MayYouLikeScreen extends StatefulWidget {
 }
 
 class _MayYouLikeScreenState extends State<_MayYouLikeScreen> {
-  static const int _pageSize = 4;
-  static const int _initialLoadSize = 10;
   static const int _maxItems = 50;
-
-  final ScrollController _scroll = ScrollController();
-  int _visibleCount = _pageSize;
-
-  @override
-  void initState() {
-    super.initState();
-    _scroll.addListener(_onScroll);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _ensureInitialItems();
-    });
-  }
-
-  @override
-  void dispose() {
-    _scroll.removeListener(_onScroll);
-    _scroll.dispose();
-    super.dispose();
-  }
-
-  Future<void> _onScroll() async {
-    if (!mounted) return;
-    if (_scroll.position.extentAfter > 220) return;
-    final int total = _allItems.length;
-    if (_visibleCount >= total) {
-      return;
-    }
-    setState(() {
-      _visibleCount = math.min(_visibleCount + _pageSize, total);
-    });
-  }
 
   List<LibrarySong> get _allItems =>
       _buildMayYouLike(widget.controller.homeFeed).take(_maxItems).toList();
-
-  void _ensureInitialItems() {
-    if (!mounted) {
-      return;
-    }
-    final int available = _allItems.length;
-    setState(() {
-      _visibleCount = math.min(_initialLoadSize, available);
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
     final OuterTuneController controller = widget.controller;
     final List<LibrarySong> items = _allItems;
-    final List<LibrarySong> visibleItems = items
-        .take(math.min(_visibleCount, items.length))
-        .toList(growable: false);
 
     return Scaffold(
       backgroundColor: const Color(0xFF0B0A0C),
       body: SafeArea(
         child: ListView(
-          controller: _scroll,
           padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
           children: <Widget>[
             Row(
@@ -1632,8 +1610,8 @@ class _MayYouLikeScreenState extends State<_MayYouLikeScreen> {
             if (items.isEmpty && controller.homeLoading)
               const _KineticListSkeleton(count: 8),
             Column(
-              children: List<Widget>.generate(visibleItems.length, (int index) {
-                final LibrarySong song = visibleItems[index];
+              children: List<Widget>.generate(items.length, (int index) {
+                final LibrarySong song = items[index];
                 return _KineticPopularTrackTile(
                   index: index + 1,
                   song: song,
@@ -2420,111 +2398,133 @@ class _LibraryScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 28),
-      children: <Widget>[
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: LibraryFilter.values
-              .map(
-                (LibraryFilter item) => ChoiceChip(
-                  label: Text(item.label),
-                  selected: filter == item,
-                  onSelected: (_) => onFilterChanged(item),
-                ),
-              )
-              .toList(),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: <Widget>[
-            SegmentedButton<bool>(
-              segments: const <ButtonSegment<bool>>[
-                ButtonSegment<bool>(
-                  value: true,
-                  icon: Icon(Icons.grid_view_rounded),
-                  label: Text('Grid'),
-                ),
-                ButtonSegment<bool>(
-                  value: false,
-                  icon: Icon(Icons.view_agenda_rounded),
-                  label: Text('List'),
-                ),
-              ],
-              selected: <bool>{controller.settings.useGridView},
-              onSelectionChanged: (Set<bool> values) {
-                controller.setGridView(values.first);
-              },
-            ),
-            const Spacer(),
-            FilledButton.tonalIcon(
-              onPressed: () => _showCreatePlaylistDialog(context, controller),
-              icon: const Icon(Icons.playlist_add_rounded),
-              label: const Text('New playlist'),
-            ),
+    final List<UserPlaylist> playlists = controller.playlists;
+
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: <Color>[
+            Color(0xFF190802),
+            Color(0xFF2A0E02),
+            Color(0xFF120502),
           ],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
         ),
-        const SizedBox(height: 20),
-        ..._buildLibrarySections(context),
-      ],
-    );
-  }
-
-  List<Widget> _buildLibrarySections(BuildContext context) {
-    final List<Widget> widgets = <Widget>[];
-
-    if (filter == LibraryFilter.all || filter == LibraryFilter.songs) {
-      widgets.add(_SectionHeader(title: 'Songs'));
-      widgets.add(const SizedBox(height: 12));
-      widgets.addAll(
-        controller.recentlyAddedSongs
-            .take(filter == LibraryFilter.all ? 8 : 200)
-            .map(
-              (LibrarySong song) =>
-                  _SongTile(song: song, controller: controller),
+      ),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(40, 18, 22, 30),
+        children: <Widget>[
+          _LibraryHeader(
+            onOpenSettings: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (BuildContext context) =>
+                      _SettingsScreen(controller: controller),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 28),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(
+                child: _LibraryFeatureCard(
+                  title: 'Liked\nSongs',
+                  subtitle: '${controller.likedSongs.length} tracks',
+                  icon: Icons.favorite_rounded,
+                  accent: const Color(0xFFFF8A3D),
+                  secondary: const Color(0xFFFF7D2F),
+                  watermark: Icons.favorite_rounded,
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (BuildContext context) => _PlaylistScreen(
+                          controller: controller,
+                          title: 'Liked Songs',
+                          songs: controller.likedSongs,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _LibraryFeatureCard(
+                  title: 'Offline',
+                  subtitle: 'Synced locally',
+                  icon: Icons.download_rounded,
+                  accent: const Color(0xFF4A1D06),
+                  secondary: const Color(0xFF512007),
+                  watermark: Icons.download_rounded,
+                  darkText: false,
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (BuildContext context) => _PlaylistScreen(
+                          controller: controller,
+                          title: 'Offline',
+                          songs: controller.songs,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 34),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  'Playlists',
+                  style: GoogleFonts.splineSans(
+                    color: const Color(0xFFFFE2D2),
+                    fontSize: 32,
+                    fontWeight: FontWeight.w700,
+                    height: 0.95,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () => _showCreatePlaylistDialog(context, controller),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFFFF9B54),
+                  padding: EdgeInsets.zero,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: Text(
+                  'Create New +',
+                  style: GoogleFonts.splineSans(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          if (playlists.isEmpty)
+            _LibraryEmptyPlaylistCard(
+              onCreate: () => _showCreatePlaylistDialog(context, controller),
+            )
+          else
+            ...playlists.map(
+              (UserPlaylist playlist) => Padding(
+                padding: const EdgeInsets.only(bottom: 18),
+                child: _LibraryPlaylistRow(
+                  controller: controller,
+                  playlist: playlist,
+                ),
+              ),
             ),
-      );
-      widgets.add(const SizedBox(height: 24));
-    }
-
-    if (filter == LibraryFilter.all || filter == LibraryFilter.albums) {
-      widgets.add(_SectionHeader(title: 'Albums'));
-      widgets.add(const SizedBox(height: 12));
-      widgets.add(
-        _AlbumGrid(controller: controller, albums: controller.albums),
-      );
-      widgets.add(const SizedBox(height: 24));
-    }
-
-    if (filter == LibraryFilter.all || filter == LibraryFilter.artists) {
-      widgets.add(_SectionHeader(title: 'Artists'));
-      widgets.add(const SizedBox(height: 12));
-      widgets.add(
-        _ArtistGrid(controller: controller, artists: controller.artists),
-      );
-      widgets.add(const SizedBox(height: 24));
-    }
-
-    if (filter == LibraryFilter.all || filter == LibraryFilter.folders) {
-      widgets.add(_SectionHeader(title: 'Folders'));
-      widgets.add(const SizedBox(height: 12));
-      widgets.addAll(
-        controller.folders.map(
-          (FolderCollection folder) =>
-              _FolderTile(folder: folder, controller: controller),
-        ),
-      );
-      widgets.add(const SizedBox(height: 24));
-    }
-
-    if (filter == LibraryFilter.all || filter == LibraryFilter.playlists) {
-      widgets.add(_SectionHeader(title: 'Playlists'));
-      widgets.add(const SizedBox(height: 12));
-      widgets.add(_PlaylistGrid(controller: controller));
-    }
-
-    return widgets;
+        ],
+      ),
+    );
   }
 }
 
@@ -3266,6 +3266,77 @@ class _SettingsScreen extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: cardEdge),
             ),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    const Icon(
+                      Icons.library_music_rounded,
+                      color: subtitleColor,
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Library Import',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: titleColor,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Import audio files or a full folder into your library.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: subtitleColor,
+                    height: 1.45,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: <Widget>[
+                    FilledButton.icon(
+                      onPressed: controller.importFiles,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: accent,
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                      ),
+                      icon: const Icon(Icons.queue_music_rounded),
+                      label: const Text('Import files'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: controller.importFolder,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: titleColor,
+                        side: const BorderSide(color: cardEdge),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                      ),
+                      icon: const Icon(Icons.folder_open_rounded),
+                      label: const Text('Import folder'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Container(
+            decoration: BoxDecoration(
+              color: card,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: cardEdge),
+            ),
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -3534,6 +3605,23 @@ class _PlayerScreenState extends State<_PlayerScreen> {
     );
   }
 
+  Future<void> _handlePlayerMenuSelection(
+    String value,
+    LibrarySong song,
+  ) async {
+    final OuterTuneController controller = widget.controller;
+    switch (value) {
+      case 'save':
+        await _showAddToPlaylistDialog(context, controller, song);
+      case 'like':
+        await controller.likeSong(song.id);
+      case 'dislike':
+        await controller.dislikeSong(song.id);
+      case 'queue':
+        await controller.enqueueSong(song);
+    }
+  }
+
   void _handlePlayerVerticalDrag(DragEndDetails details) {
     final double velocity = details.primaryVelocity ?? 0;
     if (velocity > 380) {
@@ -3629,7 +3717,42 @@ class _PlayerScreenState extends State<_PlayerScreen> {
                                     ),
                                   ),
                                 ),
-                                const SizedBox(width: 48),
+                                PopupMenuButton<String>(
+                                  color: const Color(0xFF2A1209),
+                                  icon: const Icon(Icons.more_vert_rounded),
+                                  iconColor: accent,
+                                  onSelected: (String value) async {
+                                    await _handlePlayerMenuSelection(
+                                      value,
+                                      song,
+                                    );
+                                  },
+                                  itemBuilder: (BuildContext context) =>
+                                      <PopupMenuEntry<String>>[
+                                        const PopupMenuItem<String>(
+                                          value: 'save',
+                                          child: Text('Save'),
+                                        ),
+                                        PopupMenuItem<String>(
+                                          value: 'like',
+                                          child: Text(
+                                            song.isLiked ? 'Unlike song' : 'Like song',
+                                          ),
+                                        ),
+                                        PopupMenuItem<String>(
+                                          value: 'dislike',
+                                          child: Text(
+                                            song.isDisliked
+                                                ? 'Remove dislike'
+                                                : 'Dislike song',
+                                          ),
+                                        ),
+                                        const PopupMenuItem<String>(
+                                          value: 'queue',
+                                          child: Text('Add to queue'),
+                                        ),
+                                      ],
+                                ),
                               ],
                             ),
                             const SizedBox(height: 26),
@@ -3657,6 +3780,7 @@ class _PlayerScreenState extends State<_PlayerScreen> {
                                     ? Image.network(
                                         song.artworkUrl!,
                                         fit: BoxFit.cover,
+                                        filterQuality: FilterQuality.high,
                                         errorBuilder:
                                             (
                                               BuildContext context,
@@ -3707,16 +3831,38 @@ class _PlayerScreenState extends State<_PlayerScreen> {
                                 const SizedBox(width: 16),
                                 Padding(
                                   padding: const EdgeInsets.only(bottom: 6),
-                                  child: IconButton(
-                                    onPressed: () =>
-                                        controller.toggleFavorite(song.id),
-                                    icon: Icon(
-                                      song.isFavorite
-                                          ? Icons.favorite_rounded
-                                          : Icons.favorite_border_rounded,
-                                      color: accent,
-                                      size: 32,
-                                    ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: <Widget>[
+                                      IconButton(
+                                        tooltip: song.isLiked ? 'Unlike' : 'Like',
+                                        onPressed: () =>
+                                            controller.likeSong(song.id),
+                                        icon: Icon(
+                                          song.isLiked
+                                              ? Icons.thumb_up_rounded
+                                              : Icons.thumb_up_outlined,
+                                          color: accent,
+                                          size: 28,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      IconButton(
+                                        tooltip:
+                                            song.isDisliked ? 'Remove dislike' : 'Dislike',
+                                        onPressed: () =>
+                                            controller.dislikeSong(song.id),
+                                        icon: Icon(
+                                          song.isDisliked
+                                              ? Icons.thumb_down_rounded
+                                              : Icons.thumb_down_outlined,
+                                          color: song.isDisliked
+                                              ? Colors.redAccent
+                                              : accent,
+                                          size: 28,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],
@@ -4107,6 +4253,7 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
                                   ? Image.network(
                                       song.artworkUrl!,
                                       fit: BoxFit.cover,
+                                      filterQuality: FilterQuality.high,
                                       errorBuilder:
                                           (
                                             BuildContext context,
@@ -4244,7 +4391,12 @@ class _ArtistScreen extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
-              _Artwork(seed: artist.id, title: artist.name, size: 120),
+              _ResolvedArtistAvatar(
+                controller: controller,
+                artistName: artist.name,
+                seed: artist.id,
+                size: 120,
+              ),
               const SizedBox(width: 16),
               Expanded(
                 child: Text(
@@ -4499,6 +4651,7 @@ class _SkeletonBlock extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({required this.title});
 
@@ -4554,6 +4707,289 @@ class _CollectionCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _LibraryHeader extends StatelessWidget {
+  const _LibraryHeader({required this.onOpenSettings});
+
+  final VoidCallback onOpenSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: const Color(0xFFF5E3D6),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+          ),
+          child: const Icon(Icons.person_rounded, color: Color(0xFF6F4529)),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            'LIBRARY',
+            style: GoogleFonts.splineSans(
+              color: const Color(0xFFFF8B3E),
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        IconButton(
+          onPressed: onOpenSettings,
+          icon: const Icon(Icons.settings_outlined),
+          color: const Color(0xFFFF8B3E),
+        ),
+      ],
+    );
+  }
+}
+
+class _LibraryFeatureCard extends StatelessWidget {
+  const _LibraryFeatureCard({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.accent,
+    required this.secondary,
+    required this.watermark,
+    required this.onTap,
+    this.darkText = true,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color accent;
+  final Color secondary;
+  final IconData watermark;
+  final VoidCallback onTap;
+  final bool darkText;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(24),
+      child: Container(
+        height: 164,
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(22),
+          gradient: LinearGradient(
+            colors: <Color>[accent, secondary],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Stack(
+          children: <Widget>[
+            Positioned(
+              top: 0,
+              left: 0,
+              child: Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: darkText
+                      ? const Color(0xFFC96C32).withValues(alpha: 0.52)
+                      : Colors.black.withValues(alpha: 0.18),
+                ),
+                child: Icon(
+                  icon,
+                  color: darkText ? Colors.black : const Color(0xFFFFC99F),
+                  size: 24,
+                ),
+              ),
+            ),
+            Positioned(
+              right: -12,
+              top: -8,
+              child: Icon(
+                watermark,
+                size: 114,
+                color: darkText
+                    ? Colors.white.withValues(alpha: 0.16)
+                    : Colors.white.withValues(alpha: 0.06),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    title,
+                    style: GoogleFonts.splineSans(
+                      color: darkText
+                          ? Colors.black.withValues(alpha: 0.94)
+                          : const Color(0xFFF6E3D2),
+                      fontSize: 23,
+                      fontWeight: FontWeight.w700,
+                      height: 0.98,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.splineSans(
+                      color: darkText
+                          ? Colors.black.withValues(alpha: 0.76)
+                          : const Color(0xFFD6B099),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LibraryEmptyPlaylistCard extends StatelessWidget {
+  const _LibraryEmptyPlaylistCard({required this.onCreate});
+
+  final VoidCallback onCreate;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        color: const Color(0xFF2A1209),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Row(
+        children: <Widget>[
+          const Icon(
+            Icons.queue_music_rounded,
+            color: Color(0xFFFF9C54),
+            size: 30,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'No playlists yet. Create one and save songs into it.',
+              style: GoogleFonts.splineSans(
+                color: const Color(0xFFF4D7C4),
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          TextButton(onPressed: onCreate, child: const Text('Create')),
+        ],
+      ),
+    );
+  }
+}
+
+class _LibraryPlaylistRow extends StatelessWidget {
+  const _LibraryPlaylistRow({required this.controller, required this.playlist});
+
+  final OuterTuneController controller;
+  final UserPlaylist playlist;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<LibrarySong> songs = controller.songsForPlaylist(playlist);
+    final LibrarySong? leadSong = songs.isEmpty ? null : songs.first;
+
+    return InkWell(
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (BuildContext context) => _PlaylistScreen(
+              controller: controller,
+              title: playlist.name,
+              songs: songs,
+              playlist: playlist,
+            ),
+          ),
+        );
+      },
+      borderRadius: BorderRadius.circular(20),
+      child: Row(
+        children: <Widget>[
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: SizedBox(
+              width: 64,
+              height: 64,
+              child: leadSong != null
+                  ? _Artwork(
+                      seed: playlist.id,
+                      title: playlist.name,
+                      size: 64,
+                      imageUrl: leadSong.artworkUrl,
+                    )
+                  : Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: <Color>[Color(0xFF6C2D08), Color(0xFF1B0D05)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.queue_music_rounded,
+                        color: Color(0xFFFFD1AD),
+                        size: 32,
+                      ),
+                    ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  playlist.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.splineSans(
+                    color: const Color(0xFFFFE2D2),
+                    fontSize: 19,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Playlist · ${songs.length} Tracks',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.splineSans(
+                    color: const Color(0xFFD3A689),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Icon(
+            Icons.chevron_right_rounded,
+            color: const Color(0xFF7E4B2B),
+            size: 24,
+          ),
+        ],
       ),
     );
   }
@@ -4652,6 +5088,7 @@ class _SongTile extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _AlbumGrid extends StatelessWidget {
   const _AlbumGrid({required this.controller, required this.albums});
 
@@ -4686,6 +5123,7 @@ class _AlbumGrid extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _ArtistGrid extends StatelessWidget {
   const _ArtistGrid({required this.controller, required this.artists});
 
@@ -4721,6 +5159,7 @@ class _ArtistGrid extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _FolderTile extends StatelessWidget {
   const _FolderTile({required this.folder, required this.controller});
 
@@ -4755,6 +5194,7 @@ class _FolderTile extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _PlaylistGrid extends StatelessWidget {
   const _PlaylistGrid({required this.controller});
 
@@ -4764,10 +5204,10 @@ class _PlaylistGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final List<_PlaylistShelf> shelves = <_PlaylistShelf>[
       _PlaylistShelf(
-        title: 'Favorites',
-        subtitle: '${controller.favoriteSongs.length} liked tracks',
-        seed: 'favorites',
-        songs: controller.favoriteSongs,
+        title: 'Liked Songs',
+        subtitle: '${controller.likedSongs.length} liked tracks',
+        seed: 'liked_songs',
+        songs: controller.likedSongs,
       ),
       _PlaylistShelf(
         title: 'Most played',
@@ -4816,6 +5256,7 @@ class _PlaylistGrid extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _PlaylistShelf {
   const _PlaylistShelf({
     required this.title,
@@ -4899,6 +5340,7 @@ class _MiniPlayer extends StatelessWidget {
                         ? Image.network(
                             song.artworkUrl!,
                             fit: BoxFit.cover,
+                            filterQuality: FilterQuality.high,
                             loadingBuilder:
                                 (
                                   BuildContext context,
@@ -5128,6 +5570,7 @@ class _Artwork extends StatelessWidget {
               child: Image.network(
                 imageUrl!,
                 fit: BoxFit.cover,
+                filterQuality: FilterQuality.high,
                 errorBuilder:
                     (
                       BuildContext context,
@@ -5167,49 +5610,245 @@ class _Artwork extends StatelessWidget {
   }
 }
 
+class _ArtistAvatar extends StatelessWidget {
+  const _ArtistAvatar({
+    required this.seed,
+    required this.title,
+    required this.size,
+    this.imageUrl,
+  });
+
+  final String seed;
+  final String title;
+  final double size;
+  final String? imageUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final List<Color> colors = _gradientFor(seed, scheme);
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          colors: colors,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          if (imageUrl != null && imageUrl!.trim().isNotEmpty)
+            Image.network(
+              imageUrl!,
+              fit: BoxFit.cover,
+              filterQuality: FilterQuality.high,
+              errorBuilder:
+                  (
+                    BuildContext context,
+                    Object error,
+                    StackTrace? stackTrace,
+                  ) => const SizedBox.shrink(),
+            ),
+          if (imageUrl == null || imageUrl!.trim().isEmpty)
+            Center(
+              child: Text(
+                _initials(title),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color:
+                      ThemeData.estimateBrightnessForColor(colors.first) ==
+                          Brightness.dark
+                      ? Colors.white
+                      : Colors.black87,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ResolvedArtistAvatar extends StatelessWidget {
+  const _ResolvedArtistAvatar({
+    required this.controller,
+    required this.artistName,
+    required this.seed,
+    required this.size,
+  });
+
+  final OuterTuneController controller;
+  final String artistName;
+  final String seed;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<String?>(
+      future: controller.resolveArtistImage(artistName),
+      builder: (BuildContext context, AsyncSnapshot<String?> snapshot) {
+        return _ArtistAvatar(
+          seed: seed,
+          title: artistName,
+          size: size,
+          imageUrl: snapshot.data,
+        );
+      },
+    );
+  }
+}
+
 Future<void> _showCreatePlaylistDialog(
   BuildContext context,
   OuterTuneController controller,
 ) async {
   final TextEditingController input = TextEditingController();
-  final bool? created = await showDialog<bool>(
+  final String? name = await showDialog<String>(
     context: context,
+    barrierDismissible: true,
     builder: (BuildContext context) {
-      return AlertDialog(
-        title: const Text('Create playlist'),
-        content: TextField(
-          controller: input,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Playlist name'),
+      final double bottomInset = MediaQuery.of(context).viewInsets.bottom;
+      return AnimatedPadding(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding: EdgeInsets.fromLTRB(28, 24, 28, 24 + bottomInset),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Material(
+              color: const Color(0xFF262D2E),
+              borderRadius: BorderRadius.circular(28),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(28, 26, 28, 24),
+                child: StatefulBuilder(
+                  builder: (BuildContext context, StateSetter setState) {
+                    final bool canCreate = input.text.trim().isNotEmpty;
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          'Create playlist',
+                          style: GoogleFonts.ibmPlexSans(
+                            color: const Color(0xFFE8EFEF),
+                            fontSize: 22,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 26),
+                        TextField(
+                          controller: input,
+                          autofocus: true,
+                          onChanged: (_) => setState(() {}),
+                          onSubmitted: (String value) {
+                            final String trimmed = value.trim();
+                            if (trimmed.isNotEmpty) {
+                              Navigator.of(
+                                context,
+                                rootNavigator: true,
+                              ).pop(trimmed);
+                            }
+                          },
+                          style: GoogleFonts.ibmPlexSans(
+                            color: const Color(0xFFE8EFEF),
+                            fontSize: 18,
+                          ),
+                          cursorColor: const Color(0xFF8BDFD6),
+                          decoration: InputDecoration(
+                            hintText: 'new song',
+                            hintStyle: GoogleFonts.ibmPlexSans(
+                              color: const Color(0xFFD2DFDE),
+                              fontSize: 18,
+                            ),
+                            isDense: true,
+                            contentPadding: const EdgeInsets.only(bottom: 14),
+                            enabledBorder: const UnderlineInputBorder(
+                              borderSide: BorderSide(
+                                color: Color(0xFF8BDFD6),
+                                width: 2,
+                              ),
+                            ),
+                            focusedBorder: const UnderlineInputBorder(
+                              borderSide: BorderSide(
+                                color: Color(0xFF8BDFD6),
+                                width: 2,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 28),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: <Widget>[
+                            TextButton(
+                              onPressed: () => Navigator.of(
+                                context,
+                                rootNavigator: true,
+                              ).pop(),
+                              style: TextButton.styleFrom(
+                                foregroundColor: const Color(0xFF8BDFD6),
+                              ),
+                              child: Text(
+                                'Cancel',
+                                style: GoogleFonts.ibmPlexSans(fontSize: 16),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            FilledButton(
+                              onPressed: canCreate
+                                  ? () => Navigator.of(
+                                      context,
+                                      rootNavigator: true,
+                                    ).pop(input.text.trim())
+                                  : null,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFF8BDFD6),
+                                foregroundColor: const Color(0xFF244242),
+                                disabledBackgroundColor: const Color(
+                                  0xFF8BDFD6,
+                                ).withValues(alpha: 0.45),
+                                disabledForegroundColor: const Color(
+                                  0xFF244242,
+                                ),
+                                minimumSize: const Size(112, 40),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                              ),
+                              child: Text(
+                                'Create',
+                                style: GoogleFonts.ibmPlexSans(fontSize: 16),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
         ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              if (input.text.trim().isEmpty) {
-                return;
-              }
-              await controller.createPlaylist(input.text);
-              if (!context.mounted) {
-                return;
-              }
-              Navigator.of(context).pop(true);
-            },
-            child: const Text('Create'),
-          ),
-        ],
       );
     },
   );
   input.dispose();
 
-  if (created == true && context.mounted) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Playlist created.')));
+  if (name != null && name.trim().isNotEmpty) {
+    await Future<void>.delayed(const Duration(milliseconds: 220));
+    if (!context.mounted) {
+      return;
+    }
+    await controller.createPlaylist(name);
   }
 }
 

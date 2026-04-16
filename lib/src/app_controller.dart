@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:audiotags/audiotags.dart';
 import 'package:collection/collection.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -21,9 +22,7 @@ import 'android_media_notification_bridge.dart';
 import 'models.dart';
 
 class OuterTuneController extends ChangeNotifier {
-  OuterTuneController()
-    : _player = Player(),
-      _yt = YoutubeExplode();
+  OuterTuneController() : _player = Player(), _yt = YoutubeExplode();
   static const int _smartQueueBatchSize = 10;
 
   static const List<String> supportedExtensions = <String>[
@@ -85,6 +84,7 @@ class OuterTuneController extends ChangeNotifier {
   final Map<String, List<LibrarySong>> _ytMusicSearchCache =
       <String, List<LibrarySong>>{};
   final Map<String, String?> _ytMusicVideoIdCache = <String, String?>{};
+  final Map<String, String?> _ytMusicArtistImageCache = <String, String?>{};
   final Set<String> _smartQueueSongIds = <String>{};
   String? _activePlaybackSongId;
   double _activePlaybackCompletionRatio = 0;
@@ -202,6 +202,30 @@ class OuterTuneController extends ChangeNotifier {
     result.sort(
       (LibrarySong a, LibrarySong b) => b.playCount.compareTo(a.playCount),
     );
+    return result;
+  }
+
+  List<LibrarySong> get likedSongs {
+    final Map<String, LibrarySong> merged = <String, LibrarySong>{
+      for (final LibrarySong song in _songs)
+        if (song.isLiked) song.id: song,
+      for (final LibrarySong song in _transientSongsById.values)
+        if (song.isLiked) song.id: song,
+    };
+    final List<LibrarySong> result = merged.values.toList(growable: false);
+    result.sort((LibrarySong a, LibrarySong b) {
+      final int playCompare = b.playCount.compareTo(a.playCount);
+      if (playCompare != 0) {
+        return playCompare;
+      }
+      final DateTime left = a.lastPlayedAt ?? a.addedAt;
+      final DateTime right = b.lastPlayedAt ?? b.addedAt;
+      final int recentCompare = right.compareTo(left);
+      if (recentCompare != 0) {
+        return recentCompare;
+      }
+      return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+    });
     return result;
   }
 
@@ -459,11 +483,10 @@ class OuterTuneController extends ChangeNotifier {
   }) async {
     final int requestId = ++_trendingNowRequestId;
     final String normalizedLanguage = languageCode.trim().toLowerCase();
-    final String normalizedCountry = ((countryCode ?? '').trim().isEmpty
-            ? 'LK'
-            : countryCode!)
-        .trim()
-        .toUpperCase();
+    final String normalizedCountry =
+        ((countryCode ?? '').trim().isEmpty ? 'LK' : countryCode!)
+            .trim()
+            .toUpperCase();
     final String languageToken = _localeLanguageQueryToken(normalizedLanguage);
     final String regionLabel = _regionLabelFromCountryCode(normalizedCountry);
 
@@ -718,7 +741,7 @@ class OuterTuneController extends ChangeNotifier {
           title: query.title,
           subtitle: query.subtitle,
           query: query.query,
-          songs: filtered.take(10).toList(growable: false),
+          songs: filtered.take(50).toList(growable: false),
         ),
       );
       onProgress?.call(sections);
@@ -1165,7 +1188,7 @@ class OuterTuneController extends ChangeNotifier {
       addedAt: DateTime.now(),
       durationMs: durationMs,
       isRemote: true,
-      artworkUrl: artworkUrl,
+      artworkUrl: _upgradeArtworkUrl(artworkUrl),
       externalUrl: 'https://music.youtube.com/watch?v=$videoId',
     );
     if (!_looksLikeMusic(song, query: query)) {
@@ -1466,6 +1489,64 @@ class OuterTuneController extends ChangeNotifier {
     return null;
   }
 
+  String? _readArtistResultName(Map<dynamic, dynamic> data) {
+    final dynamic title = data['title'] ?? data['artist'] ?? data['name'];
+    final String text = '$title'.trim();
+    if (text.isNotEmpty && text.toLowerCase() != 'null') {
+      return text;
+    }
+
+    final dynamic artists = data['artists'];
+    if (artists is List && artists.isNotEmpty) {
+      final dynamic first = artists.first;
+      if (first is Map) {
+        final String candidate = '${first['name'] ?? first['title'] ?? ''}'
+            .trim();
+        if (candidate.isNotEmpty) {
+          return candidate;
+        }
+      }
+      final String candidate = '$first'.trim();
+      if (candidate.isNotEmpty && candidate.toLowerCase() != 'null') {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  String? _pickArtistImageUrl(
+    List<dynamic> results, {
+    required String artistName,
+  }) {
+    final String normalizedTarget = _normalizeToken(artistName);
+    String? fallback;
+
+    for (final dynamic item in results) {
+      if (item is! Map) {
+        continue;
+      }
+      final Map<dynamic, dynamic> data = item;
+      fallback ??= _readThumbnailUrl(data);
+
+      final String candidate = _normalizeToken(
+        _readArtistResultName(data) ?? '',
+      );
+      if (candidate.isEmpty) {
+        continue;
+      }
+      if (candidate == normalizedTarget ||
+          candidate.contains(normalizedTarget) ||
+          normalizedTarget.contains(candidate)) {
+        final String? matched = _readThumbnailUrl(data);
+        if ((matched ?? '').trim().isNotEmpty) {
+          return matched;
+        }
+      }
+    }
+
+    return fallback;
+  }
+
   String? _readAlbumName(Map<dynamic, dynamic> data) {
     final dynamic album = data['album'];
     if (album is Map && album['name'] != null) {
@@ -1480,12 +1561,59 @@ class OuterTuneController extends ChangeNotifier {
   String? _readThumbnailUrl(Map<dynamic, dynamic> data) {
     final dynamic thumbnails = data['thumbnail'] ?? data['thumbnails'];
     if (thumbnails is List && thumbnails.isNotEmpty) {
-      final dynamic last = thumbnails.last;
-      if (last is Map && last['url'] != null) {
-        return '${last['url']}'.trim();
+      Map<dynamic, dynamic>? best;
+      for (final dynamic item in thumbnails) {
+        if (item is! Map || item['url'] == null) {
+          continue;
+        }
+        if (best == null) {
+          best = item;
+          continue;
+        }
+        final int currentWidth =
+            (item['width'] as num?)?.toInt() ?? 0;
+        final int bestWidth =
+            (best['width'] as num?)?.toInt() ?? 0;
+        if (currentWidth > bestWidth) {
+          best = item;
+        }
+      }
+      best ??= thumbnails.last is Map && thumbnails.last['url'] != null
+          ? thumbnails.last as Map<dynamic, dynamic>
+          : null;
+      if (best != null && best['url'] != null) {
+        return _upgradeArtworkUrl('${best['url']}');
       }
     }
     return null;
+  }
+
+  String _upgradeArtworkUrl(String? url) {
+    final String value = (url ?? '').trim();
+    if (value.isEmpty) {
+      return value;
+    }
+    // Prefer higher quality Google artwork where possible.
+    if (value.contains('googleusercontent.com') || value.contains('yt3.ggpht.com')) {
+      final Uri uri = Uri.parse(value);
+      final String path = uri.path.replaceAllMapped(
+        RegExp(r'=w\d+-h\d+'),
+        (Match m) => '=w600-h600',
+      );
+      final Map<String, String> params = Map<String, String>.from(uri.queryParameters);
+      if (params.containsKey('w')) {
+        params['w'] = '600';
+      }
+      if (params.containsKey('h')) {
+        params['h'] = '600';
+      }
+      final Uri upgraded = uri.replace(
+        path: path,
+        queryParameters: params.isEmpty ? null : params,
+      );
+      return upgraded.toString();
+    }
+    return value;
   }
 
   int _parseDurationMs(dynamic rawDuration) {
@@ -1631,7 +1759,13 @@ class OuterTuneController extends ChangeNotifier {
     LibrarySong anchor, {
     int limit = 6,
   }) async {
-    final Set<String> excludedIds = <String>{..._queueSongIds, anchor.id};
+    final Set<String> excludedIds = <String>{
+      ..._queueSongIds,
+      anchor.id,
+      ..._songs.where((LibrarySong song) => song.isDisliked).map(
+            (LibrarySong song) => song.id,
+          ),
+    };
     final List<LibrarySong> prioritized = _dedupeSongs(
       await _ytMusicRadioSongs(anchor, limit: limit + 4),
       excludedIds: excludedIds,
@@ -1704,7 +1838,8 @@ class OuterTuneController extends ChangeNotifier {
 
   List<_RecommendationQuery> _buildPredictionQueries(LibrarySong anchor) {
     final List<_TasteSignal> artists = _preferenceArtists();
-    final List<_LanguageSignal> languages = _preferredLanguagesFromValidHistory();
+    final List<_LanguageSignal> languages =
+        _preferredLanguagesFromValidHistory();
     final _SessionContext session = _sessionContext();
     final List<_RecommendationQuery> queries = <_RecommendationQuery>[
       _RecommendationQuery(
@@ -1790,6 +1925,9 @@ class OuterTuneController extends ChangeNotifier {
       if (blockedIds.contains(song.id)) {
         continue;
       }
+      if (song.isDisliked) {
+        continue;
+      }
 
       final String key = _songIdentityKey(song);
       if (!seenKeys.add(key)) {
@@ -1819,6 +1957,12 @@ class OuterTuneController extends ChangeNotifier {
 
   double _recommendationScore(LibrarySong song, {LibrarySong? anchor}) {
     double score = song.playCount.toDouble();
+    if (song.isLiked) {
+      score += 10;
+    }
+    if (song.isDisliked) {
+      score -= 50;
+    }
     final String title = _normalizeToken(song.title);
     final String artist = _normalizeToken(song.artist);
     final String language = _detectSongLanguage(song);
@@ -1929,12 +2073,17 @@ class OuterTuneController extends ChangeNotifier {
   }
 
   double _familiarityNeed() {
-    final List<PlaybackEntry> recent = _history.take(30).toList(growable: false);
+    final List<PlaybackEntry> recent = _history
+        .take(30)
+        .toList(growable: false);
     if (recent.isEmpty) {
       return 0.55;
     }
     final double avgCompletion =
-        recent.fold<double>(0, (double sum, PlaybackEntry e) => sum + e.completionRatio) /
+        recent.fold<double>(
+          0,
+          (double sum, PlaybackEntry e) => sum + e.completionRatio,
+        ) /
         recent.length;
     // If recent completion is low, lean more familiar.
     return (0.75 - (avgCompletion * 0.35)).clamp(0.35, 0.8);
@@ -1980,7 +2129,8 @@ class OuterTuneController extends ChangeNotifier {
 
   Set<String> _vibeTokens(LibrarySong song) {
     final String text =
-        '${song.title} ${song.artist} ${song.album} ${song.genre ?? ''}'.toLowerCase();
+        '${song.title} ${song.artist} ${song.album} ${song.genre ?? ''}'
+            .toLowerCase();
     const Map<String, List<String>> map = <String, List<String>>{
       'chill': <String>['chill', 'calm', 'ambient', 'lofi', 'acoustic', 'soft'],
       'focus': <String>['focus', 'study', 'instrumental', 'piano'],
@@ -2159,7 +2309,10 @@ class OuterTuneController extends ChangeNotifier {
           : math.max(0.3, entry.completionRatio);
       scores[language] = (scores[language] ?? 0) + weight;
     }
-    final double total = scores.values.fold(0, (double sum, double v) => sum + v);
+    final double total = scores.values.fold(
+      0,
+      (double sum, double v) => sum + v,
+    );
     if (total <= 0) {
       return const <_LanguageSignal>[];
     }
@@ -2172,7 +2325,9 @@ class OuterTuneController extends ChangeNotifier {
           ),
         )
         .toList()
-      ..sort((_LanguageSignal a, _LanguageSignal b) => b.score.compareTo(a.score));
+      ..sort(
+        (_LanguageSignal a, _LanguageSignal b) => b.score.compareTo(a.score),
+      );
   }
 
   String _detectSongLanguage(LibrarySong song) {
@@ -2209,6 +2364,9 @@ class OuterTuneController extends ChangeNotifier {
 
   double _songPreferenceWeight(LibrarySong song) {
     double score = song.playCount * 2.0;
+    if (song.isLiked) {
+      score += 8;
+    }
     if (song.isFavorite) {
       score += 6;
     }
@@ -2405,26 +2563,27 @@ class OuterTuneController extends ChangeNotifier {
       return;
     }
     _notificationActionSubscription?.cancel();
-    _notificationActionSubscription = AndroidMediaNotificationBridge.actionStream().listen((
-      String action,
-    ) {
-      if (AndroidMediaNotificationBridge.isToggleAction(action)) {
-        unawaited(togglePlayback());
-      } else if (AndroidMediaNotificationBridge.isNextAction(action)) {
-        unawaited(nextTrack());
-      } else if (AndroidMediaNotificationBridge.isPreviousAction(action)) {
-        unawaited(previousTrack());
-      }
-    });
+    _notificationActionSubscription =
+        AndroidMediaNotificationBridge.actionStream().listen((String action) {
+          if (AndroidMediaNotificationBridge.isToggleAction(action)) {
+            unawaited(togglePlayback());
+          } else if (AndroidMediaNotificationBridge.isNextAction(action)) {
+            unawaited(nextTrack());
+          } else if (AndroidMediaNotificationBridge.isPreviousAction(action)) {
+            unawaited(previousTrack());
+          }
+        });
   }
 
   void _publishNotificationState() {
-    unawaited(AndroidMediaNotificationBridge.updatePlayback(
-      song: currentSong,
-      isPlaying: _isPlaying,
-      position: _position,
-      duration: _duration,
-    ));
+    unawaited(
+      AndroidMediaNotificationBridge.updatePlayback(
+        song: currentSong,
+        isPlaying: _isPlaying,
+        position: _position,
+        duration: _duration,
+      ),
+    );
   }
 
   void _syncQueueIndexFromPlayerState() {
@@ -2663,9 +2822,11 @@ class OuterTuneController extends ChangeNotifier {
 
   LibrarySong _videoToSong(Video video) {
     // Avoid thumbnail 404s: maxRes is not always available.
-    final String artwork = video.thumbnails.highResUrl.isNotEmpty
-        ? video.thumbnails.highResUrl
-        : video.thumbnails.standardResUrl;
+    final String artwork = _upgradeArtworkUrl(
+      video.thumbnails.highResUrl.isNotEmpty
+          ? video.thumbnails.highResUrl
+          : video.thumbnails.standardResUrl,
+    );
     return LibrarySong(
       id: 'yt:${video.id.value}',
       path: 'https://www.youtube.com/watch?v=${video.id.value}',
@@ -2782,6 +2943,44 @@ class OuterTuneController extends ChangeNotifier {
   Future<void> playPlaylist(UserPlaylist playlist, {int startIndex = 0}) async {
     final List<LibrarySong> songs = songsForPlaylist(playlist);
     await playSongs(songs, startIndex: startIndex, label: playlist.name);
+  }
+
+  Future<String?> resolveArtistImage(String artistName) async {
+    final YTMusic? client = _ytMusic;
+    final String normalized = _normalizeToken(artistName);
+    if (normalized.isEmpty || client == null || _isDisposed || _isDisposing) {
+      return null;
+    }
+    if (_ytMusicArtistImageCache.containsKey(normalized)) {
+      return _ytMusicArtistImageCache[normalized];
+    }
+
+    String? resolved;
+    try {
+      final List<dynamic> artistResults = await client.search(
+        artistName.trim(),
+        filter: ytm.SearchFilter.artists,
+        limit: 5,
+      );
+      resolved = _pickArtistImageUrl(artistResults, artistName: artistName);
+      if ((resolved ?? '').trim().isEmpty) {
+        final List<dynamic> profileResults = await client.search(
+          artistName.trim(),
+          filter: ytm.SearchFilter.profiles,
+          limit: 5,
+        );
+        resolved = _pickArtistImageUrl(profileResults, artistName: artistName);
+      }
+    } catch (_) {
+      resolved = null;
+    }
+
+    if (_isDisposed || _isDisposing) {
+      return null;
+    }
+    final String? upgraded = _upgradeArtworkUrl(resolved);
+    _ytMusicArtistImageCache[normalized] = upgraded;
+    return upgraded;
   }
 
   Future<void> enqueueSong(LibrarySong song) async {
@@ -3086,6 +3285,62 @@ class OuterTuneController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> likeSong(String songId) async {
+    final LibrarySong? base = songById(songId);
+    if (base == null) {
+      return;
+    }
+    final bool newLiked = !base.isLiked;
+    const bool newDisliked = false;
+    _songs = _songs
+        .map(
+          (LibrarySong song) => song.id == songId
+              ? song.copyWith(
+                  isLiked: newLiked,
+                  isDisliked: newDisliked,
+                )
+              : song,
+        )
+        .toList();
+    final LibrarySong? transient = _transientSongsById[songId];
+    if (transient != null) {
+      _transientSongsById[songId] = transient.copyWith(
+        isLiked: newLiked,
+        isDisliked: newDisliked,
+      );
+    }
+    await _saveSnapshot();
+    notifyListeners();
+  }
+
+  Future<void> dislikeSong(String songId) async {
+    final LibrarySong? base = songById(songId);
+    if (base == null) {
+      return;
+    }
+    final bool newDisliked = !base.isDisliked;
+    const bool newLiked = false;
+    _songs = _songs
+        .map(
+          (LibrarySong song) => song.id == songId
+              ? song.copyWith(
+                  isDisliked: newDisliked,
+                  isLiked: newLiked,
+                )
+              : song,
+        )
+        .toList();
+    final LibrarySong? transient = _transientSongsById[songId];
+    if (transient != null) {
+      _transientSongsById[songId] = transient.copyWith(
+        isDisliked: newDisliked,
+        isLiked: newLiked,
+      );
+    }
+    await _saveSnapshot();
+    notifyListeners();
+  }
+
   void _rememberTransientSong(LibrarySong song) {
     if (song.isRemote) {
       _transientSongsById[song.id] = song;
@@ -3266,6 +3521,7 @@ class OuterTuneController extends ChangeNotifier {
     unawaited(AndroidMediaNotificationBridge.stop());
     _ytMusic?.close();
     _yt.close();
+    unawaited(_player.stop());
     unawaited(_player.dispose());
     _isDisposed = true;
     super.dispose();

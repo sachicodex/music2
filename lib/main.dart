@@ -13,8 +13,8 @@ Future<void> main() async {
   await controller.initialize();
 
   runApp(
-    ChangeNotifierProvider<OuterTuneController>(
-      create: (_) => controller,
+    ChangeNotifierProvider<OuterTuneController>.value(
+      value: controller,
       child: const OuterTuneApp(),
     ),
   );

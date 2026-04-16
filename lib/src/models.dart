@@ -131,6 +131,8 @@ class LibrarySong {
     this.isRemote = false,
     this.artworkUrl,
     this.externalUrl,
+    this.isLiked = false,
+    this.isDisliked = false,
   });
 
   final String id;
@@ -154,6 +156,8 @@ class LibrarySong {
   final bool isRemote;
   final String? artworkUrl;
   final String? externalUrl;
+  final bool isLiked;
+  final bool isDisliked;
 
   Duration get duration => Duration(milliseconds: durationMs.clamp(0, 1 << 31));
 
@@ -185,6 +189,8 @@ class LibrarySong {
     bool? isRemote,
     String? artworkUrl,
     String? externalUrl,
+    bool? isLiked,
+    bool? isDisliked,
   }) {
     return LibrarySong(
       id: id,
@@ -208,6 +214,8 @@ class LibrarySong {
       isRemote: isRemote ?? this.isRemote,
       artworkUrl: artworkUrl ?? this.artworkUrl,
       externalUrl: externalUrl ?? this.externalUrl,
+      isLiked: isLiked ?? this.isLiked,
+      isDisliked: isDisliked ?? this.isDisliked,
     );
   }
 
@@ -234,6 +242,8 @@ class LibrarySong {
       'isRemote': isRemote,
       'artworkUrl': artworkUrl,
       'externalUrl': externalUrl,
+      'isLiked': isLiked,
+      'isDisliked': isDisliked,
     };
   }
 
@@ -261,6 +271,8 @@ class LibrarySong {
       isRemote: json['isRemote'] as bool? ?? false,
       artworkUrl: json['artworkUrl'] as String?,
       externalUrl: json['externalUrl'] as String?,
+      isLiked: json['isLiked'] as bool? ?? false,
+      isDisliked: json['isDisliked'] as bool? ?? false,
     );
   }
 }
