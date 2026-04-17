@@ -6,7 +6,6 @@ import 'dart:io';
 import 'package:audiotags/audiotags.dart';
 import 'package:collection/collection.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -77,6 +76,8 @@ class OuterTuneController extends ChangeNotifier {
   List<LibrarySong> _trendingNowSongs = <LibrarySong>[];
   String _trendingNowRegionLabel = 'Your region';
   List<HomeFeedSection> _homeFeed = <HomeFeedSection>[];
+  List<SongRecommendation> _personalizedHomeRecommendations =
+      <SongRecommendation>[];
   int _homeQueryCursor = 0;
   final Set<String> _homeConsumedIdentityKeys = <String>{};
   final Set<String> _homeConsumedIds = <String>{};
@@ -99,6 +100,7 @@ class OuterTuneController extends ChangeNotifier {
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
   LibrarySong? _pendingSelectionSong;
+  bool _hasPublishedPlaybackNotification = false;
 
   String? _lastTrackedSongId;
 
@@ -131,14 +133,27 @@ class OuterTuneController extends ChangeNotifier {
   List<LibrarySong> get trendingNowSongs =>
       List<LibrarySong>.unmodifiable(_trendingNowSongs);
   String get trendingNowRegionLabel => _trendingNowRegionLabel;
+  List<AppRegion> get availableRegions =>
+      List<AppRegion>.unmodifiable(kAppRegions);
+  String get preferredCountryCode =>
+      _normalizeCountryCode(_settings.preferredCountryCode);
+  String get preferredRegionLabel =>
+      _regionLabelFromCountryCode(preferredCountryCode);
   List<HomeFeedSection> get homeFeed =>
       List<HomeFeedSection>.unmodifiable(_homeFeed);
+  List<SongRecommendation> get personalizedHomeRecommendations =>
+      List<SongRecommendation>.unmodifiable(_personalizedHomeRecommendations);
+  List<LibrarySong> get personalizedHomeSongs =>
+      _personalizedHomeRecommendations
+          .map((SongRecommendation item) => item.song)
+          .toList(growable: false);
   List<UserPlaylist> get playlists =>
       List<UserPlaylist>.unmodifiable(_playlists);
   List<PlaybackEntry> get history => List<PlaybackEntry>.unmodifiable(_history);
   String get queueLabel => _queueLabel;
   int get queueIndex => _queueIndex;
-  bool get hasHomeRecommendations => _homeFeed.isNotEmpty;
+  bool get hasHomeRecommendations =>
+      _homeFeed.isNotEmpty || _personalizedHomeRecommendations.isNotEmpty;
   bool get hasYtMusicAuth =>
       (_settings.ytMusicAuthJson?.trim().isNotEmpty ?? false);
 
@@ -400,7 +415,7 @@ class OuterTuneController extends ChangeNotifier {
     _bindNotificationActions();
     _attachPlayerListeners();
     _initialized = true;
-    _publishNotificationState();
+    unawaited(AndroidMediaNotificationBridge.stop());
     notifyListeners();
     unawaited(refreshHomeFeed());
   }
@@ -546,14 +561,16 @@ class OuterTuneController extends ChangeNotifier {
     try {
       final List<String> queries = <String>[
         if (normalizedCountry.isNotEmpty)
-          '$languageToken top songs in $regionLabel this month',
+          '$languageToken top songs in $regionLabel last month',
         if (normalizedCountry.isNotEmpty)
-          'youtube music trending in $regionLabel',
-        if (normalizedCountry == 'LK') 'sinhala trending songs sri lanka',
-        if (normalizedCountry == 'LK') 'tamil trending songs sri lanka',
-        '$languageToken viral songs this month',
+          'youtube music trending in $regionLabel last month',
+        if (normalizedCountry == 'LK')
+          'sinhala trending songs sri lanka last month',
+        if (normalizedCountry == 'LK')
+          'tamil trending songs sri lanka last month',
+        '$languageToken viral songs last month',
         'youtube music charts $languageToken',
-        'most popular songs this month',
+        'most popular songs last month',
       ];
 
       final List<LibrarySong> candidates = <LibrarySong>[];
@@ -625,9 +642,16 @@ class OuterTuneController extends ChangeNotifier {
         _homeError = 'No internet connection. Reconnect and tap Refresh.';
         return;
       }
+      await loadTrendingNow(
+        languageCode: preferredLanguageCode,
+        countryCode: preferredCountryCode,
+        force: force,
+      );
       final List<HomeFeedSection> previousFeed = List<HomeFeedSection>.from(
         _homeFeed,
       );
+      final List<SongRecommendation> previousPersonalized =
+          List<SongRecommendation>.from(_personalizedHomeRecommendations);
       final LibrarySong? seedSong = _primaryRecommendationSeed();
       final List<HomeFeedSection> sections = <HomeFeedSection>[];
       final Set<String> consumedIds = <String>{};
@@ -651,23 +675,6 @@ class OuterTuneController extends ChangeNotifier {
         }
       }
 
-      final List<HomeFeedSection> ytmHomeSections =
-          await _buildYtMusicHomeSections(excludedIds: consumedIds);
-      for (final HomeFeedSection section in ytmHomeSections) {
-        sections.add(section);
-        consumedIds.addAll(
-          section.songs.take(4).map((LibrarySong song) => song.id),
-        );
-        consumedKeys.addAll(
-          section.songs
-              .take(8)
-              .map((LibrarySong song) => _songIdentityKey(song)),
-        );
-        if (sections.length >= 4) {
-          break;
-        }
-      }
-
       _homeQueryCursor = 0;
       _homeConsumedIds
         ..clear()
@@ -684,8 +691,13 @@ class OuterTuneController extends ChangeNotifier {
       );
 
       _homeFeed = expanded;
-      if (_homeFeed.isEmpty) {
+      _personalizedHomeRecommendations = _buildPersonalizedHomeSongs(
+        sections: _homeFeed,
+        seedSong: seedSong,
+      );
+      if (_homeFeed.isEmpty && _personalizedHomeRecommendations.isEmpty) {
         _homeFeed = previousFeed;
+        _personalizedHomeRecommendations = previousPersonalized;
         _homeError = previousFeed.isEmpty
             ? 'No recommendations available right now.'
             : 'Recommendations could not be refreshed right now.';
@@ -722,6 +734,10 @@ class OuterTuneController extends ChangeNotifier {
         already: List<HomeFeedSection>.from(_homeFeed),
         desiredCount: desiredTotal,
         onProgress: _publishHomeFeedProgress,
+      );
+      _personalizedHomeRecommendations = _buildPersonalizedHomeSongs(
+        sections: _homeFeed,
+        seedSong: seedSong,
       );
     } catch (error) {
       _homeError = _friendlyOnlineError(error);
@@ -802,6 +818,10 @@ class OuterTuneController extends ChangeNotifier {
 
   void _publishHomeFeedProgress(List<HomeFeedSection> sections) {
     _homeFeed = List<HomeFeedSection>.from(sections);
+    _personalizedHomeRecommendations = _buildPersonalizedHomeSongs(
+      sections: _homeFeed,
+      seedSong: _primaryRecommendationSeed(),
+    );
     notifyListeners();
   }
 
@@ -1078,8 +1098,8 @@ class OuterTuneController extends ChangeNotifier {
       return null;
     }
     return HomeFeedSection(
-      title: 'From YouTube Music radio',
-      subtitle: 'Real YT Music up-next inspired by ${anchor.title}',
+      title: 'Inspired by ${anchor.title}',
+      subtitle: 'Built from your recent listening and full-listen history',
       query: '${anchor.artist} ${anchor.title} radio',
       songs: filtered,
     );
@@ -1093,53 +1113,6 @@ class OuterTuneController extends ChangeNotifier {
       return 'Online recommendations are temporarily limited by YouTube. The app will retry automatically.';
     }
     return 'Online music is unavailable right now. Please try again shortly.';
-  }
-
-  Future<List<HomeFeedSection>> _buildYtMusicHomeSections({
-    required Set<String> excludedIds,
-  }) async {
-    final YTMusic? client = _ytMusic;
-    if (client == null) {
-      return <HomeFeedSection>[];
-    }
-
-    final List<dynamic> rows = await client.getHome(limit: 4);
-    final List<HomeFeedSection> sections = <HomeFeedSection>[];
-    final Set<String> localConsumed = <String>{...excludedIds};
-
-    for (final dynamic row in rows) {
-      if (row is! Map) {
-        continue;
-      }
-      final String title = '${row['title'] ?? ''}'.trim();
-      final List<dynamic> contents =
-          (row['contents'] as List<dynamic>? ?? <dynamic>[]);
-      final List<LibrarySong> songs = contents
-          .map((dynamic item) => _ytMusicItemToSong(item))
-          .whereType<LibrarySong>()
-          .toList(growable: false);
-      final List<LibrarySong> filtered = _dedupeSongs(
-        songs,
-        excludedIds: localConsumed,
-        limit: 10,
-      );
-      if (title.isEmpty || filtered.length < 4) {
-        continue;
-      }
-      sections.add(
-        HomeFeedSection(
-          title: title,
-          subtitle: 'Shelf from YouTube Music',
-          query: title,
-          songs: filtered,
-        ),
-      );
-      localConsumed.addAll(filtered.take(4).map((LibrarySong song) => song.id));
-      if (sections.length >= 2) {
-        break;
-      }
-    }
-    return sections;
   }
 
   Future<List<LibrarySong>> _ytMusicRadioSongs(
@@ -1301,7 +1274,8 @@ class OuterTuneController extends ChangeNotifier {
   }) {
     final Set<String> seenKeys = <String>{};
     final String expectedLanguage = _localeToLanguageBucket(languageCode);
-    final String rankingQuery = '$countryCode $languageCode top songs'.trim();
+    final String rankingQuery =
+        '$countryCode $languageCode last month top songs'.trim();
     final List<_ScoredSong> ranked = <_ScoredSong>[];
 
     for (final LibrarySong song in songs) {
@@ -1345,6 +1319,10 @@ class OuterTuneController extends ChangeNotifier {
       'si' => 'sinhala',
       'ta' => 'tamil',
       'hi' => 'hindi',
+      'ur' => 'urdu',
+      'bn' => 'bengali',
+      'ja' => 'japanese',
+      'ko' => 'korean',
       _ => 'english',
     };
   }
@@ -1354,6 +1332,23 @@ class OuterTuneController extends ChangeNotifier {
       'si' => 'si',
       'ta' => 'ta',
       'hi' => 'hi',
+      'ur' => 'ur',
+      'bn' => 'bn',
+      'ja' => 'ja',
+      'ko' => 'ko',
+      _ => 'en',
+    };
+  }
+
+  String _queryTokenToLanguageCode(String token) {
+    return switch (token.trim().toLowerCase()) {
+      'sinhala' => 'si',
+      'tamil' => 'ta',
+      'hindi' => 'hi',
+      'urdu' => 'ur',
+      'bengali' => 'bn',
+      'japanese' => 'ja',
+      'korean' => 'ko',
       _ => 'en',
     };
   }
@@ -1362,12 +1357,63 @@ class OuterTuneController extends ChangeNotifier {
     return switch (countryCode) {
       'LK' => 'Sri Lanka',
       'IN' => 'India',
+      'PK' => 'Pakistan',
+      'BD' => 'Bangladesh',
       'US' => 'United States',
       'GB' => 'United Kingdom',
       'CA' => 'Canada',
       'AU' => 'Australia',
+      'JP' => 'Japan',
+      'KR' => 'South Korea',
       _ => countryCode.isEmpty ? 'Your region' : countryCode,
     };
+  }
+
+  String _normalizeCountryCode(String? value) {
+    final String normalized = (value ?? '').trim().toUpperCase();
+    if (normalized.isEmpty) {
+      return 'LK';
+    }
+    final AppRegion? matched = kAppRegions.firstWhereOrNull(
+      (AppRegion region) => region.countryCode == normalized,
+    );
+    return matched?.countryCode ?? 'LK';
+  }
+
+  AppRegion get preferredRegion {
+    final String code = preferredCountryCode;
+    return kAppRegions.firstWhere(
+      (AppRegion region) => region.countryCode == code,
+      orElse: () => kAppRegions.first,
+    );
+  }
+
+  String get preferredLanguageCode {
+    final List<_LanguageSignal> historyLanguages =
+        _preferredLanguagesFromValidHistory();
+    if (historyLanguages.isNotEmpty) {
+      return _queryTokenToLanguageCode(historyLanguages.first.queryToken);
+    }
+    return preferredRegion.languageCode;
+  }
+
+  Future<void> setPreferredRegion(String countryCode) async {
+    final String normalized = _normalizeCountryCode(countryCode);
+    if (normalized == preferredCountryCode) {
+      return;
+    }
+    _settings = _settings.copyWith(preferredCountryCode: normalized);
+    _trendingNowSongs = <LibrarySong>[];
+    _trendingNowRegionLabel = _regionLabelFromCountryCode(normalized);
+    _trendingNowError = null;
+    await _saveSnapshot();
+    notifyListeners();
+    await loadTrendingNow(
+      languageCode: preferredLanguageCode,
+      countryCode: normalized,
+      force: true,
+    );
+    await refreshHomeFeed(force: true);
   }
 
   double _onlineSearchScore(LibrarySong song, {required String query}) {
@@ -1631,10 +1677,8 @@ class OuterTuneController extends ChangeNotifier {
           best = item;
           continue;
         }
-        final int currentWidth =
-            (item['width'] as num?)?.toInt() ?? 0;
-        final int bestWidth =
-            (best['width'] as num?)?.toInt() ?? 0;
+        final int currentWidth = (item['width'] as num?)?.toInt() ?? 0;
+        final int bestWidth = (best['width'] as num?)?.toInt() ?? 0;
         if (currentWidth > bestWidth) {
           best = item;
         }
@@ -1655,13 +1699,16 @@ class OuterTuneController extends ChangeNotifier {
       return value;
     }
     // Prefer higher quality Google artwork where possible.
-    if (value.contains('googleusercontent.com') || value.contains('yt3.ggpht.com')) {
+    if (value.contains('googleusercontent.com') ||
+        value.contains('yt3.ggpht.com')) {
       final Uri uri = Uri.parse(value);
       final String path = uri.path.replaceAllMapped(
         RegExp(r'=w\d+-h\d+'),
         (Match m) => '=w600-h600',
       );
-      final Map<String, String> params = Map<String, String>.from(uri.queryParameters);
+      final Map<String, String> params = Map<String, String>.from(
+        uri.queryParameters,
+      );
       if (params.containsKey('w')) {
         params['w'] = '600';
       }
@@ -1823,9 +1870,9 @@ class OuterTuneController extends ChangeNotifier {
     final Set<String> excludedIds = <String>{
       ..._queueSongIds,
       anchor.id,
-      ..._songs.where((LibrarySong song) => song.isDisliked).map(
-            (LibrarySong song) => song.id,
-          ),
+      ..._songs
+          .where((LibrarySong song) => song.isDisliked)
+          .map((LibrarySong song) => song.id),
     };
     final List<LibrarySong> prioritized = _dedupeSongs(
       await _ytMusicRadioSongs(anchor, limit: limit + 4),
@@ -1872,50 +1919,470 @@ class OuterTuneController extends ChangeNotifier {
   List<_RecommendationQuery> _buildHomeQueries(LibrarySong? seedSong) {
     final List<_TasteSignal> artists = _preferenceArtists();
     final List<_TasteSignal> genres = _preferenceGenres();
+    final List<_LanguageSignal> languages =
+        _preferredLanguagesFromValidHistory();
+    final List<LibrarySong> fullListenSeeds = _validHistorySongs();
+    final _SessionContext session = _sessionContext();
     final List<_RecommendationQuery> queries = <_RecommendationQuery>[];
+    final String languageToken = _localeLanguageQueryToken(
+      preferredLanguageCode,
+    );
+
+    void addQuery(_RecommendationQuery query) {
+      final String key = query.query.trim().toLowerCase();
+      if (key.isEmpty ||
+          queries.any(
+            (_RecommendationQuery item) =>
+                item.query.trim().toLowerCase() == key,
+          )) {
+        return;
+      }
+      queries.add(query);
+    }
+
+    if (seedSong != null) {
+      addQuery(
+        _RecommendationQuery(
+          title: 'Because you played ${seedSong.title}',
+          subtitle: 'Closest match to what you are into right now',
+          query: '${seedSong.artist} ${seedSong.title} similar songs',
+          anchor: seedSong,
+        ),
+      );
+      addQuery(
+        _RecommendationQuery(
+          title: 'More from ${seedSong.artist}',
+          subtitle: 'Artists and songs adjacent to your recent play',
+          query: '${seedSong.artist} popular songs',
+          anchor: seedSong,
+        ),
+      );
+    }
+
+    for (final LibrarySong song in fullListenSeeds.take(2)) {
+      if (seedSong != null && _sameSong(song, seedSong)) {
+        continue;
+      }
+      addQuery(
+        _RecommendationQuery(
+          title: 'Because you finished ${song.title}',
+          subtitle: 'Weighted by full listens, not just quick plays',
+          query: '${song.artist} ${song.title} similar songs',
+          anchor: song,
+        ),
+      );
+    }
 
     for (final _TasteSignal artist in artists.take(2)) {
-      queries.add(
+      addQuery(
         _RecommendationQuery(
-          title: 'From ${artist.label}',
-          subtitle: 'Popular tracks and adjacent songs',
+          title: 'From your liked artists',
+          subtitle: 'Artists you return to most often',
           query: '${artist.label} top songs',
         ),
       );
     }
 
-    for (final _TasteSignal genre in genres.take(1)) {
-      queries.add(
+    for (final _TasteSignal genre in genres.take(2)) {
+      addQuery(
         _RecommendationQuery(
-          title: '${genre.label} picks',
-          subtitle: 'Online discoveries near your taste',
-          query: '${genre.label} songs',
+          title: '${genre.label} for you',
+          subtitle: 'Genre picks driven by your listening patterns',
+          query: '$languageToken ${genre.label} songs',
         ),
       );
     }
 
-    // Ensure first-time users still get sections before any listening history.
+    for (final _LanguageSignal language in languages.take(1)) {
+      addQuery(
+        _RecommendationQuery(
+          title: '${language.label} picks',
+          subtitle: 'Matches the language you finish most',
+          query: '${language.queryToken} songs you may like',
+        ),
+      );
+    }
+
+    addQuery(
+      _RecommendationQuery(
+        title: '${session.label} for you',
+        subtitle: 'Session-aware music picked for this moment',
+        query: '$languageToken ${session.query} songs',
+        anchor: seedSong,
+      ),
+    );
+
     if (queries.isEmpty) {
-      queries.addAll(<_RecommendationQuery>[
-        const _RecommendationQuery(
-          title: 'Fresh picks',
-          subtitle: 'Popular songs to start your vibe',
-          query: 'latest popular songs',
+      addQuery(
+        _RecommendationQuery(
+          title: 'Fresh discoveries',
+          subtitle:
+              'Start listening, liking, and finishing songs to personalize this section',
+          query: '$languageToken best songs playlist',
         ),
-        const _RecommendationQuery(
-          title: 'Global trending',
-          subtitle: 'Songs people are playing now',
-          query: 'top global hits this week',
+      );
+      addQuery(
+        _RecommendationQuery(
+          title: 'New for your library',
+          subtitle:
+              'A fallback shelf until your taste profile becomes stronger',
+          query: '$languageToken new music songs',
         ),
-        const _RecommendationQuery(
-          title: 'Discover mix',
-          subtitle: 'Recommended tracks across genres',
-          query: 'best songs playlist mix',
-        ),
-      ]);
+      );
     }
 
     return queries;
+  }
+
+  List<SongRecommendation> _buildPersonalizedHomeSongs({
+    required List<HomeFeedSection> sections,
+    LibrarySong? seedSong,
+  }) {
+    final List<LibrarySong> fullListenSongs = _validHistorySongs();
+    final _TasteProfile profile = _buildTasteProfile();
+    final List<LibrarySong> sectionSongs = <LibrarySong>[
+      for (final HomeFeedSection section in sections) ...section.songs.take(12),
+    ];
+    final Map<String, int> sectionHits = <String, int>{};
+    final Map<String, HomeFeedSection> primarySectionBySong = <String, HomeFeedSection>{};
+    final Set<String> recentIds = recentlyPlayedSongs
+        .take(24)
+        .map((LibrarySong song) => song.id)
+        .toSet();
+    final Set<String> recentKeys = recentlyPlayedSongs
+        .take(24)
+        .map(_songIdentityKey)
+        .toSet();
+    final Set<String> skippedSongIds = _recentSkippedSongIds();
+    final Set<String> dislikedArtistKeys = dislikedSongs
+        .map((LibrarySong song) => _normalizeToken(song.artist))
+        .where((String key) => key.isNotEmpty)
+        .toSet();
+    final Map<String, int> recentArtistCounts = <String, int>{};
+
+    for (final LibrarySong song in recentlyPlayedSongs.take(16)) {
+      final String artistKey = _normalizeToken(song.artist);
+      if (artistKey.isEmpty) {
+        continue;
+      }
+      recentArtistCounts[artistKey] = (recentArtistCounts[artistKey] ?? 0) + 1;
+    }
+
+    for (final HomeFeedSection section in sections) {
+      for (final LibrarySong song in section.songs.take(12)) {
+        final String key = _songIdentityKey(song);
+        sectionHits[key] = (sectionHits[key] ?? 0) + 1;
+        primarySectionBySong.putIfAbsent(key, () => section);
+      }
+    }
+
+    final Set<String> fullListenIds = validPlaybackHistory
+        .map((PlaybackEntry entry) => entry.songId)
+        .toSet();
+    final Set<String> likedArtistKeys = likedSongs
+        .map((LibrarySong song) => _normalizeToken(song.artist))
+        .where((String key) => key.isNotEmpty)
+        .toSet();
+    final Set<String> fullListenArtistKeys = fullListenSongs
+        .map((LibrarySong song) => _normalizeToken(song.artist))
+        .where((String key) => key.isNotEmpty)
+        .toSet();
+
+    final List<LibrarySong> seedSongs = _dedupeSongs(
+      <LibrarySong>[
+        if (currentSong case final LibrarySong current) current,
+        if (seedSong case final LibrarySong seed) seed,
+        ...fullListenSongs.take(4),
+        ...likedSongs.take(4),
+      ],
+      excludedIds: <String>{},
+      limit: 10,
+    );
+    final List<LibrarySong> candidates = _dedupeSongs(
+      sectionSongs.where((LibrarySong song) {
+        if (song.isDisliked) {
+          return false;
+        }
+        if (recentIds.contains(song.id) ||
+            recentKeys.contains(_songIdentityKey(song)) ||
+            skippedSongIds.contains(song.id)) {
+          return false;
+        }
+        final String artistKey = _normalizeToken(song.artist);
+        if (dislikedArtistKeys.contains(artistKey)) {
+          return false;
+        }
+        if (seedSongs.any((LibrarySong seed) => _sameSong(seed, song))) {
+          return false;
+        }
+        return true;
+      }).toList(growable: false),
+      excludedIds: <String>{},
+      limit: 140,
+    );
+
+    final LibrarySong? anchor = seedSongs.firstOrNull;
+    final List<_ScoredRecommendation> scored = candidates
+        .map((LibrarySong song) {
+          final String key = _songIdentityKey(song);
+          final String artistKey = _normalizeToken(song.artist);
+          double score = _recommendationScore(song, anchor: anchor);
+          score += (sectionHits[key] ?? 0) * 5.5;
+          if (profile.genreKeys.contains(_normalizeToken(song.genre ?? ''))) {
+            score += 7;
+          }
+          if (profile.languageKeys.contains(_detectSongLanguage(song))) {
+            score += 4.5;
+          }
+          if (profile.moodKeys.intersection(_vibeTokens(song)).isNotEmpty) {
+            score += 5.5;
+          }
+          if (profile.prefersRecentYears && (song.year ?? 0) >= 2018) {
+            score += 2.4;
+          }
+          if (!profile.prefersRecentYears &&
+              song.year != null &&
+              song.year! > 0 &&
+              song.year! < 2016) {
+            score += 2.4;
+          }
+          if (likedArtistKeys.contains(artistKey) ||
+              fullListenArtistKeys.contains(artistKey)) {
+            score += 6;
+          }
+          final int recentArtistCount = recentArtistCounts[artistKey] ?? 0;
+          if (recentArtistCount >= 2) {
+            score -= 5.5 * recentArtistCount;
+          }
+          if ((song.artworkUrl ?? '').trim().isNotEmpty) {
+            score += 1.2;
+          }
+          if (song.sourceLabel == 'YouTube Music') {
+            score += 1.8;
+          }
+          if (!fullListenIds.contains(song.id) &&
+              !likedArtistKeys.contains(artistKey) &&
+              !fullListenArtistKeys.contains(artistKey)) {
+            score += 2.8;
+          }
+          final bool exploratory = _isExploratoryCandidate(
+            song,
+            profile: profile,
+            artistKey: artistKey,
+            fullListenArtistKeys: fullListenArtistKeys,
+            likedArtistKeys: likedArtistKeys,
+          );
+          return _ScoredRecommendation(
+            song: song,
+            score: score,
+            reason: _recommendationReason(
+              song,
+              profile: profile,
+              exploratory: exploratory,
+              section: primarySectionBySong[key],
+              artistKey: artistKey,
+              likedArtistKeys: likedArtistKeys,
+              fullListenArtistKeys: fullListenArtistKeys,
+            ),
+            isExploratory: exploratory,
+          );
+        })
+        .toList(growable: false);
+
+    return _selectPersonalizedRecommendations(scored, limit: 50);
+  }
+
+  Set<String> _recentSkippedSongIds() {
+    final Set<String> result = <String>{};
+    for (final PlaybackEntry entry in _history.take(80)) {
+      if (!entry.listenedToEnd && entry.completionRatio < 0.45) {
+        result.add(entry.songId);
+      }
+    }
+    return result;
+  }
+
+  _TasteProfile _buildTasteProfile() {
+    final List<_TasteSignal> artists = _preferenceArtists();
+    final List<_TasteSignal> genres = _preferenceGenres();
+    final List<_LanguageSignal> languages = _preferredLanguagesFromValidHistory();
+    final Map<String, double> moodScores = <String, double>{};
+
+    for (final LibrarySong song in _rankedPreferenceSongs().take(40)) {
+      final double weight = _songPreferenceWeight(song);
+      for (final String mood in _vibeTokens(song)) {
+        moodScores[mood] = (moodScores[mood] ?? 0) + weight;
+      }
+    }
+
+    final List<MapEntry<String, double>> moods = moodScores.entries.toList()
+      ..sort(
+        (MapEntry<String, double> a, MapEntry<String, double> b) =>
+            b.value.compareTo(a.value),
+      );
+
+    final List<int> years = _rankedPreferenceSongs()
+        .map((LibrarySong song) => song.year)
+        .whereType<int>()
+        .where((int year) => year > 0)
+        .take(30)
+        .toList(growable: false);
+    final double averageYear = years.isEmpty
+        ? DateTime.now().year.toDouble()
+        : years.reduce((int a, int b) => a + b) / years.length;
+
+    return _TasteProfile(
+      artistKeys: artists
+          .take(5)
+          .map((item) => _normalizeToken(item.label))
+          .where((String key) => key.isNotEmpty)
+          .toSet(),
+      genreKeys: genres
+          .take(4)
+          .map((item) => _normalizeToken(item.label))
+          .where((String key) => key.isNotEmpty)
+          .toSet(),
+      moodKeys: moods
+          .take(3)
+          .map((MapEntry<String, double> entry) => entry.key)
+          .toSet(),
+      languageKeys: languages
+          .take(2)
+          .map((item) => _detectLanguageBucket(item.queryToken))
+          .toSet(),
+      prefersRecentYears: averageYear >= 2018,
+    );
+  }
+
+  String _detectLanguageBucket(String queryToken) {
+    return switch (queryToken.trim().toLowerCase()) {
+      'sinhala' => 'si',
+      'tamil' => 'ta',
+      'hindi' => 'hi',
+      _ => 'en',
+    };
+  }
+
+  bool _isExploratoryCandidate(
+    LibrarySong song, {
+    required _TasteProfile profile,
+    required String artistKey,
+    required Set<String> fullListenArtistKeys,
+    required Set<String> likedArtistKeys,
+  }) {
+    final bool knownArtist =
+        likedArtistKeys.contains(artistKey) ||
+        fullListenArtistKeys.contains(artistKey) ||
+        profile.artistKeys.contains(artistKey);
+    final bool knownGenre = profile.genreKeys.contains(
+      _normalizeToken(song.genre ?? ''),
+    );
+    final bool knownMood =
+        profile.moodKeys.intersection(_vibeTokens(song)).isNotEmpty;
+    return !knownArtist || (!knownGenre && !knownMood);
+  }
+
+  List<SongRecommendation> _selectPersonalizedRecommendations(
+    List<_ScoredRecommendation> scored, {
+    int limit = 50,
+  }) {
+    final List<_ScoredRecommendation> familiar = scored
+        .where((item) => !item.isExploratory)
+        .toList(growable: false)
+      ..sort(_compareScoredRecommendations);
+    final List<_ScoredRecommendation> exploratory = scored
+        .where((item) => item.isExploratory)
+        .toList(growable: false)
+      ..sort(_compareScoredRecommendations);
+
+    final Map<String, int> artistCounts = <String, int>{};
+    final Set<String> seenKeys = <String>{};
+    final List<SongRecommendation> result = <SongRecommendation>[];
+    final int targetTotal = math.min(limit, scored.length);
+    final int exploratoryTarget = math.min(
+      exploratory.length,
+      math.max(1, (targetTotal * 0.25).round()),
+    );
+    final int familiarTarget = math.max(0, targetTotal - exploratoryTarget);
+
+    void addFrom(List<_ScoredRecommendation> pool, int target) {
+      for (final _ScoredRecommendation item in pool) {
+        if (result.length >= targetTotal || target <= 0) {
+          return;
+        }
+        final String key = _songIdentityKey(item.song);
+        final String artistKey = _normalizeToken(item.song.artist);
+        if (!seenKeys.add(key)) {
+          continue;
+        }
+        if ((artistCounts[artistKey] ?? 0) >= 2) {
+          continue;
+        }
+        result.add(
+          SongRecommendation(
+            song: item.song,
+            reason: item.reason,
+            isExploratory: item.isExploratory,
+          ),
+        );
+        artistCounts[artistKey] = (artistCounts[artistKey] ?? 0) + 1;
+        target -= 1;
+      }
+    }
+
+    addFrom(familiar, familiarTarget);
+    addFrom(exploratory, exploratoryTarget);
+    addFrom(
+      <_ScoredRecommendation>[...familiar, ...exploratory]
+        ..sort(_compareScoredRecommendations),
+      targetTotal - result.length,
+    );
+
+    return result;
+  }
+
+  int _compareScoredRecommendations(
+    _ScoredRecommendation a,
+    _ScoredRecommendation b,
+  ) {
+    final int scoreCompare = b.score.compareTo(a.score);
+    if (scoreCompare != 0) {
+      return scoreCompare;
+    }
+    return a.song.title.toLowerCase().compareTo(b.song.title.toLowerCase());
+  }
+
+  String _recommendationReason(
+    LibrarySong song, {
+    required _TasteProfile profile,
+    required bool exploratory,
+    required HomeFeedSection? section,
+    required String artistKey,
+    required Set<String> likedArtistKeys,
+    required Set<String> fullListenArtistKeys,
+  }) {
+    if (likedArtistKeys.contains(artistKey) ||
+        fullListenArtistKeys.contains(artistKey)) {
+      return 'Artist match with your repeat listens';
+    }
+    final String genreKey = _normalizeToken(song.genre ?? '');
+    if (profile.genreKeys.contains(genreKey) &&
+        profile.moodKeys.intersection(_vibeTokens(song)).isNotEmpty) {
+      return 'Genre and mood match for your listening pattern';
+    }
+    if (profile.languageKeys.contains(_detectSongLanguage(song))) {
+      return exploratory
+          ? 'Fresh pick in a language you finish often'
+          : 'Language match from your full-listen history';
+    }
+    if (section != null && section.title.trim().isNotEmpty) {
+      return exploratory
+          ? 'Discovery pull from ${section.title}'
+          : 'Strong fit surfaced in ${section.title}';
+    }
+    return exploratory
+        ? 'Discovery pick close to your usual vibe'
+        : 'Fits the sound you usually stay with';
   }
 
   bool _isConnectivityError(Object error) {
@@ -2679,9 +3146,25 @@ class OuterTuneController extends ChangeNotifier {
   }
 
   void _publishNotificationState() {
+    final LibrarySong? song = currentSong;
+    if (song == null) {
+      _hasPublishedPlaybackNotification = false;
+      unawaited(AndroidMediaNotificationBridge.stop());
+      return;
+    }
+
+    if (_isPlaying) {
+      _hasPublishedPlaybackNotification = true;
+    }
+
+    if (!_hasPublishedPlaybackNotification) {
+      unawaited(AndroidMediaNotificationBridge.stop());
+      return;
+    }
+
     unawaited(
       AndroidMediaNotificationBridge.updatePlayback(
-        song: currentSong,
+        song: song,
         isPlaying: _isPlaying,
         position: _position,
         duration: _duration,
@@ -2774,6 +3257,7 @@ class OuterTuneController extends ChangeNotifier {
     _trendingNowError = null;
     _trendingNowLoading = false;
     _homeFeed = <HomeFeedSection>[];
+    _personalizedHomeRecommendations = <SongRecommendation>[];
     _transientSongsById.clear();
     _searchCache.clear();
     _ytMusicSearchCache.clear();
@@ -3081,7 +3565,7 @@ class OuterTuneController extends ChangeNotifier {
     if (_isDisposed || _isDisposing) {
       return null;
     }
-    final String? upgraded = _upgradeArtworkUrl(resolved);
+    final String upgraded = _upgradeArtworkUrl(resolved);
     _ytMusicArtistImageCache[normalized] = upgraded;
     return upgraded;
   }
@@ -3398,10 +3882,7 @@ class OuterTuneController extends ChangeNotifier {
     _songs = _songs
         .map(
           (LibrarySong song) => song.id == songId
-              ? song.copyWith(
-                  isLiked: newLiked,
-                  isDisliked: newDisliked,
-                )
+              ? song.copyWith(isLiked: newLiked, isDisliked: newDisliked)
               : song,
         )
         .toList();
@@ -3426,10 +3907,7 @@ class OuterTuneController extends ChangeNotifier {
     _songs = _songs
         .map(
           (LibrarySong song) => song.id == songId
-              ? song.copyWith(
-                  isDisliked: newDisliked,
-                  isLiked: newLiked,
-                )
+              ? song.copyWith(isDisliked: newDisliked, isLiked: newLiked)
               : song,
         )
         .toList();
@@ -3700,4 +4178,34 @@ class _ScoredSong {
 
   final LibrarySong song;
   final double score;
+}
+
+class _TasteProfile {
+  const _TasteProfile({
+    required this.artistKeys,
+    required this.genreKeys,
+    required this.moodKeys,
+    required this.languageKeys,
+    required this.prefersRecentYears,
+  });
+
+  final Set<String> artistKeys;
+  final Set<String> genreKeys;
+  final Set<String> moodKeys;
+  final Set<String> languageKeys;
+  final bool prefersRecentYears;
+}
+
+class _ScoredRecommendation {
+  const _ScoredRecommendation({
+    required this.song,
+    required this.score,
+    required this.reason,
+    required this.isExploratory,
+  });
+
+  final LibrarySong song;
+  final double score;
+  final String reason;
+  final bool isExploratory;
 }

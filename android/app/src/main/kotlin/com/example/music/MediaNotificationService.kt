@@ -71,7 +71,7 @@ class MediaNotificationService : Service() {
             ACTION_NEXT -> emitMediaCommand(COMMAND_NEXT)
             ACTION_PREVIOUS -> emitMediaCommand(COMMAND_PREVIOUS)
         }
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     private fun applyUpdate(intent: Intent) {
@@ -127,13 +127,13 @@ class MediaNotificationService : Service() {
             .setOnlyAlertOnce(true)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(contentIntent)
-            .addAction(android.R.drawable.ic_media_previous, "Previous", previousIntent)
+            .addAction(R.drawable.ic_media_previous, "Previous", previousIntent)
             .addAction(
-                if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
+                if (isPlaying) R.drawable.ic_media_pause else R.drawable.ic_media_play,
                 if (isPlaying) "Pause" else "Play",
                 playPauseIntent
             )
-            .addAction(android.R.drawable.ic_media_next, "Next", nextIntent)
+            .addAction(R.drawable.ic_media_next, "Next", nextIntent)
             .setStyle(
                 MediaStyle()
                     .setMediaSession(mediaSession.sessionToken)

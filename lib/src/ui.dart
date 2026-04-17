@@ -105,7 +105,7 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
             child: _buildPage(context, controller),
           ),
         ),
-        if (controller.miniPlayerSong != null)
+        if (wide && controller.miniPlayerSong != null)
           _MiniPlayer(
             controller: controller,
             onOpenPlayer: () => _openPlayer(context, controller),
@@ -114,6 +114,7 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
     );
 
     return Scaffold(
+      extendBody: true,
       backgroundColor: const Color(0xFF120503),
       body: Row(
         children: <Widget>[
@@ -140,11 +141,15 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
 
       bottomNavigationBar: wide
           ? null
-          : _KineticBottomNav(
-              destination: _destination,
-              onDestinationChanged: (AppDestination value) {
-                setState(() => _destination = value);
-              },
+          : _MobileBottomChrome(
+              controller: controller,
+              onOpenPlayer: () => _openPlayer(context, controller),
+              child: _KineticBottomNav(
+                destination: _destination,
+                onDestinationChanged: (AppDestination value) {
+                  setState(() => _destination = value);
+                },
+              ),
             ),
     );
   }
@@ -238,9 +243,9 @@ class _HomeScreenState extends State<_HomeScreen> {
         })
         .toList(growable: false);
     final bool homeFeedPending = controller.homeLoading && feed.isEmpty;
-    // MAY YOU LIKE should feel like YT Music: mixed across shelves, deduped,
-    // and not stuck in a single recurring category.
-    final List<LibrarySong> mayYouLikeFull = _buildMayYouLike(feed);
+    final List<LibrarySong> mayYouLikeFull = _resolvedMayYouLikeSongs(
+      controller,
+    );
     final List<LibrarySong> mayYouLike = mayYouLikeFull
         .take(4)
         .toList(growable: false);
@@ -311,6 +316,11 @@ class _HomeScreenState extends State<_HomeScreen> {
                 const SizedBox(height: 10),
                 if (homeFeedPending)
                   const _KineticListSkeleton(count: 4)
+                else if (mayYouLike.isEmpty)
+                  const _PersonalizationHintCard(
+                    message:
+                        'Play, like, and finish songs to train your personalized May You Like section.',
+                  )
                 else
                   Column(
                     children: List<Widget>.generate(mayYouLike.length, (
@@ -467,6 +477,33 @@ class _NoInternetOverlay extends StatelessWidget {
   }
 }
 
+class _PersonalizationHintCard extends StatelessWidget {
+  const _PersonalizationHintCard({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A1007),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0x44FF8A2A)),
+      ),
+      child: Text(
+        message,
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          color: const Color(0xFFFFC8A9),
+          height: 1.35,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
 List<Widget> _buildMoreShelves({
   required BuildContext context,
   required OuterTuneController controller,
@@ -565,12 +602,16 @@ class _SearchGenreShelf {
     required this.title,
     required this.query,
     required this.colors,
+    required this.assetPath,
+    this.fallbackAssetPath,
     this.song,
   });
 
   final String title;
   final String query;
   final List<Color> colors;
+  final String assetPath;
+  final String? fallbackAssetPath;
   final LibrarySong? song;
 }
 
@@ -578,7 +619,7 @@ List<_SearchGenreShelf> _buildSearchGenreShelves(
   OuterTuneController controller,
 ) {
   final List<LibrarySong> pool = <LibrarySong>[
-    ..._buildMayYouLike(controller.homeFeed),
+    ..._resolvedMayYouLikeSongs(controller),
     ...controller.recentlyAddedSongs,
     ...controller.songs,
   ];
@@ -599,33 +640,65 @@ List<_SearchGenreShelf> _buildSearchGenreShelves(
       title: 'Hip-Hop',
       query: 'hip hop',
       colors: const <Color>[Color(0xFF6E2BDE), Color(0xFF3B1B7A)],
+      assetPath: 'assets/img/hip_hop.png',
+      fallbackAssetPath: 'assets/images/Hip-Hop.png',
       song: pickSong(<String>['hip hop', 'rap', 'trap']),
     ),
     _SearchGenreShelf(
       title: 'Pop',
       query: 'pop',
       colors: const <Color>[Color(0xFFE92D7A), Color(0xFFB11A55)],
+      assetPath: 'assets/img/pop.png',
+      fallbackAssetPath: 'assets/images/Pop.png',
       song: pickSong(<String>['pop', 'dance pop', 'synthpop']),
     ),
     _SearchGenreShelf(
       title: 'Electronic',
       query: 'electronic',
       colors: const <Color>[Color(0xFF2A6CF6), Color(0xFF173C93)],
+      assetPath: 'assets/img/electronic.png',
+      fallbackAssetPath: 'assets/images/Electronic.png',
       song: pickSong(<String>['electronic', 'house', 'edm', 'techno']),
     ),
     _SearchGenreShelf(
       title: 'Jazz',
       query: 'jazz',
       colors: const <Color>[Color(0xFFEF6A0D), Color(0xFF9C3A00)],
+      assetPath: 'assets/img/jazz.png',
+      fallbackAssetPath: 'assets/images/Jazz.png',
       song: pickSong(<String>['jazz', 'blues', 'sax']),
     ),
     _SearchGenreShelf(
       title: 'Chill & Focus',
       query: 'chill focus',
       colors: const <Color>[Color(0xFF0E9383), Color(0xFF0B5E54)],
+      assetPath: 'assets/img/chill_focus.png',
+      fallbackAssetPath: 'assets/images/Chill.png',
       song: pickSong(<String>['chill', 'ambient', 'lofi', 'focus']),
     ),
   ];
+}
+
+List<LibrarySong> _resolvedMayYouLikeSongs(OuterTuneController controller) {
+  return _resolvedMayYouLikeRecommendations(controller)
+      .map((SongRecommendation item) => item.song)
+      .toList(growable: false);
+}
+
+List<SongRecommendation> _resolvedMayYouLikeRecommendations(
+  OuterTuneController controller,
+) {
+  if (controller.personalizedHomeRecommendations.isNotEmpty) {
+    return controller.personalizedHomeRecommendations;
+  }
+  return _buildMayYouLike(controller.homeFeed)
+      .map(
+        (LibrarySong song) => SongRecommendation(
+          song: song,
+          reason: 'Picked from your current recommendation feed',
+        ),
+      )
+      .toList(growable: false);
 }
 
 List<LibrarySong> _buildMayYouLike(List<HomeFeedSection> feed) {
@@ -670,52 +743,22 @@ List<LibrarySong> _buildMayYouLike(List<HomeFeedSection> feed) {
 
 List<LibrarySong> _buildMonthlyTrendingNow({
   required OuterTuneController controller,
-  required List<LibrarySong> fallback,
 }) {
-  final List<LibrarySong> seed = controller.trendingNowSongs.isNotEmpty
-      ? List<LibrarySong>.from(controller.trendingNowSongs)
-      : List<LibrarySong>.from(fallback);
+  final List<LibrarySong> seed = List<LibrarySong>.from(
+    controller.trendingNowSongs,
+  );
   final Set<String> seen = <String>{};
-  final List<LibrarySong> unique = <LibrarySong>[
+  return <LibrarySong>[
     for (final LibrarySong song in seed)
       if (seen.add('${song.artist.toLowerCase()}::${song.title.toLowerCase()}'))
         song,
   ];
-
-  final String region = controller.trendingNowRegionLabel.toLowerCase();
-  final List<LibrarySong> ranked = List<LibrarySong>.from(unique);
-  ranked.sort((LibrarySong a, LibrarySong b) {
-    final int left = _monthlyTrendingScore(a, region: region);
-    final int right = _monthlyTrendingScore(b, region: region);
-    final int compare = right.compareTo(left);
-    if (compare != 0) {
-      return compare;
-    }
-    return a.title.toLowerCase().compareTo(b.title.toLowerCase());
-  });
-  return ranked;
 }
 
-int _monthlyTrendingScore(LibrarySong song, {required String region}) {
-  int score = 0;
-  final String text = '${song.title} ${song.artist} ${song.album}'
-      .toLowerCase();
-  score += _hasArtwork(song) * 6;
-  score += _durationScore(song) * 2;
-  if (song.playCount > 0) {
-    score += math.min(song.playCount, 24);
-  }
-  if (song.lastPlayedAt != null &&
-      DateTime.now().difference(song.lastPlayedAt!).inDays <= 31) {
-    score += 5;
-  }
-  if (region.isNotEmpty && region != 'your region' && text.contains(region)) {
-    score += 4;
-  }
-  if (text.contains('official') || text.contains('viral')) {
-    score += 2;
-  }
-  return score;
+String _lastMonthLabel() {
+  final DateTime now = DateTime.now();
+  final DateTime lastMonth = DateTime(now.year, now.month - 1);
+  return DateFormat('MMMM').format(lastMonth);
 }
 
 int _hasArtwork(LibrarySong song) {
@@ -1285,11 +1328,13 @@ class _KineticPopularTrackTile extends StatelessWidget {
     required this.index,
     required this.song,
     required this.onTap,
+    this.reason,
   });
 
   final int index;
   final LibrarySong song;
   final VoidCallback onTap;
+  final String? reason;
 
   @override
   Widget build(BuildContext context) {
@@ -1342,6 +1387,18 @@ class _KineticPopularTrackTile extends StatelessWidget {
                       color: Colors.white.withValues(alpha: 0.55),
                     ),
                   ),
+                  if (reason != null && reason!.trim().isNotEmpty) ...<Widget>[
+                    const SizedBox(height: 3),
+                    Text(
+                      reason!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: const Color(0xFFFFB170),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1620,13 +1677,14 @@ class _MayYouLikeScreen extends StatefulWidget {
 class _MayYouLikeScreenState extends State<_MayYouLikeScreen> {
   static const int _maxItems = 50;
 
-  List<LibrarySong> get _allItems =>
-      _buildMayYouLike(widget.controller.homeFeed).take(_maxItems).toList();
+  List<SongRecommendation> get _allItems => _resolvedMayYouLikeRecommendations(
+    widget.controller,
+  ).take(_maxItems).toList();
 
   @override
   Widget build(BuildContext context) {
     final OuterTuneController controller = widget.controller;
-    final List<LibrarySong> items = _allItems;
+    final List<SongRecommendation> items = _allItems;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0B0A0C),
@@ -1657,22 +1715,30 @@ class _MayYouLikeScreenState extends State<_MayYouLikeScreen> {
             const SizedBox(height: 10),
             if (items.isEmpty && controller.homeLoading)
               const _KineticListSkeleton(count: 8),
-            Column(
-              children: List<Widget>.generate(items.length, (int index) {
-                final LibrarySong song = items[index];
-                return _KineticPopularTrackTile(
-                  index: index + 1,
-                  song: song,
-                  onTap: () {
-                    if (song.isRemote) {
-                      controller.playOnlineSong(song);
-                    } else {
-                      controller.playSong(song, label: 'May you like');
-                    }
-                  },
-                );
-              }),
-            ),
+            if (items.isEmpty && !controller.homeLoading)
+              const _PersonalizationHintCard(
+                message:
+                    'Your personalized picks will appear here after the app learns from your likes, history, and full listens.',
+              )
+            else
+              Column(
+                children: List<Widget>.generate(items.length, (int index) {
+                  final SongRecommendation recommendation = items[index];
+                  final LibrarySong song = recommendation.song;
+                  return _KineticPopularTrackTile(
+                    index: index + 1,
+                    song: song,
+                    reason: recommendation.reason,
+                    onTap: () {
+                      if (song.isRemote) {
+                        controller.playOnlineSong(song);
+                      } else {
+                        controller.playSong(song, label: 'May you like');
+                      }
+                    },
+                  );
+                }),
+              ),
             if (controller.homeLoading && items.isEmpty) ...<Widget>[
               const SizedBox(height: 12),
               const _KineticListSkeleton(count: 4),
@@ -2099,25 +2165,108 @@ class _SearchGenreCard extends StatelessWidget {
                 ),
               ),
             ),
-            if (shelf.song != null)
-              Positioned(
-                right: wide ? 14 : -4,
-                bottom: wide ? -6 : -8,
-                child: Transform.rotate(
-                  angle: -0.16,
-                  child: Opacity(
-                    opacity: 0.95,
-                    child: _Artwork(
-                      seed: shelf.song!.id,
-                      title: shelf.song!.title,
-                      size: wide ? 150 : 110,
-                      imageUrl: shelf.song!.artworkUrl,
-                    ),
+            Positioned(
+              right: wide ? 14 : -4,
+              bottom: wide ? -6 : -8,
+              child: Transform.rotate(
+                angle: -0.16,
+                child: Opacity(
+                  opacity: 0.95,
+                  child: _SearchGenreThumbnail(
+                    shelf: shelf,
+                    size: wide ? 150 : 110,
                   ),
                 ),
               ),
+            ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _SearchGenreThumbnail extends StatelessWidget {
+  const _SearchGenreThumbnail({required this.shelf, required this.size});
+
+  final _SearchGenreShelf shelf;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(size * 0.24),
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Image.asset(
+          shelf.assetPath,
+          fit: BoxFit.cover,
+          filterQuality: FilterQuality.high,
+          errorBuilder:
+              (BuildContext context, Object error, StackTrace? stackTrace) {
+                final String? fallbackAssetPath = shelf.fallbackAssetPath;
+                if (fallbackAssetPath != null) {
+                  return Image.asset(
+                    fallbackAssetPath,
+                    fit: BoxFit.cover,
+                    filterQuality: FilterQuality.high,
+                    errorBuilder:
+                        (
+                          BuildContext context,
+                          Object error,
+                          StackTrace? stackTrace,
+                        ) {
+                          return _SearchGenreThumbnailFallback(
+                            shelf: shelf,
+                            size: size,
+                          );
+                        },
+                  );
+                }
+                return _SearchGenreThumbnailFallback(shelf: shelf, size: size);
+              },
+        ),
+      ),
+    );
+  }
+}
+
+class _SearchGenreThumbnailFallback extends StatelessWidget {
+  const _SearchGenreThumbnailFallback({
+    required this.shelf,
+    required this.size,
+  });
+
+  final _SearchGenreShelf shelf;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final LibrarySong? song = shelf.song;
+    if (song != null) {
+      return _Artwork(
+        seed: song.id,
+        title: song.title,
+        size: size,
+        imageUrl: song.artworkUrl,
+      );
+    }
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(size * 0.24),
+        gradient: LinearGradient(
+          colors: shelf.colors,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Icon(
+        Icons.music_note_rounded,
+        color: Colors.white.withValues(alpha: 0.92),
+        size: size * 0.42,
       ),
     );
   }
@@ -2269,39 +2418,54 @@ class _KineticBottomNav extends StatelessWidget {
       ),
     ];
 
+    return Container(
+      height: 85,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: <Color>[Color(0xFF241007), Color(0xFF180904)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+      ),
+      child: Row(
+        children: items.map((_BottomItem item) {
+          final bool selected = destination == item.destination;
+          return Expanded(
+            child: _KineticBottomNavItem(
+              icon: item.icon,
+              label: item.label,
+              selected: selected,
+              onTap: () => onDestinationChanged(item.destination),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+class _MobileBottomChrome extends StatelessWidget {
+  const _MobileBottomChrome({
+    required this.controller,
+    required this.onOpenPlayer,
+    required this.child,
+  });
+
+  final OuterTuneController controller;
+  final VoidCallback onOpenPlayer;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
     return SafeArea(
       top: false,
-      child: Container(
-        height: 92,
-        padding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
-        decoration: BoxDecoration(
-          color: const Color(0xFF130804),
-          border: Border(
-            top: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
-          ),
-        ),
-        child: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: <Color>[Color(0xFF241007), Color(0xFF180904)],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-            ),
-          ),
-          child: Row(
-            children: items.map((_BottomItem item) {
-              final bool selected = destination == item.destination;
-              return Expanded(
-                child: _KineticBottomNavItem(
-                  icon: item.icon,
-                  label: item.label,
-                  selected: selected,
-                  onTap: () => onDestinationChanged(item.destination),
-                ),
-              );
-            }).toList(),
-          ),
-        ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (controller.miniPlayerSong != null)
+            _MiniPlayer(controller: controller, onOpenPlayer: onOpenPlayer),
+          child,
+        ],
       ),
     );
   }
@@ -2542,11 +2706,10 @@ class _SearchScreenState extends State<_SearchScreen> {
         return;
       }
       _requestedTrending = true;
-      final Locale locale = Localizations.localeOf(context);
       unawaited(
         widget.controller.loadTrendingNow(
-          languageCode: locale.languageCode,
-          countryCode: locale.countryCode,
+          languageCode: widget.controller.preferredLanguageCode,
+          countryCode: widget.controller.preferredCountryCode,
         ),
       );
     });
@@ -2698,12 +2861,8 @@ class _SearchScreenState extends State<_SearchScreen> {
               song.album.toLowerCase().contains(query),
         )
         .toList();
-    final List<LibrarySong> trendingSongs = _buildMayYouLike(
-      widget.controller.homeFeed,
-    );
     final List<LibrarySong> monthlyTrendingSongs = _buildMonthlyTrendingNow(
       controller: widget.controller,
-      fallback: trendingSongs,
     ).take(7).toList(growable: false);
     final List<_SearchGenreShelf> browseShelves = _buildSearchGenreShelves(
       widget.controller,
@@ -2839,17 +2998,25 @@ class _SearchScreenState extends State<_SearchScreen> {
             const _SearchSectionTitle('Trending Now'),
             const SizedBox(height: 6),
             Text(
-              '${DateFormat('MMMM').format(DateTime.now())} • ${widget.controller.trendingNowRegionLabel}',
+              '${_lastMonthLabel()} chart • ${widget.controller.trendingNowRegionLabel}',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: const Color(0xFFD1A793),
                 fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Based on last month popularity in your selected region.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: const Color(0xFFBC917D),
+                fontWeight: FontWeight.w500,
               ),
             ),
             const SizedBox(height: 18),
             if (monthlyTrendingSongs.isEmpty &&
                 !widget.controller.trendingNowLoading)
               Text(
-                'Trending songs are loading for Sri Lanka.',
+                'Regional chart songs are loading for ${widget.controller.preferredRegionLabel}.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: const Color(0xFFD1A793),
                 ),
@@ -3080,6 +3247,7 @@ class _SettingsScreen extends StatelessWidget {
 
     final int crossfadeSeconds = controller.settings.crossfadeSeconds;
     final bool gapless = controller.settings.gaplessPlayback;
+    final String preferredRegion = controller.preferredRegionLabel;
 
     Future<void> pickCrossfade() async {
       final int? selected = await showModalBottomSheet<int>(
@@ -3138,6 +3306,76 @@ class _SettingsScreen extends StatelessWidget {
       }
     }
 
+    Future<void> pickRegion() async {
+      final String? selected = await showModalBottomSheet<String>(
+        context: context,
+        backgroundColor: const Color(0xFF1C0904),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        builder: (BuildContext context) {
+          final List<AppRegion> regions = controller.availableRegions;
+          return SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    'Choose region',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: titleColor,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Regional trending and charts will follow this region.',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: subtitleColor),
+                  ),
+                  const SizedBox(height: 12),
+                  ...regions.map((AppRegion region) {
+                    final bool active =
+                        region.countryCode == controller.preferredCountryCode;
+                    return ListTile(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      onTap: () =>
+                          Navigator.of(context).pop(region.countryCode),
+                      title: Text(
+                        region.label,
+                        style: TextStyle(
+                          color: active ? accent : titleColor,
+                          fontWeight: active
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                        ),
+                      ),
+                      subtitle: Text(
+                        region.countryCode,
+                        style: const TextStyle(color: subtitleColor),
+                      ),
+                      trailing: active
+                          ? const Icon(Icons.check_rounded, color: accent)
+                          : null,
+                    );
+                  }),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+      if (selected != null) {
+        await controller.setPreferredRegion(selected);
+      }
+    }
+
     return DecoratedBox(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -3171,6 +3409,61 @@ class _SettingsScreen extends StatelessWidget {
                 icon: const Icon(Icons.settings_rounded, color: accent),
               ),
             ],
+          ),
+          const SizedBox(height: 14),
+          Container(
+            decoration: BoxDecoration(
+              color: card,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: cardEdge),
+            ),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    const Icon(Icons.public_rounded, color: subtitleColor),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Discovery Region',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: titleColor,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    'Region',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: titleColor,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Controls Trending Now and regional chart shelves',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: subtitleColor),
+                  ),
+                  trailing: GestureDetector(
+                    onTap: pickRegion,
+                    child: Text(
+                      preferredRegion,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: accent,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  onTap: pickRegion,
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 14),
           Container(
@@ -4731,7 +5024,7 @@ class _LibraryHeader extends StatelessWidget {
           ),
         ),
         IconButton(
-          onPressed: onOpenSettings,
+          onPressed: () {},
           icon: const Icon(Icons.settings_outlined),
           color: const Color(0xFFFF8B3E),
         ),
@@ -5412,6 +5705,8 @@ class _MiniPlayer extends StatelessWidget {
                                                   width: compact ? 18 : 20,
                                                   height: compact ? 18 : 20,
                                                   child: const CircularProgressIndicator(
+                                                    strokeWidth: 1,
+
                                                     valueColor:
                                                         AlwaysStoppedAnimation<
                                                           Color

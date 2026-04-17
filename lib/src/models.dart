@@ -27,6 +27,31 @@ enum LibraryFilter {
   final String label;
 }
 
+class AppRegion {
+  const AppRegion({
+    required this.countryCode,
+    required this.label,
+    required this.languageCode,
+  });
+
+  final String countryCode;
+  final String label;
+  final String languageCode;
+}
+
+const List<AppRegion> kAppRegions = <AppRegion>[
+  AppRegion(countryCode: 'LK', label: 'Sri Lanka', languageCode: 'si'),
+  AppRegion(countryCode: 'IN', label: 'India', languageCode: 'hi'),
+  AppRegion(countryCode: 'PK', label: 'Pakistan', languageCode: 'ur'),
+  AppRegion(countryCode: 'BD', label: 'Bangladesh', languageCode: 'bn'),
+  AppRegion(countryCode: 'US', label: 'United States', languageCode: 'en'),
+  AppRegion(countryCode: 'GB', label: 'United Kingdom', languageCode: 'en'),
+  AppRegion(countryCode: 'CA', label: 'Canada', languageCode: 'en'),
+  AppRegion(countryCode: 'AU', label: 'Australia', languageCode: 'en'),
+  AppRegion(countryCode: 'JP', label: 'Japan', languageCode: 'ja'),
+  AppRegion(countryCode: 'KR', label: 'South Korea', languageCode: 'ko'),
+];
+
 class AppSettings {
   const AppSettings({
     this.themeModeIndex = 0,
@@ -36,6 +61,7 @@ class AppSettings {
     this.smartQueueEnabled = true,
     this.crossfadeSeconds = 0,
     this.gaplessPlayback = true,
+    this.preferredCountryCode = 'LK',
     this.ytMusicAuthJson,
   });
 
@@ -46,6 +72,7 @@ class AppSettings {
   final bool smartQueueEnabled;
   final int crossfadeSeconds;
   final bool gaplessPlayback;
+  final String preferredCountryCode;
   final String? ytMusicAuthJson;
 
   ThemeMode get themeMode {
@@ -63,6 +90,7 @@ class AppSettings {
     bool? smartQueueEnabled,
     int? crossfadeSeconds,
     bool? gaplessPlayback,
+    String? preferredCountryCode,
     String? ytMusicAuthJson,
   }) {
     return AppSettings(
@@ -73,6 +101,7 @@ class AppSettings {
       smartQueueEnabled: smartQueueEnabled ?? this.smartQueueEnabled,
       crossfadeSeconds: crossfadeSeconds ?? this.crossfadeSeconds,
       gaplessPlayback: gaplessPlayback ?? this.gaplessPlayback,
+      preferredCountryCode: preferredCountryCode ?? this.preferredCountryCode,
       ytMusicAuthJson: ytMusicAuthJson ?? this.ytMusicAuthJson,
     );
   }
@@ -86,6 +115,7 @@ class AppSettings {
       'smartQueueEnabled': smartQueueEnabled,
       'crossfadeSeconds': crossfadeSeconds,
       'gaplessPlayback': gaplessPlayback,
+      'preferredCountryCode': preferredCountryCode,
       'ytMusicAuthJson': ytMusicAuthJson,
     };
   }
@@ -95,6 +125,9 @@ class AppSettings {
       return const AppSettings();
     }
 
+    final String preferredCountryCode =
+        (json['preferredCountryCode'] as String? ?? 'LK').trim().toUpperCase();
+
     return AppSettings(
       themeModeIndex: (json['themeModeIndex'] as num?)?.toInt() ?? 0,
       denseLibrary: json['denseLibrary'] as bool? ?? false,
@@ -103,6 +136,9 @@ class AppSettings {
       smartQueueEnabled: json['smartQueueEnabled'] as bool? ?? true,
       crossfadeSeconds: (json['crossfadeSeconds'] as num?)?.toInt() ?? 0,
       gaplessPlayback: json['gaplessPlayback'] as bool? ?? true,
+      preferredCountryCode: preferredCountryCode.isEmpty
+          ? 'LK'
+          : preferredCountryCode,
       ytMusicAuthJson: json['ytMusicAuthJson'] as String?,
     );
   }
@@ -441,4 +477,16 @@ class HomeFeedSection {
   final String subtitle;
   final String query;
   final List<LibrarySong> songs;
+}
+
+class SongRecommendation {
+  const SongRecommendation({
+    required this.song,
+    required this.reason,
+    this.isExploratory = false,
+  });
+
+  final LibrarySong song;
+  final String reason;
+  final bool isExploratory;
 }
