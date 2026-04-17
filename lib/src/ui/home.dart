@@ -15,7 +15,7 @@ class _HomeStyleHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: double.infinity,
-      height: 44,
+      height: 45,
       child: Stack(
         children: <Widget>[
           Positioned.fill(
@@ -1123,7 +1123,7 @@ class _KineticHeroCard extends StatelessWidget {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: <Widget>[
-                            const Icon(Icons.play_arrow_rounded, size: 18),
+                            const Icon(Icons.play_circle, size: 18),
                             const SizedBox(width: 6),
                             Flexible(
                               child: Text(
@@ -1131,7 +1131,11 @@ class _KineticHeroCard extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: Theme.of(context).textTheme.labelLarge
-                                    ?.copyWith(letterSpacing: 1.2),
+                                    ?.copyWith(
+                                      letterSpacing: 1.2,
+                                      color: Colors.black,
+                                      fontWeight: FontWeight.w800,
+                                    ),
                               ),
                             ),
                           ],

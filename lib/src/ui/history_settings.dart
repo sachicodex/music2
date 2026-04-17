@@ -206,61 +206,7 @@ class _SettingsScreen extends StatelessWidget {
             trailing: _HomeStyleNotificationIcon(),
           ),
           const SizedBox(height: 14),
-          Container(
-            decoration: BoxDecoration(
-              color: card,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: cardEdge),
-            ),
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    const Icon(Icons.public_rounded, color: subtitleColor),
-                    const SizedBox(width: 10),
-                    Text(
-                      'Discovery Region',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: titleColor,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(
-                    'Region',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: titleColor,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  subtitle: Text(
-                    'Controls Trending Now and regional chart shelves',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.copyWith(color: subtitleColor),
-                  ),
-                  trailing: GestureDetector(
-                    onTap: pickRegion,
-                    child: Text(
-                      preferredRegion,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: accent,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  onTap: pickRegion,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
+
           Container(
             decoration: BoxDecoration(
               color: card,
@@ -288,14 +234,6 @@ class _SettingsScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      Text(
-                        'PREMIUM SUBSCRIBER',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: subtitleColor,
-                          letterSpacing: 2,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
                       const SizedBox(height: 2),
                       Text(
                         'ALEX RIVERS',
@@ -312,20 +250,6 @@ class _SettingsScreen extends StatelessWidget {
                           context,
                         ).textTheme.bodySmall?.copyWith(color: subtitleColor),
                       ),
-                      const SizedBox(height: 10),
-                      OutlinedButton(
-                        onPressed: () {},
-                        style: OutlinedButton.styleFrom(
-                          side: BorderSide(color: cardEdge),
-                          foregroundColor: titleColor,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 8,
-                          ),
-                          backgroundColor: const Color(0xFF51220E),
-                        ),
-                        child: const Text('EDIT PROFILE'),
-                      ),
                     ],
                   ),
                 ),
@@ -333,77 +257,7 @@ class _SettingsScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
-          Container(
-            decoration: BoxDecoration(
-              color: card,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: cardEdge),
-            ),
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    const Icon(
-                      Icons.library_music_rounded,
-                      color: subtitleColor,
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      'Library Import',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: titleColor,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Import audio files or a full folder into your library.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: subtitleColor,
-                    height: 1.45,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: <Widget>[
-                    FilledButton.icon(
-                      onPressed: controller.importFiles,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: accent,
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 14,
-                        ),
-                      ),
-                      icon: const Icon(Icons.queue_music_rounded),
-                      label: const Text('Import files'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: controller.importFolder,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: titleColor,
-                        side: const BorderSide(color: cardEdge),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 14,
-                        ),
-                      ),
-                      icon: const Icon(Icons.folder_open_rounded),
-                      label: const Text('Import folder'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
+
           Container(
             decoration: BoxDecoration(
               color: card,
@@ -524,6 +378,132 @@ class _SettingsScreen extends StatelessWidget {
                     inactiveTrackColor: const Color(0xFF5C2A17),
                     onChanged: controller.setGaplessPlayback,
                   ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Container(
+            decoration: BoxDecoration(
+              color: card,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: cardEdge),
+            ),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    const Icon(
+                      Icons.library_music_rounded,
+                      color: subtitleColor,
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Library Import',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: titleColor,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Import audio files or a full folder into your library.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: subtitleColor,
+                    height: 1.45,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: <Widget>[
+                    FilledButton.icon(
+                      onPressed: controller.importFiles,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: accent,
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                      ),
+                      icon: const Icon(Icons.queue_music_rounded),
+                      label: const Text('Import files'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: controller.importFolder,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: titleColor,
+                        side: const BorderSide(color: cardEdge),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                      ),
+                      icon: const Icon(Icons.folder_open_rounded),
+                      label: const Text('Import folder'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Container(
+            decoration: BoxDecoration(
+              color: card,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: cardEdge),
+            ),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    const Icon(Icons.public_rounded, color: subtitleColor),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Discovery Region',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: titleColor,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    'Region',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: titleColor,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Controls Trending Now and regional chart shelves',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: subtitleColor),
+                  ),
+                  trailing: GestureDetector(
+                    onTap: pickRegion,
+                    child: Text(
+                      preferredRegion,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: accent,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  onTap: pickRegion,
                 ),
               ],
             ),

@@ -392,7 +392,7 @@ class _PlayerScreenState extends State<_PlayerScreen> {
                                   onPressed: controller.toggleShuffle,
                                   color: controller.isShuffleEnabled
                                       ? accent
-                                      : textPrimary.withValues(alpha: 0.9),
+                                      : textPrimary.withValues(alpha: 0.6),
                                 ),
                                 _PlayerIconButton(
                                   icon: Icons.skip_previous_rounded,
@@ -403,10 +403,10 @@ class _PlayerScreenState extends State<_PlayerScreen> {
                                 GestureDetector(
                                   onTap: controller.togglePlayback,
                                   child: Container(
-                                    width: 96,
-                                    height: 96,
+                                    width: 70,
+                                    height: 70,
                                     decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
+                                      borderRadius: BorderRadius.circular(24),
                                       color: accent,
                                       boxShadow: <BoxShadow>[
                                         BoxShadow(
@@ -419,10 +419,10 @@ class _PlayerScreenState extends State<_PlayerScreen> {
                                     child: isPlayerLoading
                                         ? const Center(
                                             child: SizedBox(
-                                              width: 34,
-                                              height: 34,
+                                              width: 25,
+                                              height: 25,
                                               child: CircularProgressIndicator(
-                                                strokeWidth: 2.4,
+                                                strokeWidth: 3.2,
                                                 valueColor:
                                                     AlwaysStoppedAnimation<
                                                       Color
@@ -434,7 +434,7 @@ class _PlayerScreenState extends State<_PlayerScreen> {
                                             showPauseIcon
                                                 ? Icons.pause_rounded
                                                 : Icons.play_arrow_rounded,
-                                            size: showPauseIcon ? 44 : 52,
+                                            size: showPauseIcon ? 36 : 42,
                                             color: Colors.black,
                                           ),
                                   ),
@@ -448,18 +448,18 @@ class _PlayerScreenState extends State<_PlayerScreen> {
                                 _PlayerIconButton(
                                   icon: _repeatIcon(controller.repeatMode),
                                   onPressed: controller.cycleRepeatMode,
-                                  color: textPrimary.withValues(alpha: 0.9),
+                                  color: textPrimary.withValues(alpha: 0.6),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 10),
+                            const SizedBox(height: 20),
                             Center(
                               child: IconButton(
                                 onPressed: _showQueueSheet,
                                 icon: const Icon(
                                   Icons.keyboard_arrow_up_rounded,
                                 ),
-                                color: textPrimary.withValues(alpha: 0.92),
+                                color: textPrimary.withValues(alpha: 0.3),
                                 iconSize: 34,
                               ),
                             ),
@@ -618,7 +618,7 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
 
     return Container(
       height: MediaQuery.sizeOf(context).height * 0.62,
-      padding: const EdgeInsets.fromLTRB(18, 12, 18, 22),
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
       decoration: const BoxDecoration(
         color: sheet,
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -634,29 +634,8 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
               iconSize: 34,
             ),
           ),
-          Text(
-            'Queue',
-            style: GoogleFonts.splineSans(
-              color: textPrimary,
-              fontSize: 26,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.8,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            loading
-                ? '${controller.queueLabel} - adding more songs...'
-                : controller.queueLabel,
-            style: GoogleFonts.splineSans(
-              color: textSecondary,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 6),
           if (loading) ...<Widget>[
-            const SizedBox(height: 12),
+            const SizedBox(height: 6),
             Row(
               children: <Widget>[
                 SizedBox(
@@ -863,13 +842,6 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
                     },
                   ),
                 ),
-                if (loading)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 8),
-                    child: Center(
-                      child: CircularProgressIndicator(color: _kAccent),
-                    ),
-                  ),
               ],
             ),
           ),
@@ -2385,7 +2357,7 @@ class _MiniPlayer extends StatelessWidget {
                                       icon: Icons.shuffle_rounded,
                                       color: controller.isShuffleEnabled
                                           ? accent
-                                          : inactive,
+                                          : inactive.withValues(alpha: 0.6),
                                       onPressed: controller.toggleShuffle,
                                       compact: compact,
                                     ),
@@ -2439,7 +2411,7 @@ class _MiniPlayer extends StatelessWidget {
                                     ),
                                     _MiniPlayerIcon(
                                       icon: _repeatIcon(controller.repeatMode),
-                                      color: inactive,
+                                      color: inactive.withValues(alpha: 0.6),
                                       onPressed: controller.cycleRepeatMode,
                                       compact: compact,
                                     ),

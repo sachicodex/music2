@@ -678,14 +678,6 @@ class _SearchScreenState extends State<_SearchScreen> {
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              'Based on last month popularity in your selected region.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: const Color(0xFFBC917D),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
             const SizedBox(height: 18),
             if (monthlyTrendingSongs.isEmpty &&
                 !widget.controller.trendingNowLoading)
