@@ -680,9 +680,9 @@ List<_SearchGenreShelf> _buildSearchGenreShelves(
 }
 
 List<LibrarySong> _resolvedMayYouLikeSongs(OuterTuneController controller) {
-  return _resolvedMayYouLikeRecommendations(controller)
-      .map((SongRecommendation item) => item.song)
-      .toList(growable: false);
+  return _resolvedMayYouLikeRecommendations(
+    controller,
+  ).map((SongRecommendation item) => item.song).toList(growable: false);
 }
 
 List<SongRecommendation> _resolvedMayYouLikeRecommendations(
@@ -1328,13 +1328,11 @@ class _KineticPopularTrackTile extends StatelessWidget {
     required this.index,
     required this.song,
     required this.onTap,
-    this.reason,
   });
 
   final int index;
   final LibrarySong song;
   final VoidCallback onTap;
-  final String? reason;
 
   @override
   Widget build(BuildContext context) {
@@ -1387,18 +1385,6 @@ class _KineticPopularTrackTile extends StatelessWidget {
                       color: Colors.white.withValues(alpha: 0.55),
                     ),
                   ),
-                  if (reason != null && reason!.trim().isNotEmpty) ...<Widget>[
-                    const SizedBox(height: 3),
-                    Text(
-                      reason!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: const Color(0xFFFFB170),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),
@@ -1714,21 +1700,21 @@ class _MayYouLikeScreenState extends State<_MayYouLikeScreen> {
             ),
             const SizedBox(height: 10),
             if (items.isEmpty && controller.homeLoading)
-              const _KineticListSkeleton(count: 8),
+              const _ProgressiveSkeletonList(count: 8),
             if (items.isEmpty && !controller.homeLoading)
               const _PersonalizationHintCard(
                 message:
                     'Your personalized picks will appear here after the app learns from your likes, history, and full listens.',
               )
             else
-              Column(
-                children: List<Widget>.generate(items.length, (int index) {
+              _ProgressiveListReveal(
+                itemCount: items.length,
+                itemBuilder: (BuildContext context, int index) {
                   final SongRecommendation recommendation = items[index];
                   final LibrarySong song = recommendation.song;
                   return _KineticPopularTrackTile(
                     index: index + 1,
                     song: song,
-                    reason: recommendation.reason,
                     onTap: () {
                       if (song.isRemote) {
                         controller.playOnlineSong(song);
@@ -1737,15 +1723,35 @@ class _MayYouLikeScreenState extends State<_MayYouLikeScreen> {
                       }
                     },
                   );
-                }),
+                },
               ),
             if (controller.homeLoading && items.isEmpty) ...<Widget>[
               const SizedBox(height: 12),
-              const _KineticListSkeleton(count: 4),
+              const _ProgressiveSkeletonList(count: 4),
             ],
           ],
         ),
       ),
+    );
+  }
+}
+
+class _ProgressiveSkeletonList extends StatelessWidget {
+  const _ProgressiveSkeletonList({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ProgressiveListReveal(
+      itemCount: count,
+      itemBuilder: (BuildContext context, int index) {
+        return Padding(
+          key: ValueKey<String>('skeleton-$index'),
+          padding: EdgeInsets.zero,
+          child: _KineticPopularTrackTileSkeleton(index: index + 1),
+        );
+      },
     );
   }
 }
@@ -1759,32 +1765,9 @@ class _KineticListSkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: List<Widget>.generate(count, (int index) {
-        return const Padding(
-          padding: EdgeInsets.symmetric(vertical: 10),
-          child: Row(
-            children: <Widget>[
-              _SkeletonBlock(width: 28, height: 16, radius: 6),
-              SizedBox(width: 14),
-              _SkeletonBlock(width: 44, height: 44, radius: 12),
-              SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    _SkeletonBlock(
-                      width: double.infinity,
-                      height: 16,
-                      radius: 8,
-                    ),
-                    SizedBox(height: 8),
-                    _SkeletonBlock(width: 160, height: 12, radius: 8),
-                  ],
-                ),
-              ),
-              SizedBox(width: 10),
-              _SkeletonBlock(width: 40, height: 14, radius: 8),
-            ],
-          ),
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: _KineticPopularTrackTileSkeleton(index: index + 1),
         );
       }),
     );
@@ -1973,15 +1956,7 @@ class _KineticHeroSkeleton extends StatelessWidget {
                     Expanded(
                       child: _SkeletonBlock(
                         width: double.infinity,
-                        height: compact ? 38 : 40,
-                        radius: 999,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _SkeletonBlock(
-                        width: double.infinity,
-                        height: compact ? 38 : 40,
+                        height: compact ? 38 : 42,
                         radius: 999,
                       ),
                     ),
@@ -4788,13 +4763,13 @@ class _HomeFeedSkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: const <Widget>[
-        _SkeletonSectionHeader(),
-        SizedBox(height: 12),
-        _SkeletonSongStrip(),
-        SizedBox(height: 24),
-        _SkeletonSectionHeader(),
-        SizedBox(height: 12),
-        _SkeletonSongStrip(),
+        _KineticSectionHeaderSkeleton(),
+        SizedBox(height: 8),
+        _KineticListSkeleton(count: 4),
+        SizedBox(height: 22),
+        _KineticSectionHeaderSkeleton(),
+        SizedBox(height: 8),
+        _KineticListSkeleton(count: 4),
       ],
     );
   }
@@ -4807,96 +4782,109 @@ class _OnlineSongResultsSkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Column(
       children: <Widget>[
-        _SkeletonSongTile(),
-        _SkeletonSongTile(),
-        _SkeletonSongTile(),
-        _SkeletonSongTile(),
+        _SearchTrendingTileSkeleton(),
+        _SearchTrendingTileSkeleton(),
+        _SearchTrendingTileSkeleton(),
+        _SearchTrendingTileSkeleton(),
       ],
     );
   }
 }
 
-class _SkeletonSectionHeader extends StatelessWidget {
-  const _SkeletonSectionHeader();
+class _KineticSectionHeaderSkeleton extends StatelessWidget {
+  const _KineticSectionHeaderSkeleton();
 
   @override
   Widget build(BuildContext context) {
-    return const Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
+      children: const <Widget>[
+        Expanded(child: _SkeletonBlock(width: double.infinity, height: 22)),
+        SizedBox(width: 12),
+        _SkeletonBlock(width: 64, height: 14, radius: 8),
+      ],
+    );
+  }
+}
+
+class _KineticPopularTrackTileSkeleton extends StatelessWidget {
+  const _KineticPopularTrackTileSkeleton({required this.index});
+
+  final int index;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
       children: <Widget>[
-        _SkeletonBlock(width: 180, height: 28),
-        SizedBox(height: 8),
-        _SkeletonBlock(width: 240, height: 14),
+        SizedBox(
+          width: 28,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: _SkeletonBlock(
+              width: index >= 10 ? 20 : 16,
+              height: 16,
+              radius: 6,
+            ),
+          ),
+        ),
+        const SizedBox(width: 14),
+        const _SkeletonBlock(width: 44, height: 44, radius: 12),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const _SkeletonBlock(
+                width: double.infinity,
+                height: 16,
+                radius: 8,
+              ),
+              const SizedBox(height: 8),
+              const _SkeletonBlock(width: 160, height: 12, radius: 8),
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+        const _SkeletonBlock(width: 40, height: 14, radius: 8),
       ],
     );
   }
 }
 
-class _SkeletonSongStrip extends StatelessWidget {
-  const _SkeletonSongStrip();
-
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox(
-      height: 168,
-      child: Row(
-        children: <Widget>[
-          Expanded(child: _SkeletonSongCard()),
-          SizedBox(width: 12),
-          Expanded(child: _SkeletonSongCard()),
-          SizedBox(width: 12),
-          Expanded(child: _SkeletonSongCard()),
-        ],
-      ),
-    );
-  }
-}
-
-class _SkeletonSongCard extends StatelessWidget {
-  const _SkeletonSongCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: const <Widget>[
-            _SkeletonBlock(width: 96, height: 96, radius: 24),
-            SizedBox(height: 12),
-            _SkeletonBlock(width: double.infinity, height: 16),
-            SizedBox(height: 8),
-            _SkeletonBlock(width: 120, height: 12),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SkeletonSongTile extends StatelessWidget {
-  const _SkeletonSongTile();
+class _SearchTrendingTileSkeleton extends StatelessWidget {
+  const _SearchTrendingTileSkeleton();
 
   @override
   Widget build(BuildContext context) {
     return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: <Widget>[
-          _SkeletonBlock(width: 52, height: 52, radius: 16),
-          SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                _SkeletonBlock(width: double.infinity, height: 16),
-                SizedBox(height: 8),
-                _SkeletonBlock(width: 180, height: 12),
-              ],
+      padding: EdgeInsets.only(bottom: 14),
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: <Widget>[
+            SizedBox(
+              width: 38,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: _SkeletonBlock(width: 24, height: 24, radius: 8),
+              ),
             ),
-          ),
-        ],
+            SizedBox(width: 12),
+            _SkeletonBlock(width: 64, height: 64, radius: 16),
+            SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  _SkeletonBlock(width: double.infinity, height: 18, radius: 8),
+                  SizedBox(height: 8),
+                  _SkeletonBlock(width: 220, height: 14, radius: 8),
+                  SizedBox(height: 6),
+                  _SkeletonBlock(width: 140, height: 14, radius: 8),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
