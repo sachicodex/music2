@@ -114,6 +114,7 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
     );
 
     return Scaffold(
+      backgroundColor: const Color(0xFF120503),
       body: Row(
         children: <Widget>[
           if (wide)
@@ -136,6 +137,7 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
           Expanded(child: content),
         ],
       ),
+
       bottomNavigationBar: wide
           ? null
           : _KineticBottomNav(
@@ -266,100 +268,199 @@ class _HomeScreenState extends State<_HomeScreen> {
           end: Alignment.bottomCenter,
         ),
       ),
-      child: RefreshIndicator(
-        color: const Color(0xFFFF8A2A),
-        backgroundColor: const Color(0xFF2A1007),
-        onRefresh: () => controller.refreshHomeFeed(force: true),
-        child: ListView(
-          controller: _scroll,
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
-          children: <Widget>[
-            const SizedBox(height: 6),
-            _KineticTopBar(onOpenSearch: widget.onOpenSearch),
-            const SizedBox(height: 14),
-            if (homeFeedPending)
-              const _KineticHeroSkeleton()
-            else
-              _KineticHeroCard(
-                badge: featured.badge,
-                title: featured.title,
-                subtitle: featured.subtitle,
-                imageUrl: featured.imageUrl,
-                onListenNow: featured.onListenNow,
-              ),
-            const SizedBox(height: 18),
-            _KineticSectionHeader(
-              title: 'MAY YOU LIKE',
-              onViewAll: () {
-                if (mayYouLikeFull.isEmpty) {
-                  widget.onOpenSearch();
-                  return;
-                }
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (BuildContext context) =>
-                        _MayYouLikeScreen(controller: controller),
+      child: Stack(
+        children: <Widget>[
+          RefreshIndicator(
+            color: const Color(0xFFFF8A2A),
+            backgroundColor: const Color(0xFF2A1007),
+            onRefresh: () => controller.refreshHomeFeed(force: true),
+            child: ListView(
+              controller: _scroll,
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
+              children: <Widget>[
+                const SizedBox(height: 6),
+                _KineticTopBar(onOpenSearch: widget.onOpenSearch),
+                const SizedBox(height: 14),
+                if (homeFeedPending)
+                  const _KineticHeroSkeleton()
+                else
+                  _KineticHeroCard(
+                    badge: featured.badge,
+                    title: featured.title,
+                    subtitle: featured.subtitle,
+                    imageUrl: featured.imageUrl,
+                    onListenNow: featured.onListenNow,
                   ),
-                );
-              },
-            ),
-            const SizedBox(height: 10),
-            if (homeFeedPending)
-              const _KineticListSkeleton(count: 4)
-            else
-              Column(
-                children: List<Widget>.generate(mayYouLike.length, (int index) {
-                  final LibrarySong song = mayYouLike[index];
-                  return _KineticPopularTrackTile(
-                    index: index + 1,
-                    song: song,
-                    onTap: () {
+                const SizedBox(height: 18),
+                _KineticSectionHeader(
+                  title: 'MAY YOU LIKE',
+                  onViewAll: () {
+                    if (mayYouLikeFull.isEmpty) {
+                      widget.onOpenSearch();
+                      return;
+                    }
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (BuildContext context) =>
+                            _MayYouLikeScreen(controller: controller),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 10),
+                if (homeFeedPending)
+                  const _KineticListSkeleton(count: 4)
+                else
+                  Column(
+                    children: List<Widget>.generate(mayYouLike.length, (
+                      int index,
+                    ) {
+                      final LibrarySong song = mayYouLike[index];
+                      return _KineticPopularTrackTile(
+                        index: index + 1,
+                        song: song,
+                        onTap: () {
+                          if (song.isRemote) {
+                            controller.playOnlineSong(song);
+                          } else {
+                            controller.playSong(song, label: 'May you like');
+                          }
+                        },
+                      );
+                    }),
+                  ),
+                if (jumpBackIn.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 18),
+                  _KineticSectionHeader(
+                    title: 'JUMP BACK IN',
+                    onViewAll: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (BuildContext context) =>
+                              _RecentPlaysScreen(controller: controller),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  _KineticJumpBackGrid(
+                    items: jumpBackIn,
+                    onTapItem: (LibrarySong song) {
                       if (song.isRemote) {
                         controller.playOnlineSong(song);
                       } else {
-                        controller.playSong(song, label: 'May you like');
+                        controller.playSong(song, label: 'Jump back in');
                       }
                     },
-                  );
-                }),
-              ),
-            if (jumpBackIn.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 18),
-              _KineticSectionHeader(
-                title: 'JUMP BACK IN',
-                onViewAll: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (BuildContext context) =>
-                          _RecentPlaysScreen(controller: controller),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 10),
-              _KineticJumpBackGrid(
-                items: jumpBackIn,
-                onTapItem: (LibrarySong song) {
-                  if (song.isRemote) {
-                    controller.playOnlineSong(song);
-                  } else {
-                    controller.playSong(song, label: 'Jump back in');
+                  ),
+                ],
+                // Infinite feed: render remaining shelves as scroll continues.
+                ..._buildMoreShelves(
+                  context: context,
+                  controller: controller,
+                  skipCount: 1,
+                ),
+                if (controller.homeLoading) ...<Widget>[
+                  const SizedBox(height: 16),
+                  const Opacity(opacity: 0.8, child: _HomeFeedSkeleton()),
+                ],
+              ],
+            ),
+          ),
+          if (controller.isOffline)
+            Positioned.fill(
+              child: _NoInternetOverlay(
+                onRefresh: () async {
+                  final bool online = await controller
+                      .refreshConnectivityStatus();
+                  if (online) {
+                    await controller.refreshHomeFeed(force: true);
                   }
                 },
               ),
-            ],
-            // Infinite feed: render remaining shelves as scroll continues.
-            ..._buildMoreShelves(
-              context: context,
-              controller: controller,
-              skipCount: 1,
             ),
-            if (controller.homeLoading) ...<Widget>[
-              const SizedBox(height: 16),
-              const Opacity(opacity: 0.8, child: _HomeFeedSkeleton()),
-            ],
-          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _NoInternetOverlay extends StatelessWidget {
+  const _NoInternetOverlay({required this.onRefresh});
+
+  final Future<void> Function() onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      ignoring: false,
+      child: ColoredBox(
+        color: Colors.black.withValues(alpha: 0.68),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 320),
+            child: Card(
+              color: const Color(0xFF2A1007),
+              elevation: 16,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+                side: const BorderSide(color: Color(0x66FF8A2A)),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    const Icon(
+                      Icons.wifi_off_rounded,
+                      color: Color(0xFFFFA25E),
+                      size: 34,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'No internet connection',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.splineSans(
+                        color: const Color(0xFFFFE8DA),
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Reconnect to load your online recommendations.',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.splineSans(
+                        color: const Color(0xFFFFC8A9),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: onRefresh,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFFFF8A2A),
+                          foregroundColor: const Color(0xFF2D1308),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: Text(
+                          'Refresh',
+                          style: GoogleFonts.splineSans(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -1193,7 +1294,7 @@ class _KineticPopularTrackTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String durationText = _formatClock(song.duration);
-    final String subtitle = (song.isRemote ? song.album : song.album).trim();
+    final String subtitle = _songArtistLabel(song);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
@@ -1234,12 +1335,11 @@ class _KineticPopularTrackTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    subtitle.isEmpty ? 'TRACK' : subtitle.toUpperCase(),
+                    subtitle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Colors.white.withValues(alpha: 0.55),
-                      letterSpacing: 1.6,
                     ),
                   ),
                 ],
@@ -1287,7 +1387,7 @@ class _KineticJumpBackGrid extends StatelessWidget {
         return _KineticJumpBackCard(
           width: cardWidth,
           title: song.title,
-          kind: (song.isRemote ? song.sourceLabel : 'TRACK').toUpperCase(),
+          subtitle: _songArtistLabel(song),
           seed: song.id,
           imageUrl: song.artworkUrl,
           onTap: () => onTapItem(song),
@@ -1301,7 +1401,7 @@ class _KineticJumpBackCard extends StatelessWidget {
   const _KineticJumpBackCard({
     required this.width,
     required this.title,
-    required this.kind,
+    required this.subtitle,
     required this.seed,
     required this.onTap,
     this.imageUrl,
@@ -1309,7 +1409,7 @@ class _KineticJumpBackCard extends StatelessWidget {
 
   final double width;
   final String title;
-  final String kind;
+  final String subtitle;
   final String seed;
   final String? imageUrl;
   final VoidCallback onTap;
@@ -1355,12 +1455,11 @@ class _KineticJumpBackCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    kind,
+                    subtitle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Colors.white.withValues(alpha: 0.55),
-                      letterSpacing: 1.8,
                     ),
                   ),
                 ],
@@ -2037,9 +2136,7 @@ class _SearchTrendingTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String subtitle = song.playCount > 0
-        ? '${song.artist} • ${song.playCount} plays'
-        : song.subtitle.replaceAll('â€¢', '•');
+    final String subtitle = _songArtistLabel(song);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -2933,8 +3030,6 @@ class _HistoryScreen extends StatelessWidget {
       return const Center(child: Text('Playback history will appear here.'));
     }
 
-    final DateFormat format = DateFormat('MMM d, HH:mm');
-
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 28),
       itemCount: controller.history.length,
@@ -2956,7 +3051,7 @@ class _HistoryScreen extends StatelessWidget {
             imageUrl: song.artworkUrl,
           ),
           title: Text(song.title),
-          subtitle: Text('${song.artist} • ${format.format(entry.playedAt)}'),
+          subtitle: Text(_songArtistLabel(song)),
           trailing: IconButton(
             tooltip: 'Play',
             onPressed: () => controller.playSong(song, label: 'History'),
@@ -3627,7 +3722,9 @@ class _PlayerScreenState extends State<_PlayerScreen> {
                                         PopupMenuItem<String>(
                                           value: 'like',
                                           child: Text(
-                                            song.isLiked ? 'Unlike song' : 'Like song',
+                                            song.isLiked
+                                                ? 'Unlike song'
+                                                : 'Like song',
                                           ),
                                         ),
                                         PopupMenuItem<String>(
@@ -3726,7 +3823,9 @@ class _PlayerScreenState extends State<_PlayerScreen> {
                                     mainAxisSize: MainAxisSize.min,
                                     children: <Widget>[
                                       IconButton(
-                                        tooltip: song.isLiked ? 'Unlike' : 'Like',
+                                        tooltip: song.isLiked
+                                            ? 'Unlike'
+                                            : 'Like',
                                         onPressed: () =>
                                             controller.likeSong(song.id),
                                         icon: Icon(
@@ -3739,8 +3838,9 @@ class _PlayerScreenState extends State<_PlayerScreen> {
                                       ),
                                       const SizedBox(width: 4),
                                       IconButton(
-                                        tooltip:
-                                            song.isDisliked ? 'Remove dislike' : 'Dislike',
+                                        tooltip: song.isDisliked
+                                            ? 'Remove dislike'
+                                            : 'Dislike',
                                         onPressed: () =>
                                             controller.dislikeSong(song.id),
                                         icon: Icon(
@@ -4108,7 +4208,6 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
 
                 final LibrarySong song = songs[index];
                 final bool active = controller.queueIndex == index;
-                final bool smartPick = controller.isSmartQueueSong(song.id);
 
                 return Material(
                   color: active ? accent.withValues(alpha: 0.14) : tile,
@@ -4174,9 +4273,7 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  smartPick
-                                      ? '${song.artist} - Smart pick'
-                                      : song.artist,
+                                  _songArtistLabel(song),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: GoogleFonts.splineSans(
@@ -4938,11 +5035,19 @@ class _SongTile extends StatelessWidget {
         size: 52,
         imageUrl: song.artworkUrl,
       ),
-      title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(
-        song.subtitle,
+      title: Text(
+        song.title,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
+        style: Theme.of(
+          context,
+        ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+      ),
+      subtitle: Text(
+        _songArtistLabel(song),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.bodySmall,
       ),
       selected: active,
       onTap:
@@ -4977,6 +5082,11 @@ class _SongTile extends StatelessWidget {
       ),
     );
   }
+}
+
+String _songArtistLabel(LibrarySong song) {
+  final String artist = song.artist.trim();
+  return artist.isEmpty ? 'Unknown artist' : artist;
 }
 
 // ignore: unused_element
@@ -5302,7 +5412,6 @@ class _MiniPlayer extends StatelessWidget {
                                                   width: compact ? 18 : 20,
                                                   height: compact ? 18 : 20,
                                                   child: const CircularProgressIndicator(
-                                                    strokeWidth: 2.4,
                                                     valueColor:
                                                         AlwaysStoppedAnimation<
                                                           Color

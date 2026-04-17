@@ -55,6 +55,7 @@ class OuterTuneController extends ChangeNotifier {
   bool _trendingNowLoading = false;
   bool _homeLoading = false;
   bool _smartQueueLoading = false;
+  bool _isOffline = false;
   String? _statusMessage;
   String? _errorMessage;
   String? _onlineError;
@@ -107,6 +108,7 @@ class OuterTuneController extends ChangeNotifier {
   bool get trendingNowLoading => _trendingNowLoading;
   bool get homeLoading => _homeLoading;
   bool get smartQueueLoading => _smartQueueLoading;
+  bool get isOffline => _isOffline;
   String? get statusMessage => _statusMessage;
   String? get errorMessage => _errorMessage;
   String? get onlineError => _onlineError;
@@ -218,6 +220,26 @@ class OuterTuneController extends ChangeNotifier {
       if (playCompare != 0) {
         return playCompare;
       }
+      final DateTime left = a.lastPlayedAt ?? a.addedAt;
+      final DateTime right = b.lastPlayedAt ?? b.addedAt;
+      final int recentCompare = right.compareTo(left);
+      if (recentCompare != 0) {
+        return recentCompare;
+      }
+      return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+    });
+    return result;
+  }
+
+  List<LibrarySong> get dislikedSongs {
+    final Map<String, LibrarySong> merged = <String, LibrarySong>{
+      for (final LibrarySong song in _songs)
+        if (song.isDisliked) song.id: song,
+      for (final LibrarySong song in _transientSongsById.values)
+        if (song.isDisliked) song.id: song,
+    };
+    final List<LibrarySong> result = merged.values.toList(growable: false);
+    result.sort((LibrarySong a, LibrarySong b) {
       final DateTime left = a.lastPlayedAt ?? a.addedAt;
       final DateTime right = b.lastPlayedAt ?? b.addedAt;
       final int recentCompare = right.compareTo(left);
@@ -371,6 +393,7 @@ class OuterTuneController extends ChangeNotifier {
   Future<void> initialize() async {
     await _loadSnapshot();
     await _recreateYtMusicClient();
+    await refreshConnectivityStatus(notify: false);
     await _player.setRate(_settings.playbackRate);
     // Never block app startup on Android runtime permission UI.
     unawaited(_ensureNotificationPermission());
@@ -380,6 +403,24 @@ class OuterTuneController extends ChangeNotifier {
     _publishNotificationState();
     notifyListeners();
     unawaited(refreshHomeFeed());
+  }
+
+  Future<bool> refreshConnectivityStatus({bool notify = true}) async {
+    bool online;
+    try {
+      final List<InternetAddress> lookup = await InternetAddress.lookup(
+        'youtube.com',
+      ).timeout(const Duration(seconds: 3));
+      online = lookup.isNotEmpty && lookup.first.rawAddress.isNotEmpty;
+    } on SocketException {
+      online = false;
+    } on TimeoutException {
+      online = false;
+    } catch (_) {
+      online = true;
+    }
+    _setOffline(!online, notify: notify);
+    return online;
   }
 
   Future<void> _ensureNotificationPermission() async {
@@ -579,6 +620,11 @@ class OuterTuneController extends ChangeNotifier {
     notifyListeners();
 
     try {
+      final bool online = await refreshConnectivityStatus(notify: false);
+      if (!online) {
+        _homeError = 'No internet connection. Reconnect and tap Refresh.';
+        return;
+      }
       final List<HomeFeedSection> previousFeed = List<HomeFeedSection>.from(
         _homeFeed,
       );
@@ -645,6 +691,9 @@ class OuterTuneController extends ChangeNotifier {
             : 'Recommendations could not be refreshed right now.';
       }
     } catch (error) {
+      if (_isConnectivityError(error)) {
+        _setOffline(true, notify: false);
+      }
       _homeError = _friendlyOnlineError(error);
     } finally {
       _homeLoading = false;
@@ -777,16 +826,28 @@ class OuterTuneController extends ChangeNotifier {
         limit: limit,
         force: force,
       );
+      _setOffline(false, notify: false);
       _searchCache[cacheKey] = songs;
       return songs;
-    } catch (_) {
-      final List<LibrarySong> fallback = await _searchYouTubeMusicOnly(
-        trimmed,
-        limit: limit,
-        force: force,
-      );
-      _searchCache[cacheKey] = fallback;
-      return fallback;
+    } catch (error) {
+      if (_isConnectivityError(error)) {
+        _setOffline(true, notify: false);
+      }
+      try {
+        final List<LibrarySong> fallback = await _searchYouTubeMusicOnly(
+          trimmed,
+          limit: limit,
+          force: force,
+        );
+        _setOffline(false, notify: false);
+        _searchCache[cacheKey] = fallback;
+        return fallback;
+      } catch (fallbackError) {
+        if (_isConnectivityError(fallbackError)) {
+          _setOffline(true, notify: false);
+        }
+        rethrow;
+      }
     }
   }
 
@@ -1833,7 +1894,49 @@ class OuterTuneController extends ChangeNotifier {
       );
     }
 
+    // Ensure first-time users still get sections before any listening history.
+    if (queries.isEmpty) {
+      queries.addAll(<_RecommendationQuery>[
+        const _RecommendationQuery(
+          title: 'Fresh picks',
+          subtitle: 'Popular songs to start your vibe',
+          query: 'latest popular songs',
+        ),
+        const _RecommendationQuery(
+          title: 'Global trending',
+          subtitle: 'Songs people are playing now',
+          query: 'top global hits this week',
+        ),
+        const _RecommendationQuery(
+          title: 'Discover mix',
+          subtitle: 'Recommended tracks across genres',
+          query: 'best songs playlist mix',
+        ),
+      ]);
+    }
+
     return queries;
+  }
+
+  bool _isConnectivityError(Object error) {
+    if (error is SocketException || error is TimeoutException) {
+      return true;
+    }
+    final String message = '$error'.toLowerCase();
+    return message.contains('failed host lookup') ||
+        message.contains('network is unreachable') ||
+        message.contains('connection refused') ||
+        message.contains('socketexception');
+  }
+
+  void _setOffline(bool value, {bool notify = true}) {
+    if (_isOffline == value) {
+      return;
+    }
+    _isOffline = value;
+    if (notify) {
+      notifyListeners();
+    }
   }
 
   List<_RecommendationQuery> _buildPredictionQueries(LibrarySong anchor) {
@@ -3343,7 +3446,17 @@ class OuterTuneController extends ChangeNotifier {
 
   void _rememberTransientSong(LibrarySong song) {
     if (song.isRemote) {
-      _transientSongsById[song.id] = song;
+      final LibrarySong? existing = _transientSongsById[song.id];
+      if (existing == null) {
+        _transientSongsById[song.id] = song;
+        return;
+      }
+      _transientSongsById[song.id] = song.copyWith(
+        playCount: existing.playCount,
+        lastPlayedAt: existing.lastPlayedAt,
+        isLiked: existing.isLiked,
+        isDisliked: existing.isDisliked,
+      );
     }
   }
 
@@ -3472,6 +3585,8 @@ class OuterTuneController extends ChangeNotifier {
                   song.isRemote &&
                   (song.playCount > 0 ||
                       song.lastPlayedAt != null ||
+                      song.isLiked ||
+                      song.isDisliked ||
                       _queueSongIds.contains(song.id)),
             )
             .toList()
