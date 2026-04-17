@@ -2044,7 +2044,8 @@ class OuterTuneController extends ChangeNotifier {
       for (final HomeFeedSection section in sections) ...section.songs.take(12),
     ];
     final Map<String, int> sectionHits = <String, int>{};
-    final Map<String, HomeFeedSection> primarySectionBySong = <String, HomeFeedSection>{};
+    final Map<String, HomeFeedSection> primarySectionBySong =
+        <String, HomeFeedSection>{};
     final Set<String> recentIds = recentlyPlayedSongs
         .take(24)
         .map((LibrarySong song) => song.id)
@@ -2099,24 +2100,26 @@ class OuterTuneController extends ChangeNotifier {
       limit: 10,
     );
     final List<LibrarySong> candidates = _dedupeSongs(
-      sectionSongs.where((LibrarySong song) {
-        if (song.isDisliked) {
-          return false;
-        }
-        if (recentIds.contains(song.id) ||
-            recentKeys.contains(_songIdentityKey(song)) ||
-            skippedSongIds.contains(song.id)) {
-          return false;
-        }
-        final String artistKey = _normalizeToken(song.artist);
-        if (dislikedArtistKeys.contains(artistKey)) {
-          return false;
-        }
-        if (seedSongs.any((LibrarySong seed) => _sameSong(seed, song))) {
-          return false;
-        }
-        return true;
-      }).toList(growable: false),
+      sectionSongs
+          .where((LibrarySong song) {
+            if (song.isDisliked) {
+              return false;
+            }
+            if (recentIds.contains(song.id) ||
+                recentKeys.contains(_songIdentityKey(song)) ||
+                skippedSongIds.contains(song.id)) {
+              return false;
+            }
+            final String artistKey = _normalizeToken(song.artist);
+            if (dislikedArtistKeys.contains(artistKey)) {
+              return false;
+            }
+            if (seedSongs.any((LibrarySong seed) => _sameSong(seed, song))) {
+              return false;
+            }
+            return true;
+          })
+          .toList(growable: false),
       excludedIds: <String>{},
       limit: 140,
     );
@@ -2205,7 +2208,8 @@ class OuterTuneController extends ChangeNotifier {
   _TasteProfile _buildTasteProfile() {
     final List<_TasteSignal> artists = _preferenceArtists();
     final List<_TasteSignal> genres = _preferenceGenres();
-    final List<_LanguageSignal> languages = _preferredLanguagesFromValidHistory();
+    final List<_LanguageSignal> languages =
+        _preferredLanguagesFromValidHistory();
     final Map<String, double> moodScores = <String, double>{};
 
     for (final LibrarySong song in _rankedPreferenceSongs().take(40)) {
@@ -2277,8 +2281,9 @@ class OuterTuneController extends ChangeNotifier {
     final bool knownGenre = profile.genreKeys.contains(
       _normalizeToken(song.genre ?? ''),
     );
-    final bool knownMood =
-        profile.moodKeys.intersection(_vibeTokens(song)).isNotEmpty;
+    final bool knownMood = profile.moodKeys
+        .intersection(_vibeTokens(song))
+        .isNotEmpty;
     return !knownArtist || (!knownGenre && !knownMood);
   }
 
@@ -2286,14 +2291,12 @@ class OuterTuneController extends ChangeNotifier {
     List<_ScoredRecommendation> scored, {
     int limit = 50,
   }) {
-    final List<_ScoredRecommendation> familiar = scored
-        .where((item) => !item.isExploratory)
-        .toList(growable: false)
-      ..sort(_compareScoredRecommendations);
-    final List<_ScoredRecommendation> exploratory = scored
-        .where((item) => item.isExploratory)
-        .toList(growable: false)
-      ..sort(_compareScoredRecommendations);
+    final List<_ScoredRecommendation> familiar =
+        scored.where((item) => !item.isExploratory).toList(growable: false)
+          ..sort(_compareScoredRecommendations);
+    final List<_ScoredRecommendation> exploratory =
+        scored.where((item) => item.isExploratory).toList(growable: false)
+          ..sort(_compareScoredRecommendations);
 
     final Map<String, int> artistCounts = <String, int>{};
     final Set<String> seenKeys = <String>{};
@@ -3694,6 +3697,31 @@ class OuterTuneController extends ChangeNotifier {
       _queueIndex = _queueIndex.clamp(0, _queueSongIds.length - 1);
     }
     unawaited(_maybeExtendSmartQueue(force: true));
+    notifyListeners();
+  }
+
+  Future<void> reorderQueue(int from, int to) async {
+    if (from < 0 ||
+        to < 0 ||
+        from >= _queueSongIds.length ||
+        to >= _queueSongIds.length ||
+        from == to) {
+      return;
+    }
+
+    await _player.move(from, to);
+
+    final String movedId = _queueSongIds.removeAt(from);
+    _queueSongIds.insert(to, movedId);
+
+    if (_queueIndex == from) {
+      _queueIndex = to;
+    } else if (from < _queueIndex && to >= _queueIndex) {
+      _queueIndex -= 1;
+    } else if (from > _queueIndex && to <= _queueIndex) {
+      _queueIndex += 1;
+    }
+
     notifyListeners();
   }
 
