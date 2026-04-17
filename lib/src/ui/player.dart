@@ -96,6 +96,8 @@ class _PlayerScreenState extends State<_PlayerScreen> {
         const Color textPrimary = Color(0xFFFFDFC9);
         const Color textSecondary = Color(0xFFE9A56F);
         const Color trackInactive = Color(0xFF5A2508);
+        final bool isPlayerLoading = controller.miniPlayerSelectionLoading;
+        final bool showPauseIcon = controller.isPlaying && !isPlayerLoading;
 
         return Scaffold(
           backgroundColor: Colors.transparent,
@@ -298,7 +300,7 @@ class _PlayerScreenState extends State<_PlayerScreen> {
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 30),
+                            const SizedBox(height: 20),
                             SliderTheme(
                               data: SliderTheme.of(context).copyWith(
                                 trackHeight: 6,
@@ -321,33 +323,27 @@ class _PlayerScreenState extends State<_PlayerScreen> {
                                 },
                               ),
                             ),
-                            Transform.translate(
-                              offset: const Offset(0, -6),
-                              child: Row(
-                                children: <Widget>[
-                                  Text(
-                                    _formatClock(controller.position),
-                                    style: GoogleFonts.splineSans(
-                                      color: textPrimary.withValues(
-                                        alpha: 0.86,
-                                      ),
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                    ),
+                            const SizedBox(height: 15),
+                            Row(
+                              children: <Widget>[
+                                Text(
+                                  _formatClock(controller.position),
+                                  style: GoogleFonts.splineSans(
+                                    color: textPrimary.withValues(alpha: 0.86),
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
                                   ),
-                                  const Spacer(),
-                                  Text(
-                                    _formatClock(duration),
-                                    style: GoogleFonts.splineSans(
-                                      color: textPrimary.withValues(
-                                        alpha: 0.86,
-                                      ),
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                    ),
+                                ),
+                                const Spacer(),
+                                Text(
+                                  _formatClock(duration),
+                                  style: GoogleFonts.splineSans(
+                                    color: textPrimary.withValues(alpha: 0.86),
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
                             const SizedBox(height: 26),
                             Row(
@@ -383,13 +379,27 @@ class _PlayerScreenState extends State<_PlayerScreen> {
                                         ),
                                       ],
                                     ),
-                                    child: Icon(
-                                      controller.isPlaying
-                                          ? Icons.pause_rounded
-                                          : Icons.play_arrow_rounded,
-                                      size: controller.isPlaying ? 44 : 52,
-                                      color: Colors.black,
-                                    ),
+                                    child: isPlayerLoading
+                                        ? const Center(
+                                            child: SizedBox(
+                                              width: 34,
+                                              height: 34,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2.4,
+                                                valueColor:
+                                                    AlwaysStoppedAnimation<
+                                                      Color
+                                                    >(Colors.black),
+                                              ),
+                                            ),
+                                          )
+                                        : Icon(
+                                            showPauseIcon
+                                                ? Icons.pause_rounded
+                                                : Icons.play_arrow_rounded,
+                                            size: showPauseIcon ? 44 : 52,
+                                            color: Colors.black,
+                                          ),
                                   ),
                                 ),
                                 _PlayerIconButton(
