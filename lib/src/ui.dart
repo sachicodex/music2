@@ -98,7 +98,12 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
 
     final Widget content = Column(
       children: <Widget>[
-        if (controller.scanning) const LinearProgressIndicator(minHeight: 3),
+        if (controller.scanning)
+          const LinearProgressIndicator(
+            minHeight: 3,
+            color: _kAccent,
+            backgroundColor: Color(0xFF3A170C),
+          ),
         Expanded(
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 220),
@@ -198,6 +203,132 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
   }
 }
 
+const Color _kPageTop = Color(0xFF140804);
+const Color _kPageMiddle = Color(0xFF211008);
+const Color _kPageBottom = Color(0xFF0D0503);
+const Color _kSurface = Color(0xFF2A1007);
+const Color _kSurfaceEdge = Color(0xFF3A170C);
+const Color _kAccent = Color(0xFFFF8A2A);
+const Color _kTextPrimary = Color(0xFFFFE8DA);
+const Color _kTextSecondary = Color(0xFFFFC8A9);
+
+BoxDecoration _kineticPageDecoration() {
+  return const BoxDecoration(
+    gradient: LinearGradient(
+      colors: <Color>[_kPageTop, _kPageMiddle, _kPageBottom],
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+    ),
+  );
+}
+
+void _showKineticSnackBar(BuildContext context, String message) {
+  final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+  messenger.hideCurrentSnackBar();
+  messenger.showSnackBar(
+    SnackBar(
+      backgroundColor: _kSurface,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: _kSurfaceEdge),
+      ),
+      content: Text(
+        message,
+        style: GoogleFonts.splineSans(
+          color: _kTextPrimary,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    ),
+  );
+}
+
+PopupMenuItem<String> _kineticPopupMenuItem(String value, String label) {
+  return PopupMenuItem<String>(
+    value: value,
+    child: Text(
+      label,
+      style: GoogleFonts.splineSans(
+        color: _kTextPrimary,
+        fontWeight: FontWeight.w600,
+      ),
+    ),
+  );
+}
+
+class _HomeStyleHeader extends StatelessWidget {
+  const _HomeStyleHeader({
+    required this.title,
+    required this.leading,
+    required this.trailing,
+  });
+
+  final String title;
+  final Widget leading;
+  final Widget trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 44,
+      child: Stack(
+        alignment: Alignment.center,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 56),
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                letterSpacing: 3.2,
+                color: Colors.white.withValues(alpha: 0.92),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: SizedBox(
+              width: 44,
+              height: 44,
+              child: Center(child: leading),
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+              child: Center(child: trailing),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HomeStyleProfileBadge extends StatelessWidget {
+  const _HomeStyleProfileBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 34,
+      height: 34,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+      ),
+      child: const Icon(Icons.person_rounded, size: 18, color: Colors.white),
+    );
+  }
+}
+
 class _HomeScreen extends StatefulWidget {
   const _HomeScreen({
     super.key,
@@ -285,7 +416,7 @@ class _HomeScreenState extends State<_HomeScreen> {
               padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
               children: <Widget>[
                 const SizedBox(height: 6),
-                _KineticTopBar(onOpenSearch: widget.onOpenSearch),
+                const _KineticTopBar(),
                 const SizedBox(height: 14),
                 if (homeFeedPending)
                   const _KineticHeroSkeleton()
@@ -1047,43 +1178,14 @@ class _HeroCandidateScore {
 }
 
 class _KineticTopBar extends StatelessWidget {
-  const _KineticTopBar({required this.onOpenSearch});
-
-  final VoidCallback onOpenSearch;
+  const _KineticTopBar();
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        Container(
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.06),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-          ),
-          child: const Icon(
-            Icons.person_rounded,
-            size: 18,
-            color: Colors.white,
-          ),
-        ),
-        const Spacer(),
-        Text(
-          'KINETIC',
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            letterSpacing: 3.2,
-            color: Colors.white.withValues(alpha: 0.92),
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const Spacer(),
-        IconButton(
-          onPressed: () {},
-          icon: const Icon(Icons.settings_rounded, color: Colors.white),
-        ),
-      ],
+    return const _HomeStyleHeader(
+      title: 'KINETIC',
+      leading: _HomeStyleProfileBadge(),
+      trailing: Icon(Icons.notifications_none_rounded, color: Colors.white),
     );
   }
 }
@@ -1528,52 +1630,24 @@ class _PopularTracksScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0B0A0C),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(
-                    Icons.arrow_back_rounded,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.1,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            _ProgressiveListReveal(
-              itemCount: songs.length,
-              itemBuilder: (BuildContext context, int index) {
-                final LibrarySong song = songs[index];
-                return _KineticPopularTrackTile(
-                  index: index + 1,
-                  song: song,
-                  onTap: () {
-                    if (song.isRemote) {
-                      controller.playOnlineSong(song);
-                    } else {
-                      controller.playSong(song, label: title);
-                    }
-                  },
-                );
-              },
-            ),
-          ],
-        ),
+    return _KineticSubscreenScaffold(
+      title: title,
+      child: _ProgressiveListReveal(
+        itemCount: songs.length,
+        itemBuilder: (BuildContext context, int index) {
+          final LibrarySong song = songs[index];
+          return _KineticPopularTrackTile(
+            index: index + 1,
+            song: song,
+            onTap: () {
+              if (song.isRemote) {
+                controller.playOnlineSong(song);
+              } else {
+                controller.playSong(song, label: title);
+              }
+            },
+          );
+        },
       ),
     );
   }
@@ -1588,65 +1662,107 @@ class _RecentPlaysScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final List<LibrarySong> songs = controller.recentlyPlayedSongs;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF0B0A0C),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(
-                    Icons.arrow_back_rounded,
-                    color: Colors.white,
+    return _KineticSubscreenScaffold(
+      title: 'JUMP BACK IN',
+      child: songs.isEmpty
+          ? Builder(
+              builder: (BuildContext context) {
+                return Text(
+                  'Play songs and they will appear here.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: const Color(0xFFFFC8A9),
                   ),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'JUMP BACK IN',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.1,
-                    ),
-                  ),
-                ),
-              ],
+                );
+              },
+            )
+          : _ProgressiveListReveal(
+              itemCount: songs.length,
+              itemBuilder: (BuildContext context, int index) {
+                final LibrarySong song = songs[index];
+                return _KineticPopularTrackTile(
+                  index: index + 1,
+                  song: song,
+                  onTap: () {
+                    if (song.isRemote) {
+                      controller.playOnlineSong(song);
+                    } else {
+                      controller.playSong(song, label: 'Jump back in');
+                    }
+                  },
+                );
+              },
             ),
-            const SizedBox(height: 10),
-            if (songs.isEmpty)
-              Text(
-                'Play songs and they will appear here.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.white.withValues(alpha: 0.6),
-                ),
-              )
-            else
-              _ProgressiveListReveal(
-                itemCount: songs.length,
-                itemBuilder: (BuildContext context, int index) {
-                  final LibrarySong song = songs[index];
-                  return _KineticPopularTrackTile(
-                    index: index + 1,
-                    song: song,
-                    onTap: () {
-                      if (song.isRemote) {
-                        controller.playOnlineSong(song);
-                      } else {
-                        controller.playSong(song, label: 'Jump back in');
-                      }
-                    },
-                  );
-                },
-              ),
-          ],
+    );
+  }
+}
+
+class _KineticSubscreenScaffold extends StatelessWidget {
+  const _KineticSubscreenScaffold({
+    required this.title,
+    required this.child,
+    this.actions = const <Widget>[],
+  });
+
+  final String title;
+  final Widget child;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF120503),
+      body: DecoratedBox(
+        decoration: _kineticPageDecoration(),
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
+            children: <Widget>[
+              _KineticSubscreenHeader(title: title, actions: actions),
+              const SizedBox(height: 10),
+              child,
+            ],
+          ),
         ),
       ),
+    );
+  }
+}
+
+class _KineticSubscreenHeader extends StatelessWidget {
+  const _KineticSubscreenHeader({
+    required this.title,
+    this.actions = const <Widget>[],
+  });
+
+  final String title;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    return _HomeStyleHeader(
+      title: title,
+      leading: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+        ),
+        child: IconButton(
+          padding: EdgeInsets.zero,
+          visualDensity: VisualDensity.compact,
+          onPressed: () => Navigator.of(context).pop(),
+          icon: const Icon(
+            Icons.arrow_back_rounded,
+            color: Colors.white,
+            size: 18,
+          ),
+        ),
+      ),
+      trailing: actions.isEmpty
+          ? const SizedBox.shrink()
+          : Row(mainAxisSize: MainAxisSize.min, children: actions),
     );
   }
 }
@@ -1672,65 +1788,41 @@ class _MayYouLikeScreenState extends State<_MayYouLikeScreen> {
     final OuterTuneController controller = widget.controller;
     final List<SongRecommendation> items = _allItems;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF0B0A0C),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(
-                    Icons.arrow_back_rounded,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  'MAY YOU LIKE',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.1,
-                  ),
-                ),
-              ],
+    return _KineticSubscreenScaffold(
+      title: 'MAY YOU LIKE',
+      child: Column(
+        children: <Widget>[
+          if (items.isEmpty && controller.homeLoading)
+            const _ProgressiveSkeletonList(count: 8),
+          if (items.isEmpty && !controller.homeLoading)
+            const _PersonalizationHintCard(
+              message:
+                  'Your personalized picks will appear here after the app learns from your likes, history, and full listens.',
+            )
+          else
+            _ProgressiveListReveal(
+              itemCount: items.length,
+              itemBuilder: (BuildContext context, int index) {
+                final SongRecommendation recommendation = items[index];
+                final LibrarySong song = recommendation.song;
+                return _KineticPopularTrackTile(
+                  index: index + 1,
+                  song: song,
+                  onTap: () {
+                    if (song.isRemote) {
+                      controller.playOnlineSong(song);
+                    } else {
+                      controller.playSong(song, label: 'May you like');
+                    }
+                  },
+                );
+              },
             ),
-            const SizedBox(height: 10),
-            if (items.isEmpty && controller.homeLoading)
-              const _ProgressiveSkeletonList(count: 8),
-            if (items.isEmpty && !controller.homeLoading)
-              const _PersonalizationHintCard(
-                message:
-                    'Your personalized picks will appear here after the app learns from your likes, history, and full listens.',
-              )
-            else
-              _ProgressiveListReveal(
-                itemCount: items.length,
-                itemBuilder: (BuildContext context, int index) {
-                  final SongRecommendation recommendation = items[index];
-                  final LibrarySong song = recommendation.song;
-                  return _KineticPopularTrackTile(
-                    index: index + 1,
-                    song: song,
-                    onTap: () {
-                      if (song.isRemote) {
-                        controller.playOnlineSong(song);
-                      } else {
-                        controller.playSong(song, label: 'May you like');
-                      }
-                    },
-                  );
-                },
-              ),
-            if (controller.homeLoading && items.isEmpty) ...<Widget>[
-              const SizedBox(height: 12),
-              const _ProgressiveSkeletonList(count: 4),
-            ],
+          if (controller.homeLoading && items.isEmpty) ...<Widget>[
+            const SizedBox(height: 12),
+            const _ProgressiveSkeletonList(count: 4),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -1972,43 +2064,14 @@ class _KineticHeroSkeleton extends StatelessWidget {
 }
 
 class _SearchPulseHeader extends StatelessWidget {
-  const _SearchPulseHeader({required this.onOpenSettings});
-
-  final VoidCallback onOpenSettings;
+  const _SearchPulseHeader();
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        Container(
-          width: 38,
-          height: 38,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.white.withValues(alpha: 0.10),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-          ),
-          child: const Icon(
-            Icons.person_rounded,
-            color: Colors.white,
-            size: 20,
-          ),
-        ),
-        const Spacer(),
-        Text(
-          'PULSE',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            color: const Color(0xFFFF8A2A),
-            fontWeight: FontWeight.w900,
-            letterSpacing: 0.4,
-          ),
-        ),
-        const Spacer(),
-        IconButton(
-          icon: const Icon(Icons.settings_rounded, color: Color(0xFFFF8A2A)),
-          onPressed: () {},
-        ),
-      ],
+    return const _HomeStyleHeader(
+      title: 'SEARCH',
+      leading: _HomeStyleProfileBadge(),
+      trailing: Icon(Icons.notifications_none_rounded, color: Colors.white),
     );
   }
 }
@@ -2322,7 +2385,11 @@ class _SearchTrendingTile extends StatelessWidget {
                 ),
               ),
               PopupMenuButton<String>(
-                color: const Color(0xFF2A1209),
+                color: _kSurface,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: const BorderSide(color: _kSurfaceEdge),
+                ),
                 icon: const Icon(
                   Icons.more_vert_rounded,
                   color: Color(0xFFD1A793),
@@ -2342,19 +2409,11 @@ class _SearchTrendingTile extends StatelessWidget {
                   }
                 },
                 itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                  const PopupMenuItem<String>(
-                    value: 'play',
-                    child: Text('Play now'),
-                  ),
-                  const PopupMenuItem<String>(
-                    value: 'queue',
-                    child: Text('Add to queue'),
-                  ),
-                  PopupMenuItem<String>(
-                    value: 'favorite',
-                    child: Text(
-                      song.isFavorite ? 'Remove favorite' : 'Add favorite',
-                    ),
+                  _kineticPopupMenuItem('play', 'Play now'),
+                  _kineticPopupMenuItem('queue', 'Add to queue'),
+                  _kineticPopupMenuItem(
+                    'favorite',
+                    song.isFavorite ? 'Remove favorite' : 'Add favorite',
                   ),
                 ],
               ),
@@ -2527,30 +2586,11 @@ class _LibraryScreen extends StatelessWidget {
     final List<UserPlaylist> playlists = controller.playlists;
 
     return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: <Color>[
-            Color(0xFF190802),
-            Color(0xFF2A0E02),
-            Color(0xFF120502),
-          ],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ),
-      ),
+      decoration: _kineticPageDecoration(),
       child: ListView(
         padding: const EdgeInsets.fromLTRB(40, 18, 22, 30),
         children: <Widget>[
-          _LibraryHeader(
-            onOpenSettings: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (BuildContext context) =>
-                      _SettingsScreen(controller: controller),
-                ),
-              );
-            },
-          ),
+          const _LibraryHeader(),
           const SizedBox(height: 28),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2566,11 +2606,12 @@ class _LibraryScreen extends StatelessWidget {
                   onTap: () {
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                        builder: (BuildContext context) => _PlaylistScreen(
-                          controller: controller,
-                          title: 'Liked Songs',
-                          songs: controller.likedSongs,
-                        ),
+                        builder: (BuildContext context) =>
+                            _KineticPlaylistScreen(
+                              controller: controller,
+                              title: 'Liked Songs',
+                              songs: controller.likedSongs,
+                            ),
                       ),
                     );
                   },
@@ -2589,11 +2630,12 @@ class _LibraryScreen extends StatelessWidget {
                   onTap: () {
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                        builder: (BuildContext context) => _PlaylistScreen(
-                          controller: controller,
-                          title: 'Offline',
-                          songs: controller.songs,
-                        ),
+                        builder: (BuildContext context) =>
+                            _KineticPlaylistScreen(
+                              controller: controller,
+                              title: 'Offline',
+                              songs: controller.songs,
+                            ),
                       ),
                     );
                   },
@@ -2860,16 +2902,7 @@ class _SearchScreenState extends State<_SearchScreen> {
         controller: _scrollController,
         padding: const EdgeInsets.fromLTRB(24, 18, 24, 28),
         children: <Widget>[
-          _SearchPulseHeader(
-            onOpenSettings: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (BuildContext context) =>
-                      _SettingsScreen(controller: widget.controller),
-                ),
-              );
-            },
-          ),
+          const _SearchPulseHeader(),
           const SizedBox(height: 18),
           TextField(
             controller: _searchController,
@@ -3195,7 +3228,6 @@ class _HistoryScreen extends StatelessWidget {
           title: Text(song.title),
           subtitle: Text(_songArtistLabel(song)),
           trailing: IconButton(
-            tooltip: 'Play',
             onPressed: () => controller.playSong(song, label: 'History'),
             icon: const Icon(Icons.play_arrow_rounded),
           ),
@@ -3362,28 +3394,13 @@ class _SettingsScreen extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              const CircleAvatar(
-                radius: 14,
-                backgroundColor: Color(0xFF4F220D),
-                child: Icon(Icons.music_note_rounded, color: accent, size: 16),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                'PULSE',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: titleColor,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1,
-                ),
-              ),
-              const Spacer(),
-              IconButton(
-                onPressed: () {},
-                icon: const Icon(Icons.settings_rounded, color: accent),
-              ),
-            ],
+          const _HomeStyleHeader(
+            title: 'SETTINGS',
+            leading: _HomeStyleProfileBadge(),
+            trailing: Icon(
+              Icons.notifications_none_rounded,
+              color: Colors.white,
+            ),
           ),
           const SizedBox(height: 14),
           Container(
@@ -3972,7 +3989,13 @@ class _PlayerScreenState extends State<_PlayerScreen> {
                                   ),
                                 ),
                                 PopupMenuButton<String>(
-                                  color: const Color(0xFF2A1209),
+                                  color: _kSurface,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                    side: const BorderSide(
+                                      color: _kSurfaceEdge,
+                                    ),
+                                  ),
                                   icon: const Icon(Icons.more_vert_rounded),
                                   iconColor: accent,
                                   onSelected: (String value) async {
@@ -3983,29 +4006,22 @@ class _PlayerScreenState extends State<_PlayerScreen> {
                                   },
                                   itemBuilder: (BuildContext context) =>
                                       <PopupMenuEntry<String>>[
-                                        const PopupMenuItem<String>(
-                                          value: 'save',
-                                          child: Text('Save'),
+                                        _kineticPopupMenuItem('save', 'Save'),
+                                        _kineticPopupMenuItem(
+                                          'like',
+                                          song.isLiked
+                                              ? 'Unlike song'
+                                              : 'Like song',
                                         ),
-                                        PopupMenuItem<String>(
-                                          value: 'like',
-                                          child: Text(
-                                            song.isLiked
-                                                ? 'Unlike song'
-                                                : 'Like song',
-                                          ),
+                                        _kineticPopupMenuItem(
+                                          'dislike',
+                                          song.isDisliked
+                                              ? 'Remove dislike'
+                                              : 'Dislike song',
                                         ),
-                                        PopupMenuItem<String>(
-                                          value: 'dislike',
-                                          child: Text(
-                                            song.isDisliked
-                                                ? 'Remove dislike'
-                                                : 'Dislike song',
-                                          ),
-                                        ),
-                                        const PopupMenuItem<String>(
-                                          value: 'queue',
-                                          child: Text('Add to queue'),
+                                        _kineticPopupMenuItem(
+                                          'queue',
+                                          'Add to queue',
                                         ),
                                       ],
                                 ),
@@ -4091,9 +4107,6 @@ class _PlayerScreenState extends State<_PlayerScreen> {
                                     mainAxisSize: MainAxisSize.min,
                                     children: <Widget>[
                                       IconButton(
-                                        tooltip: song.isLiked
-                                            ? 'Unlike'
-                                            : 'Like',
                                         onPressed: () =>
                                             controller.likeSong(song.id),
                                         icon: Icon(
@@ -4106,9 +4119,6 @@ class _PlayerScreenState extends State<_PlayerScreen> {
                                       ),
                                       const SizedBox(width: 4),
                                       IconButton(
-                                        tooltip: song.isDisliked
-                                            ? 'Remove dislike'
-                                            : 'Dislike',
                                         onPressed: () =>
                                             controller.dislikeSong(song.id),
                                         icon: Icon(
@@ -4470,7 +4480,9 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
                 if (index >= songs.length) {
                   return const Padding(
                     padding: EdgeInsets.symmetric(vertical: 12),
-                    child: Center(child: CircularProgressIndicator()),
+                    child: Center(
+                      child: CircularProgressIndicator(color: _kAccent),
+                    ),
                   );
                 }
 
@@ -4491,9 +4503,7 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
                     onLongPress: () async {
                       await controller.removeFromQueue(index);
                       if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Removed from queue')),
-                        );
+                        _showKineticSnackBar(context, 'Removed from queue');
                       }
                     },
                     child: Padding(
@@ -4567,6 +4577,7 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
   }
 }
 
+// ignore: unused_element
 class _AlbumScreen extends StatelessWidget {
   const _AlbumScreen({required this.controller, required this.album});
 
@@ -4624,6 +4635,7 @@ class _AlbumScreen extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _ArtistScreen extends StatelessWidget {
   const _ArtistScreen({required this.controller, required this.artist});
 
@@ -4672,6 +4684,7 @@ class _ArtistScreen extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _FolderScreen extends StatelessWidget {
   const _FolderScreen({required this.controller, required this.folder});
 
@@ -4704,12 +4717,13 @@ class _FolderScreen extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _PlaylistScreen extends StatelessWidget {
   const _PlaylistScreen({
     required this.controller,
     required this.title,
     required this.songs,
-    this.playlist,
+    required this.playlist,
   });
 
   final OuterTuneController controller;
@@ -4751,6 +4765,267 @@ class _PlaylistScreen extends StatelessWidget {
               ),
             )
             .toList(),
+      ),
+    );
+  }
+}
+
+class _KineticCollectionSummary extends StatelessWidget {
+  const _KineticCollectionSummary({
+    required this.leading,
+    required this.title,
+    required this.lines,
+  });
+
+  final Widget leading;
+  final String title;
+  final List<String> lines;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<String> visibleLines = lines
+        .where((String line) => line.trim().isNotEmpty)
+        .toList(growable: false);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: _kSurface.withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(26),
+        border: Border.all(color: _kSurfaceEdge),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          leading,
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.splineSans(
+                    color: _kTextPrimary,
+                    fontSize: 26,
+                    fontWeight: FontWeight.w700,
+                    height: 0.96,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                ...visibleLines.map(
+                  (String line) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      line,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.splineSans(
+                        color: _kTextSecondary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _KineticAlbumScreen extends StatelessWidget {
+  const _KineticAlbumScreen({required this.controller, required this.album});
+
+  final OuterTuneController controller;
+  final AlbumCollection album;
+
+  @override
+  Widget build(BuildContext context) {
+    return _KineticSubscreenScaffold(
+      title: album.title,
+      actions: <Widget>[
+        IconButton(
+          onPressed: () => controller.playAlbum(album),
+          icon: const Icon(Icons.play_arrow_rounded, color: _kAccent),
+        ),
+      ],
+      child: Column(
+        children: <Widget>[
+          _KineticCollectionSummary(
+            leading: _Artwork(seed: album.id, title: album.title, size: 120),
+            title: album.title,
+            lines: <String>[
+              '${album.artist} • ${album.songCount} tracks',
+              _formatDuration(album.totalDuration),
+            ],
+          ),
+          const SizedBox(height: 20),
+          ...album.songs.asMap().entries.map(
+            (MapEntry<int, LibrarySong> entry) => _SongTile(
+              song: entry.value,
+              controller: controller,
+              onTap: () => controller.playAlbum(album, startIndex: entry.key),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _KineticArtistScreen extends StatelessWidget {
+  const _KineticArtistScreen({required this.controller, required this.artist});
+
+  final OuterTuneController controller;
+  final ArtistCollection artist;
+
+  @override
+  Widget build(BuildContext context) {
+    return _KineticSubscreenScaffold(
+      title: artist.name,
+      actions: <Widget>[
+        IconButton(
+          onPressed: () => controller.playArtist(artist),
+          icon: const Icon(Icons.play_arrow_rounded, color: _kAccent),
+        ),
+      ],
+      child: Column(
+        children: <Widget>[
+          _KineticCollectionSummary(
+            leading: _ResolvedArtistAvatar(
+              controller: controller,
+              artistName: artist.name,
+              seed: artist.id,
+              size: 120,
+            ),
+            title: artist.name,
+            lines: <String>[
+              '${artist.songs.length} tracks • ${artist.albumCount} albums',
+            ],
+          ),
+          const SizedBox(height: 20),
+          ...artist.songs.map(
+            (LibrarySong song) => _SongTile(song: song, controller: controller),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _KineticFolderScreen extends StatelessWidget {
+  const _KineticFolderScreen({required this.controller, required this.folder});
+
+  final OuterTuneController controller;
+  final FolderCollection folder;
+
+  @override
+  Widget build(BuildContext context) {
+    return _KineticSubscreenScaffold(
+      title: folder.name,
+      actions: <Widget>[
+        IconButton(
+          onPressed: () => controller.playFolder(folder),
+          icon: const Icon(Icons.play_arrow_rounded, color: _kAccent),
+        ),
+      ],
+      child: Column(
+        children: <Widget>[
+          _KineticCollectionSummary(
+            leading: _Artwork(
+              seed: folder.id,
+              title: folder.name,
+              size: 120,
+              icon: Icons.folder_rounded,
+            ),
+            title: folder.name,
+            lines: <String>[folder.path, '${folder.songs.length} tracks'],
+          ),
+          const SizedBox(height: 20),
+          ...folder.songs.map(
+            (LibrarySong song) => _SongTile(song: song, controller: controller),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _KineticPlaylistScreen extends StatelessWidget {
+  const _KineticPlaylistScreen({
+    required this.controller,
+    required this.title,
+    required this.songs,
+    this.playlist,
+  });
+
+  final OuterTuneController controller;
+  final String title;
+  final List<LibrarySong> songs;
+  final UserPlaylist? playlist;
+
+  @override
+  Widget build(BuildContext context) {
+    return _KineticSubscreenScaffold(
+      title: title,
+      actions: <Widget>[
+        IconButton(
+          onPressed: () => controller.playSongs(songs, label: title),
+          icon: const Icon(Icons.play_arrow_rounded, color: _kAccent),
+        ),
+        if (playlist != null)
+          IconButton(
+            onPressed: () async {
+              await controller.deletePlaylist(playlist!.id);
+              if (!context.mounted) {
+                return;
+              }
+              Navigator.of(context).pop();
+            },
+            icon: const Icon(
+              Icons.delete_outline_rounded,
+              color: _kTextSecondary,
+            ),
+          ),
+      ],
+      child: Column(
+        children: <Widget>[
+          _KineticCollectionSummary(
+            leading: songs.isNotEmpty
+                ? _Artwork(
+                    seed: playlist?.id ?? title,
+                    title: title,
+                    size: 120,
+                    imageUrl: songs.first.artworkUrl,
+                  )
+                : _Artwork(
+                    seed: playlist?.id ?? title,
+                    title: title,
+                    size: 120,
+                    icon: Icons.queue_music_rounded,
+                  ),
+            title: title,
+            lines: <String>[
+              '${songs.length} tracks',
+              if (playlist != null) 'Saved playlist',
+            ],
+          ),
+          const SizedBox(height: 20),
+          ...songs.map(
+            (LibrarySong song) => _SongTile(
+              song: song,
+              controller: controller,
+              extraPlaylistId: playlist?.id,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -4982,41 +5257,14 @@ class _CollectionCard extends StatelessWidget {
 }
 
 class _LibraryHeader extends StatelessWidget {
-  const _LibraryHeader({required this.onOpenSettings});
-
-  final VoidCallback onOpenSettings;
+  const _LibraryHeader();
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: const Color(0xFFF5E3D6),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-          ),
-          child: const Icon(Icons.person_rounded, color: Color(0xFF6F4529)),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            'LIBRARY',
-            style: GoogleFonts.splineSans(
-              color: const Color(0xFFFF8B3E),
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        IconButton(
-          onPressed: () {},
-          icon: const Icon(Icons.settings_outlined),
-          color: const Color(0xFFFF8B3E),
-        ),
-      ],
+    return const _HomeStyleHeader(
+      title: 'LIBRARY',
+      leading: _HomeStyleProfileBadge(),
+      trailing: Icon(Icons.notifications_none_rounded, color: Colors.white),
     );
   }
 }
@@ -5161,7 +5409,14 @@ class _LibraryEmptyPlaylistCard extends StatelessWidget {
               ),
             ),
           ),
-          TextButton(onPressed: onCreate, child: const Text('Create')),
+          TextButton(
+            onPressed: onCreate,
+            style: TextButton.styleFrom(foregroundColor: _kAccent),
+            child: Text(
+              'Create',
+              style: GoogleFonts.splineSans(fontWeight: FontWeight.w700),
+            ),
+          ),
         ],
       ),
     );
@@ -5183,7 +5438,7 @@ class _LibraryPlaylistRow extends StatelessWidget {
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute<void>(
-            builder: (BuildContext context) => _PlaylistScreen(
+            builder: (BuildContext context) => _KineticPlaylistScreen(
               controller: controller,
               title: playlist.name,
               songs: songs,
@@ -5282,84 +5537,83 @@ class _SongTile extends StatelessWidget {
     final bool active = controller.currentSong?.id == song.id;
     final List<PopupMenuEntry<String>> menuItems = <PopupMenuEntry<String>>[
       if (!song.isRemote)
-        PopupMenuItem<String>(
-          value: 'favorite',
-          child: Text(song.isFavorite ? 'Unfavorite' : 'Favorite'),
+        _kineticPopupMenuItem(
+          'favorite',
+          song.isFavorite ? 'Unfavorite' : 'Favorite',
         ),
-      const PopupMenuItem<String>(
-        value: 'enqueue',
-        child: Text('Add to queue'),
-      ),
-      if (!song.isRemote)
-        const PopupMenuItem<String>(
-          value: 'playlist',
-          child: Text('Add to playlist'),
-        ),
+      _kineticPopupMenuItem('enqueue', 'Add to queue'),
+      if (!song.isRemote) _kineticPopupMenuItem('playlist', 'Add to playlist'),
       if (song.externalUrl != null)
-        const PopupMenuItem<String>(
-          value: 'copy_link',
-          child: Text('Show link'),
-        ),
+        _kineticPopupMenuItem('copy_link', 'Show link'),
       if (extraPlaylistId != null)
-        const PopupMenuItem<String>(
-          value: 'remove_playlist',
-          child: Text('Remove from playlist'),
-        ),
+        _kineticPopupMenuItem('remove_playlist', 'Remove from playlist'),
     ];
 
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 0, vertical: 4),
-      dense: controller.settings.denseLibrary,
-      leading: _Artwork(
-        seed: song.id,
-        title: song.title,
-        size: 52,
-        imageUrl: song.artworkUrl,
-      ),
-      title: Text(
-        song.title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: Theme.of(
-          context,
-        ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-      ),
-      subtitle: Text(
-        _songArtistLabel(song),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
-      selected: active,
-      onTap:
-          onTap ??
-          () {
-            if (song.isRemote) {
-              controller.playOnlineSong(song);
-            } else {
-              controller.playSong(song, label: song.sourceLabel);
+    return Material(
+      color: active ? _kAccent.withValues(alpha: 0.12) : Colors.transparent,
+      borderRadius: BorderRadius.circular(18),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        dense: controller.settings.denseLibrary,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        leading: _Artwork(
+          seed: song.id,
+          title: song.title,
+          size: 52,
+          imageUrl: song.artworkUrl,
+        ),
+        title: Text(
+          song.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            color: _kTextPrimary,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        subtitle: Text(
+          _songArtistLabel(song),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: _kTextSecondary.withValues(alpha: 0.88),
+          ),
+        ),
+        selected: active,
+        onTap:
+            onTap ??
+            () {
+              if (song.isRemote) {
+                controller.playOnlineSong(song);
+              } else {
+                controller.playSong(song, label: song.sourceLabel);
+              }
+            },
+        trailing: PopupMenuButton<String>(
+          color: _kSurface,
+          iconColor: _kTextSecondary,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: _kSurfaceEdge),
+          ),
+          onSelected: (String value) {
+            switch (value) {
+              case 'favorite':
+                controller.toggleFavorite(song.id);
+              case 'enqueue':
+                controller.enqueueSong(song);
+              case 'playlist':
+                _showAddToPlaylistDialog(context, controller, song);
+              case 'copy_link':
+                _showKineticSnackBar(context, song.externalUrl ?? song.path);
+              case 'remove_playlist':
+                if (extraPlaylistId != null) {
+                  controller.removeSongFromPlaylist(extraPlaylistId!, song.id);
+                }
             }
           },
-      trailing: PopupMenuButton<String>(
-        onSelected: (String value) {
-          switch (value) {
-            case 'favorite':
-              controller.toggleFavorite(song.id);
-            case 'enqueue':
-              controller.enqueueSong(song);
-            case 'playlist':
-              _showAddToPlaylistDialog(context, controller, song);
-            case 'copy_link':
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(song.externalUrl ?? song.path)),
-              );
-            case 'remove_playlist':
-              if (extraPlaylistId != null) {
-                controller.removeSongFromPlaylist(extraPlaylistId!, song.id);
-              }
-          }
-        },
-        itemBuilder: (BuildContext context) => menuItems,
+          itemBuilder: (BuildContext context) => menuItems,
+        ),
       ),
     );
   }
@@ -5394,7 +5648,7 @@ class _AlbumGrid extends StatelessWidget {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
                   builder: (BuildContext context) =>
-                      _AlbumScreen(controller: controller, album: album),
+                      _KineticAlbumScreen(controller: controller, album: album),
                 ),
               );
             },
@@ -5429,8 +5683,10 @@ class _ArtistGrid extends StatelessWidget {
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (BuildContext context) =>
-                      _ArtistScreen(controller: controller, artist: artist),
+                  builder: (BuildContext context) => _KineticArtistScreen(
+                    controller: controller,
+                    artist: artist,
+                  ),
                 ),
               );
             },
@@ -5468,7 +5724,7 @@ class _FolderTile extends StatelessWidget {
         Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (BuildContext context) =>
-                _FolderScreen(controller: controller, folder: folder),
+                _KineticFolderScreen(controller: controller, folder: folder),
           ),
         );
       },
@@ -5522,7 +5778,7 @@ class _PlaylistGrid extends StatelessWidget {
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (BuildContext context) => _PlaylistScreen(
+                  builder: (BuildContext context) => _KineticPlaylistScreen(
                     controller: controller,
                     title: shelf.title,
                     songs: shelf.songs,
@@ -6007,8 +6263,9 @@ Future<void> _showCreatePlaylistDialog(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 420),
             child: Material(
-              color: const Color(0xFF262D2E),
+              color: _kSurface,
               borderRadius: BorderRadius.circular(28),
+              clipBehavior: Clip.antiAlias,
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(28, 26, 28, 24),
                 child: StatefulBuilder(
@@ -6020,10 +6277,10 @@ Future<void> _showCreatePlaylistDialog(
                       children: <Widget>[
                         Text(
                           'Create playlist',
-                          style: GoogleFonts.ibmPlexSans(
-                            color: const Color(0xFFE8EFEF),
+                          style: GoogleFonts.splineSans(
+                            color: _kTextPrimary,
                             fontSize: 22,
-                            fontWeight: FontWeight.w500,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                         const SizedBox(height: 26),
@@ -6040,30 +6297,27 @@ Future<void> _showCreatePlaylistDialog(
                               ).pop(trimmed);
                             }
                           },
-                          style: GoogleFonts.ibmPlexSans(
-                            color: const Color(0xFFE8EFEF),
+                          style: GoogleFonts.splineSans(
+                            color: _kTextPrimary,
                             fontSize: 18,
                           ),
-                          cursorColor: const Color(0xFF8BDFD6),
+                          cursorColor: _kAccent,
                           decoration: InputDecoration(
-                            hintText: 'new song',
-                            hintStyle: GoogleFonts.ibmPlexSans(
-                              color: const Color(0xFFD2DFDE),
+                            hintText: 'New playlist',
+                            hintStyle: GoogleFonts.splineSans(
+                              color: _kTextSecondary.withValues(alpha: 0.72),
                               fontSize: 18,
                             ),
                             isDense: true,
                             contentPadding: const EdgeInsets.only(bottom: 14),
                             enabledBorder: const UnderlineInputBorder(
                               borderSide: BorderSide(
-                                color: Color(0xFF8BDFD6),
+                                color: _kSurfaceEdge,
                                 width: 2,
                               ),
                             ),
                             focusedBorder: const UnderlineInputBorder(
-                              borderSide: BorderSide(
-                                color: Color(0xFF8BDFD6),
-                                width: 2,
-                              ),
+                              borderSide: BorderSide(color: _kAccent, width: 2),
                             ),
                           ),
                         ),
@@ -6077,11 +6331,11 @@ Future<void> _showCreatePlaylistDialog(
                                 rootNavigator: true,
                               ).pop(),
                               style: TextButton.styleFrom(
-                                foregroundColor: const Color(0xFF8BDFD6),
+                                foregroundColor: _kTextSecondary,
                               ),
                               child: Text(
                                 'Cancel',
-                                style: GoogleFonts.ibmPlexSans(fontSize: 16),
+                                style: GoogleFonts.splineSans(fontSize: 16),
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -6093,14 +6347,12 @@ Future<void> _showCreatePlaylistDialog(
                                     ).pop(input.text.trim())
                                   : null,
                               style: FilledButton.styleFrom(
-                                backgroundColor: const Color(0xFF8BDFD6),
-                                foregroundColor: const Color(0xFF244242),
-                                disabledBackgroundColor: const Color(
-                                  0xFF8BDFD6,
-                                ).withValues(alpha: 0.45),
-                                disabledForegroundColor: const Color(
-                                  0xFF244242,
+                                backgroundColor: _kAccent,
+                                foregroundColor: Colors.black,
+                                disabledBackgroundColor: _kAccent.withValues(
+                                  alpha: 0.38,
                                 ),
+                                disabledForegroundColor: Colors.black54,
                                 minimumSize: const Size(112, 40),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(999),
@@ -6108,7 +6360,7 @@ Future<void> _showCreatePlaylistDialog(
                               ),
                               child: Text(
                                 'Create',
-                                style: GoogleFonts.ibmPlexSans(fontSize: 16),
+                                style: GoogleFonts.splineSans(fontSize: 16),
                               ),
                             ),
                           ],
@@ -6152,7 +6404,18 @@ Future<void> _showAddToPlaylistDialog(
     context: context,
     builder: (BuildContext context) {
       return AlertDialog(
-        title: Text('Add "${song.title}"'),
+        backgroundColor: _kSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: const BorderSide(color: _kSurfaceEdge),
+        ),
+        title: Text(
+          'Add "${song.title}"',
+          style: GoogleFonts.splineSans(
+            color: _kTextPrimary,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         content: SizedBox(
           width: 380,
           child: ListView(
@@ -6161,12 +6424,25 @@ Future<void> _showAddToPlaylistDialog(
                 .map(
                   (UserPlaylist playlist) => ListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: Text(playlist.name),
-                    subtitle: Text('${playlist.songIds.length} tracks'),
+                    title: Text(
+                      playlist.name,
+                      style: GoogleFonts.splineSans(
+                        color: _kTextPrimary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    subtitle: Text(
+                      '${playlist.songIds.length} tracks',
+                      style: GoogleFonts.splineSans(color: _kTextSecondary),
+                    ),
                     onTap: () async {
                       await controller.addSongToPlaylist(playlist.id, song.id);
                       if (context.mounted) {
                         Navigator.of(context).pop();
+                        _showKineticSnackBar(
+                          context,
+                          'Added to ${playlist.name}',
+                        );
                       }
                     },
                   ),
