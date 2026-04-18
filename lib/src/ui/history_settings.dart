@@ -64,66 +64,8 @@ class _SettingsScreen extends StatelessWidget {
     const Color subtitleColor = Color(0xFFC89373);
     const Color accent = Color(0xFFFF8A2A);
 
-    final int crossfadeSeconds = controller.settings.crossfadeSeconds;
     final bool gapless = controller.settings.gaplessPlayback;
     final String preferredRegion = controller.preferredRegionLabel;
-
-    Future<void> pickCrossfade() async {
-      final int? selected = await showModalBottomSheet<int>(
-        context: context,
-        backgroundColor: const Color(0xFF1C0904),
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        builder: (BuildContext context) {
-          const List<int> options = <int>[0, 3, 5, 7];
-          return SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    'Crossfade',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: titleColor,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  ...options.map((int value) {
-                    final bool active = value == crossfadeSeconds;
-                    return ListTile(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      onTap: () => Navigator.of(context).pop(value),
-                      title: Text(
-                        value == 0 ? 'Off' : '${value}s',
-                        style: TextStyle(
-                          color: active ? accent : titleColor,
-                          fontWeight: active
-                              ? FontWeight.w700
-                              : FontWeight.w500,
-                        ),
-                      ),
-                      trailing: active
-                          ? const Icon(Icons.check_rounded, color: accent)
-                          : null,
-                    );
-                  }),
-                ],
-              ),
-            ),
-          );
-        },
-      );
-      if (selected != null) {
-        await controller.setCrossfadeSeconds(selected);
-      }
-    }
 
     Future<void> pickRegion() async {
       final String? selected = await showModalBottomSheet<String>(
@@ -352,34 +294,6 @@ class _SettingsScreen extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 14),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(
-                    'Crossfade',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: titleColor,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  subtitle: Text(
-                    'Smooth transition between tracks',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.copyWith(color: subtitleColor),
-                  ),
-                  trailing: GestureDetector(
-                    onTap: pickCrossfade,
-                    child: Text(
-                      crossfadeSeconds == 0 ? 'Off' : '${crossfadeSeconds}s',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: accent,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  onTap: pickCrossfade,
-                ),
-                const Divider(color: cardEdge, height: 10),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text(

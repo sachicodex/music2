@@ -699,7 +699,7 @@ _FeaturedHeroData _pickFeaturedHero({
           controller.playSong(song, label: 'Home');
         }
       },
-    );
+    ); 
   }
 
   return _FeaturedHeroData(

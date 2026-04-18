@@ -139,7 +139,7 @@ class _PlayerScreenState extends State<_PlayerScreen>
     }
 
     if (dx.abs() > dy.abs()) {
-      await HapticFeedback.selectionClick();
+      unawaited(HapticFeedback.selectionClick());
       if (dx < 0) {
         await widget.controller.nextTrack();
       } else {
@@ -174,6 +174,10 @@ class _PlayerScreenState extends State<_PlayerScreen>
           );
         }
 
+        final bool isPlayerLoading = controller.miniPlayerSelectionLoading;
+        final Duration position = isPlayerLoading
+            ? Duration.zero
+            : controller.position;
         final Duration duration = controller.duration == Duration.zero
             ? song.duration
             : controller.duration;
@@ -181,7 +185,7 @@ class _PlayerScreenState extends State<_PlayerScreen>
           duration.inMilliseconds.toDouble(),
           1,
         );
-        final double sliderValue = controller.position.inMilliseconds
+        final double sliderValue = position.inMilliseconds
             .clamp(0, sliderMax.toInt())
             .toDouble();
         const Color backgroundTop = Color(0xFF774120);
@@ -191,7 +195,6 @@ class _PlayerScreenState extends State<_PlayerScreen>
         const Color textPrimary = Color(0xFFFFDFC9);
         const Color textSecondary = Color(0xFFE9A56F);
         const Color trackInactive = Color(0xFF5A2508);
-        final bool isPlayerLoading = controller.miniPlayerSelectionLoading;
         final bool showPauseIcon = controller.isPlaying && !isPlayerLoading;
 
         return Scaffold(
@@ -212,11 +215,7 @@ class _PlayerScreenState extends State<_PlayerScreen>
                   builder: (BuildContext context, BoxConstraints constraints) {
                     final double layoutScale = (constraints.maxHeight / 780)
                         .clamp(0.68, 1.0);
-                    double scale(
-                      double value, {
-                      double? min,
-                      double? max,
-                    }) {
+                    double scale(double value, {double? min, double? max}) {
                       final double scaled = value * layoutScale;
                       return scaled.clamp(
                         min ?? double.negativeInfinity,
@@ -272,17 +271,12 @@ class _PlayerScreenState extends State<_PlayerScreen>
                                 color: _kSurface,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),
-                                  side: const BorderSide(
-                                    color: _kSurfaceEdge,
-                                  ),
+                                  side: const BorderSide(color: _kSurfaceEdge),
                                 ),
                                 icon: const Icon(Icons.more_vert_rounded),
                                 iconColor: accent,
                                 onSelected: (String value) async {
-                                  await _handlePlayerMenuSelection(
-                                    value,
-                                    song,
-                                  );
+                                  await _handlePlayerMenuSelection(value, song);
                                 },
                                 itemBuilder: (BuildContext context) =>
                                     <PopupMenuEntry<String>>[
@@ -315,7 +309,8 @@ class _PlayerScreenState extends State<_PlayerScreen>
                               child: GestureDetector(
                                 behavior: HitTestBehavior.opaque,
                                 onTap: _handleAlbumArtTap,
-                                onDoubleTap: () => _handleAlbumArtDoubleTap(song),
+                                onDoubleTap: () =>
+                                    _handleAlbumArtDoubleTap(song),
                                 child: DecoratedBox(
                                   decoration: BoxDecoration(
                                     color: surface,
@@ -361,7 +356,8 @@ class _PlayerScreenState extends State<_PlayerScreen>
                                           const _PlayerArtFallback(),
                                         IgnorePointer(
                                           child: _PlayerArtInteractionOverlay(
-                                            tapController: _tapFeedbackController,
+                                            tapController:
+                                                _tapFeedbackController,
                                             likeController:
                                                 _likeFeedbackController,
                                             tapPosition: _tapPosition,
@@ -474,18 +470,20 @@ class _PlayerScreenState extends State<_PlayerScreen>
                               value: sliderValue,
                               min: 0,
                               max: sliderMax,
-                              onChanged: (double value) {
-                                controller.seek(
-                                  Duration(milliseconds: value.round()),
-                                );
-                              },
+                              onChanged: isPlayerLoading
+                                  ? null
+                                  : (double value) {
+                                      controller.seek(
+                                        Duration(milliseconds: value.round()),
+                                      );
+                                    },
                             ),
                           ),
                           SizedBox(height: scale(10, min: 6, max: 15)),
                           Row(
                             children: <Widget>[
                               Text(
-                                _formatClock(controller.position),
+                                _formatClock(position),
                                 style: GoogleFonts.splineSans(
                                   color: textPrimary.withValues(alpha: 0.86),
                                   fontSize: scale(14, min: 12, max: 14),
@@ -537,11 +535,7 @@ class _PlayerScreenState extends State<_PlayerScreen>
                                     boxShadow: <BoxShadow>[
                                       BoxShadow(
                                         color: accent.withValues(alpha: 0.38),
-                                        blurRadius: scale(
-                                          28,
-                                          min: 18,
-                                          max: 28,
-                                        ),
+                                        blurRadius: scale(28, min: 18, max: 28),
                                         spreadRadius: 1,
                                       ),
                                     ],
@@ -550,18 +544,15 @@ class _PlayerScreenState extends State<_PlayerScreen>
                                       ? Center(
                                           child: SizedBox(
                                             width: scale(25, min: 20, max: 25),
-                                            height: scale(
-                                              25,
-                                              min: 20,
-                                              max: 25,
-                                            ),
-                                            child: const CircularProgressIndicator(
-                                              strokeWidth: 3.2,
-                                              valueColor:
-                                                  AlwaysStoppedAnimation<Color>(
-                                                    Colors.black,
-                                                  ),
-                                            ),
+                                            height: scale(25, min: 20, max: 25),
+                                            child:
+                                                const CircularProgressIndicator(
+                                                  strokeWidth: 3.2,
+                                                  valueColor:
+                                                      AlwaysStoppedAnimation<
+                                                        Color
+                                                      >(Colors.black),
+                                                ),
                                           ),
                                         )
                                       : Icon(
@@ -618,11 +609,7 @@ class _PlayerArtFallback extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const _ArtworkFallbackSurface(
-      colors: <Color>[
-        Color(0xFF43100B),
-        Color(0xFF120607),
-        Color(0xFF070508),
-      ],
+      colors: <Color>[Color(0xFF43100B), Color(0xFF120607), Color(0xFF070508)],
     );
   }
 }
@@ -665,20 +652,23 @@ class _PlayerArtInteractionOverlay extends StatelessWidget {
           tapValue > 0 ? 0.28 * tapOpacity.clamp(0.0, 1.0) : 0,
           likeValue > 0 ? 0.32 * likeFade.clamp(0.0, 1.0) : 0,
         );
-        final double heartScale = TweenSequence<double>(<TweenSequenceItem<double>>[
-          TweenSequenceItem<double>(
-            tween: Tween<double>(begin: 0.72, end: 1.12).chain(
-              CurveTween(curve: Curves.easeOutBack),
-            ),
-            weight: 58,
-          ),
-          TweenSequenceItem<double>(
-            tween: Tween<double>(begin: 1.12, end: 1.0).chain(
-              CurveTween(curve: Curves.easeOutCubic),
-            ),
-            weight: 42,
-          ),
-        ]).transform(likeValue.clamp(0.0, 1.0));
+        final double heartScale =
+            TweenSequence<double>(<TweenSequenceItem<double>>[
+              TweenSequenceItem<double>(
+                tween: Tween<double>(
+                  begin: 0.72,
+                  end: 1.12,
+                ).chain(CurveTween(curve: Curves.easeOutBack)),
+                weight: 58,
+              ),
+              TweenSequenceItem<double>(
+                tween: Tween<double>(
+                  begin: 1.12,
+                  end: 1.0,
+                ).chain(CurveTween(curve: Curves.easeOutCubic)),
+                weight: 42,
+              ),
+            ]).transform(likeValue.clamp(0.0, 1.0));
 
         return Stack(
           fit: StackFit.expand,
@@ -689,10 +679,7 @@ class _PlayerArtInteractionOverlay extends StatelessWidget {
                 child: const DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: RadialGradient(
-                      colors: <Color>[
-                        Color(0xDD110907),
-                        Color(0xF0120806),
-                      ],
+                      colors: <Color>[Color(0xDD110907), Color(0xF0120806)],
                       radius: 0.95,
                     ),
                   ),
@@ -714,9 +701,9 @@ class _PlayerArtInteractionOverlay extends StatelessWidget {
                         color: const Color(0xFFFFF1E6),
                         boxShadow: <BoxShadow>[
                           BoxShadow(
-                            color: const Color(0xFFFFB071).withValues(
-                              alpha: 0.34,
-                            ),
+                            color: const Color(
+                              0xFFFFB071,
+                            ).withValues(alpha: 0.34),
                             blurRadius: 26,
                             spreadRadius: 4,
                           ),
@@ -750,7 +737,7 @@ class _PlayerArtInteractionOverlay extends StatelessWidget {
                         ),
                         DecoratedBox(
                           decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.24),
+                            color: Colors.black.withValues(alpha: 0.9),
                             shape: BoxShape.circle,
                             border: Border.all(
                               color: Colors.white.withValues(alpha: 0.12),
@@ -760,9 +747,9 @@ class _PlayerArtInteractionOverlay extends StatelessWidget {
                             padding: const EdgeInsets.all(24),
                             child: Icon(
                               showPlayGlyph
-                                  ? Icons.play_arrow_rounded
-                                  : Icons.pause_rounded,
-                              color: const Color(0xFFFFF6F0),
+                                  ? Icons.pause_rounded
+                                  : Icons.play_arrow_rounded,
+                              color: Colors.white,
                               size: 54,
                             ),
                           ),
@@ -775,7 +762,8 @@ class _PlayerArtInteractionOverlay extends StatelessWidget {
             if (likeValue > 0)
               ...particles.map((_HeartParticleData particle) {
                 final double distance =
-                    particle.distance * Curves.easeOutQuart.transform(likeValue);
+                    particle.distance *
+                    Curves.easeOutQuart.transform(likeValue);
                 return Positioned(
                   left:
                       likePosition.dx +
@@ -798,9 +786,9 @@ class _PlayerArtInteractionOverlay extends StatelessWidget {
                         shape: BoxShape.circle,
                         boxShadow: <BoxShadow>[
                           BoxShadow(
-                            color: const Color(0xFFFF9C74).withValues(
-                              alpha: 0.34,
-                            ),
+                            color: const Color(
+                              0xFFFF9C74,
+                            ).withValues(alpha: 0.34),
                             blurRadius: 12,
                             spreadRadius: 1,
                           ),
@@ -812,7 +800,7 @@ class _PlayerArtInteractionOverlay extends StatelessWidget {
               }),
             if (likeValue > 0)
               Positioned(
-                left: likePosition.dx - 34,
+                left: likePosition.dx - 62,
                 top: likePosition.dy - 34,
                 child: Opacity(
                   opacity: likeFade.clamp(0.0, 1.0),
@@ -1092,16 +1080,16 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
                             color: active
                                 ? accent.withValues(alpha: 0.14)
                                 : tile,
-                            borderRadius: BorderRadius.circular(22),
-                            child: InkWell(
                               borderRadius: BorderRadius.circular(22),
-                              onTap: () async {
-                                await HapticFeedback.selectionClick();
-                                await controller.jumpToQueue(index);
-                                if (context.mounted) {
-                                  Navigator.of(context).pop();
-                                }
-                              },
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(22),
+                                onTap: () async {
+                                  unawaited(HapticFeedback.selectionClick());
+                                  await controller.jumpToQueue(index);
+                                  if (context.mounted) {
+                                    Navigator.of(context).pop();
+                                  }
+                                },
                               child: Padding(
                                 padding: const EdgeInsets.fromLTRB(
                                   12,
@@ -2029,10 +2017,7 @@ class _LibraryBlockedCard extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(22),
         gradient: LinearGradient(
-          colors: <Color>[
-            const Color(0xFF29120D),
-            const Color(0xFF1A0A08),
-          ],
+          colors: <Color>[const Color(0xFF29120D), const Color(0xFF1A0A08)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -2158,17 +2143,17 @@ class _LibraryPlaylistRow extends StatelessWidget {
       onTap: blocked
           ? null
           : () {
-        Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (BuildContext context) => _KineticPlaylistScreen(
-              controller: controller,
-              title: playlist.name,
-              songs: songs,
-              playlist: playlist,
-            ),
-          ),
-        );
-      },
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (BuildContext context) => _KineticPlaylistScreen(
+                    controller: controller,
+                    title: playlist.name,
+                    songs: songs,
+                    playlist: playlist,
+                  ),
+                ),
+              );
+            },
       borderRadius: BorderRadius.circular(20),
       child: Row(
         children: <Widget>[
@@ -2705,16 +2690,19 @@ class _MiniPlayer extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
+    final bool isMiniLoading = controller.miniPlayerSelectionLoading;
+    final Duration position = isMiniLoading
+        ? Duration.zero
+        : controller.position;
     final Duration duration = controller.duration == Duration.zero
         ? song.duration
         : controller.duration;
     final double progress = duration.inMilliseconds <= 0
         ? 0
-        : controller.position.inMilliseconds / duration.inMilliseconds;
+        : position.inMilliseconds / duration.inMilliseconds;
     final double safeProgress = progress.isFinite
         ? progress.clamp(0.0, 1.0)
         : 0.0;
-    final bool isMiniLoading = controller.miniPlayerSelectionLoading;
     final bool showPauseIcon = controller.isPlaying && !isMiniLoading;
 
     const Color shell = Color(0xFF100502);
