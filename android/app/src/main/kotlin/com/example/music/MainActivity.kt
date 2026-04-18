@@ -1,9 +1,6 @@
 package com.example.music
 
-import android.content.BroadcastReceiver
-import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.os.Build
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -12,23 +9,7 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
-    private var actionEventSink: EventChannel.EventSink? = null
-    private val pendingActions = ArrayDeque<Map<String, String>>()
-    private var actionReceiverRegistered = false
-
-    private val actionReceiver =
-        object : BroadcastReceiver() {
-            override fun onReceive(context: Context?, intent: Intent?) {
-                val command = intent?.getStringExtra(MediaNotificationService.EXTRA_COMMAND) ?: return
-                val payload = mapOf("action" to command)
-                val sink = actionEventSink
-                if (sink == null) {
-                    pendingActions.addLast(payload)
-                } else {
-                    sink.success(payload)
-                }
-            }
-        }
+    private var mediaServiceStarted = false
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -44,41 +25,14 @@ class MainActivity : FlutterActivity() {
         ).setStreamHandler(
             object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
-                    actionEventSink = events
-                    while (pendingActions.isNotEmpty()) {
-                        events.success(pendingActions.removeFirst())
-                    }
+                    MediaActionBridge.attachSink(events)
                 }
 
                 override fun onCancel(arguments: Any?) {
-                    actionEventSink = null
+                    MediaActionBridge.detachSink()
                 }
             }
         )
-
-        registerActionReceiverIfNeeded()
-    }
-
-    private fun registerActionReceiverIfNeeded() {
-        if (actionReceiverRegistered) {
-            return
-        }
-        val filter = IntentFilter(MediaNotificationService.ACTION_MEDIA_COMMAND_BROADCAST)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(actionReceiver, filter, RECEIVER_NOT_EXPORTED)
-        } else {
-            @Suppress("DEPRECATION")
-            registerReceiver(actionReceiver, filter)
-        }
-        actionReceiverRegistered = true
-    }
-
-    override fun onDestroy() {
-        if (actionReceiverRegistered) {
-            runCatching { unregisterReceiver(actionReceiver) }
-            actionReceiverRegistered = false
-        }
-        super.onDestroy()
     }
 
     private fun handleMethodCall(call: MethodCall, result: MethodChannel.Result) {
@@ -115,7 +69,13 @@ class MainActivity : FlutterActivity() {
                 putExtra(MediaNotificationService.EXTRA_POSITION_MS, (args["positionMs"] as? Number)?.toLong() ?: 0L)
                 putExtra(MediaNotificationService.EXTRA_DURATION_MS, (args["durationMs"] as? Number)?.toLong() ?: 0L)
             }
-        startForegroundService(intent)
+        if (!mediaServiceStarted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+            mediaServiceStarted = true
+            return
+        }
+        startService(intent)
+        mediaServiceStarted = true
     }
 
     companion object {

@@ -19,6 +19,14 @@ class AndroidMediaNotificationBridge {
   static const String _actionPause = 'pause';
   static const String _actionNext = 'next';
   static const String _actionPrevious = 'previous';
+  static String? _lastTitle;
+  static String? _lastArtist;
+  static String? _lastAlbum;
+  static String? _lastArtUri;
+  static bool? _lastIsPlaying;
+  static int? _lastDurationMs;
+  static int _lastPositionMs = 0;
+  static DateTime? _lastUpdateAt;
 
   static bool get isSupported => !kIsWeb && Platform.isAndroid;
 
@@ -43,16 +51,48 @@ class AndroidMediaNotificationBridge {
       return;
     }
 
+    final String title = song?.title ?? 'Nothing playing';
+    final String artist = song?.artist ?? 'Unknown artist';
+    final String album = song?.album ?? 'Unknown album';
+    final String? artUri = song?.artworkUrl;
+    final int durationMs = duration.inMilliseconds > 0
+        ? duration.inMilliseconds
+        : (song?.durationMs ?? 0);
+    final int positionMs = position.inMilliseconds;
+    final DateTime now = DateTime.now();
+    final bool meaningfullyChanged =
+        _lastTitle != title ||
+        _lastArtist != artist ||
+        _lastAlbum != album ||
+        _lastArtUri != artUri ||
+        _lastIsPlaying != isPlaying ||
+        _lastDurationMs != durationMs;
+    final bool positionRefreshDue =
+        _lastUpdateAt == null ||
+        now.difference(_lastUpdateAt!) >= const Duration(seconds: 1) ||
+        (positionMs - _lastPositionMs).abs() >= 2000;
+
+    if (!meaningfullyChanged && !positionRefreshDue) {
+      return;
+    }
+
+    _lastTitle = title;
+    _lastArtist = artist;
+    _lastAlbum = album;
+    _lastArtUri = artUri;
+    _lastIsPlaying = isPlaying;
+    _lastDurationMs = durationMs;
+    _lastPositionMs = positionMs;
+    _lastUpdateAt = now;
+
     await _methodChannel.invokeMethod<void>('updateNotification', <String, dynamic>{
-      'title': song?.title ?? 'Nothing playing',
-      'artist': song?.artist ?? 'Unknown artist',
-      'album': song?.album ?? 'Unknown album',
-      'artUri': song?.artworkUrl,
+      'title': title,
+      'artist': artist,
+      'album': album,
+      'artUri': artUri,
       'isPlaying': isPlaying,
-      'positionMs': position.inMilliseconds,
-      'durationMs': duration.inMilliseconds > 0
-          ? duration.inMilliseconds
-          : (song?.durationMs ?? 0),
+      'positionMs': positionMs,
+      'durationMs': durationMs,
     });
   }
 
@@ -60,14 +100,24 @@ class AndroidMediaNotificationBridge {
     if (!isSupported) {
       return;
     }
+    _lastTitle = null;
+    _lastArtist = null;
+    _lastAlbum = null;
+    _lastArtUri = null;
+    _lastIsPlaying = null;
+    _lastDurationMs = null;
+    _lastPositionMs = 0;
+    _lastUpdateAt = null;
     await _methodChannel.invokeMethod<void>('stopNotification');
   }
 
   static bool isToggleAction(String action) {
-    return action == _actionPlayPause ||
-        action == _actionPlay ||
-        action == _actionPause;
+    return action == _actionPlayPause;
   }
+
+  static bool isPlayAction(String action) => action == _actionPlay;
+
+  static bool isPauseAction(String action) => action == _actionPause;
 
   static bool isNextAction(String action) => action == _actionNext;
 

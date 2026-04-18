@@ -3162,6 +3162,10 @@ class OuterTuneController extends ChangeNotifier {
         AndroidMediaNotificationBridge.actionStream().listen((String action) {
           if (AndroidMediaNotificationBridge.isToggleAction(action)) {
             unawaited(togglePlayback());
+          } else if (AndroidMediaNotificationBridge.isPlayAction(action)) {
+            unawaited(play());
+          } else if (AndroidMediaNotificationBridge.isPauseAction(action)) {
+            unawaited(pause());
           } else if (AndroidMediaNotificationBridge.isNextAction(action)) {
             unawaited(nextTrack());
           } else if (AndroidMediaNotificationBridge.isPreviousAction(action)) {
@@ -3755,6 +3759,20 @@ class OuterTuneController extends ChangeNotifier {
 
   Future<void> togglePlayback() async {
     await _player.playOrPause();
+  }
+
+  Future<void> play() async {
+    if (_isPlaying) {
+      return;
+    }
+    await _player.play();
+  }
+
+  Future<void> pause() async {
+    if (!_isPlaying) {
+      return;
+    }
+    await _player.pause();
   }
 
   Future<void> nextTrack() async {

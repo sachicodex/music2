@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.pm.ServiceInfo
 import android.content.Context
 import android.content.Intent
 import android.media.AudioFocusRequest
@@ -14,18 +15,24 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import android.widget.RemoteViews
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
-import androidx.media.app.NotificationCompat.MediaStyle
+import androidx.media.app.NotificationCompat.DecoratedMediaCustomViewStyle
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.Executors
 
 class MediaNotificationService : Service() {
     private lateinit var mediaSession: MediaSessionCompat
     private val artExecutor = Executors.newSingleThreadExecutor()
+    private val artworkLoadToken = AtomicInteger(0)
     private lateinit var audioManager: AudioManager
     private var focusRequest: AudioFocusRequest? = null
 
@@ -36,6 +43,9 @@ class MediaNotificationService : Service() {
     private var isPlaying: Boolean = false
     private var currentPositionMs: Long = 0L
     private var currentDurationMs: Long = 0L
+    private var currentLargeIcon: Bitmap? = null
+    private var currentLargeIconUri: String? = null
+    private var hasEnteredForeground = false
 
     override fun onCreate() {
         super.onCreate()
@@ -43,12 +53,17 @@ class MediaNotificationService : Service() {
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         mediaSession = MediaSessionCompat(this, SESSION_TAG).apply {
             isActive = true
+            setFlags(
+                MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or
+                    MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
+            )
+            setSessionActivity(buildContentIntent())
             setCallback(
                 object : MediaSessionCompat.Callback() {
-                    override fun onPlay() = emitMediaCommand(COMMAND_PLAY)
-                    override fun onPause() = emitMediaCommand(COMMAND_PAUSE)
-                    override fun onSkipToNext() = emitMediaCommand(COMMAND_NEXT)
-                    override fun onSkipToPrevious() = emitMediaCommand(COMMAND_PREVIOUS)
+                    override fun onPlay() = dispatchMediaCommand(COMMAND_PLAY, haptic = false)
+                    override fun onPause() = dispatchMediaCommand(COMMAND_PAUSE, haptic = false)
+                    override fun onSkipToNext() = dispatchMediaCommand(COMMAND_NEXT, haptic = false)
+                    override fun onSkipToPrevious() = dispatchMediaCommand(COMMAND_PREVIOUS, haptic = false)
                 }
             )
         }
@@ -66,10 +81,10 @@ class MediaNotificationService : Service() {
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
-            ACTION_PLAY -> emitMediaCommand(COMMAND_PLAY_PAUSE)
-            ACTION_PAUSE -> emitMediaCommand(COMMAND_PLAY_PAUSE)
-            ACTION_NEXT -> emitMediaCommand(COMMAND_NEXT)
-            ACTION_PREVIOUS -> emitMediaCommand(COMMAND_PREVIOUS)
+            ACTION_PLAY -> dispatchMediaCommand(COMMAND_PLAY, haptic = true)
+            ACTION_PAUSE -> dispatchMediaCommand(COMMAND_PAUSE, haptic = true)
+            ACTION_NEXT -> dispatchMediaCommand(COMMAND_NEXT, haptic = true)
+            ACTION_PREVIOUS -> dispatchMediaCommand(COMMAND_PREVIOUS, haptic = true)
         }
         return START_NOT_STICKY
     }
@@ -93,40 +108,71 @@ class MediaNotificationService : Service() {
     private fun loadArtworkAndNotify() {
         val artUri = currentArtUri
         if (artUri.isNullOrBlank()) {
-            val notification = buildNotification(null)
-            startForeground(NOTIFICATION_ID, notification)
+            currentLargeIcon = null
+            currentLargeIconUri = null
+            updateNotification()
+            return
+        }
+        if (artUri == currentLargeIconUri && currentLargeIcon != null) {
+            updateNotification()
             return
         }
 
+        val loadToken = artworkLoadToken.incrementAndGet()
+        updateNotification()
+
         artExecutor.execute {
             val bitmap = loadBitmapFromUri(artUri)
-            val notification = buildNotification(bitmap)
-            startForeground(NOTIFICATION_ID, notification)
+            if (artworkLoadToken.get() != loadToken) {
+                return@execute
+            }
+            currentLargeIcon = bitmap
+            currentLargeIconUri = if (bitmap != null) artUri else null
+            updateNotification()
         }
     }
 
-    private fun buildNotification(largeIcon: Bitmap?): Notification {
-        val contentIntent = PendingIntent.getActivity(
-            this,
-            REQUEST_CONTENT,
-            packageManager.getLaunchIntentForPackage(packageName),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
+    private fun buildNotification(): Notification {
         val previousIntent = servicePendingIntent(ACTION_PREVIOUS, REQUEST_PREVIOUS)
-        val playPauseIntent = servicePendingIntent(if (isPlaying) ACTION_PAUSE else ACTION_PLAY, REQUEST_PLAY_PAUSE)
+        val playPauseIntent =
+            servicePendingIntent(if (isPlaying) ACTION_PAUSE else ACTION_PLAY, REQUEST_PLAY_PAUSE)
         val nextIntent = servicePendingIntent(ACTION_NEXT, REQUEST_NEXT)
+        val expandedView =
+            RemoteViews(packageName, R.layout.notification_player_expanded).apply {
+                setInt(R.id.notification_card, "setBackgroundResource", R.drawable.bg_notification_card)
+                setTextViewText(R.id.title, currentTitle)
+                setTextViewText(R.id.artist, currentArtist)
+                setTextViewText(R.id.album, currentAlbum)
+                if (currentLargeIcon != null) {
+                    setImageViewBitmap(R.id.artwork, currentLargeIcon)
+                } else {
+                    setImageViewResource(R.id.artwork, R.drawable.ic_notification_art_placeholder)
+                }
+                setImageViewResource(
+                    R.id.play_pause,
+                    if (isPlaying) R.drawable.ic_media_pause else R.drawable.ic_media_play
+                )
+                setImageViewResource(R.id.brand_icon, R.drawable.ic_notification_brand)
+                setOnClickPendingIntent(R.id.previous, previousIntent)
+                setOnClickPendingIntent(R.id.play_pause, playPauseIntent)
+                setOnClickPendingIntent(R.id.next, nextIntent)
+                setOnClickPendingIntent(R.id.notification_root, buildContentIntent())
+            }
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(currentTitle)
             .setContentText(currentArtist)
             .setSubText(currentAlbum)
-            .setLargeIcon(largeIcon)
+            .setLargeIcon(currentLargeIcon)
             .setSmallIcon(R.drawable.ic_stat_music)
             .setOngoing(isPlaying)
             .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setContentIntent(contentIntent)
+            .setContentIntent(buildContentIntent())
+            .setColor(0xFF3A1608.toInt())
+            .setColorized(true)
             .addAction(R.drawable.ic_media_previous, "Previous", previousIntent)
             .addAction(
                 if (isPlaying) R.drawable.ic_media_pause else R.drawable.ic_media_play,
@@ -134,11 +180,13 @@ class MediaNotificationService : Service() {
                 playPauseIntent
             )
             .addAction(R.drawable.ic_media_next, "Next", nextIntent)
+            .setCustomBigContentView(expandedView)
             .setStyle(
-                MediaStyle()
-                    .setMediaSession(mediaSession.sessionToken)
+                DecoratedMediaCustomViewStyle()
                     .setShowActionsInCompactView(0, 1, 2)
+                    .setMediaSession(mediaSession.sessionToken)
             )
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
 
@@ -152,12 +200,66 @@ class MediaNotificationService : Service() {
         )
     }
 
-    private fun emitMediaCommand(command: String) {
-        val intent = Intent(ACTION_MEDIA_COMMAND_BROADCAST).apply {
-            setPackage(packageName)
-            putExtra(EXTRA_COMMAND, command)
+    private fun buildContentIntent(): PendingIntent {
+        val launchIntent =
+            packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            } ?: Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+        return PendingIntent.getActivity(
+            this,
+            REQUEST_CONTENT,
+            launchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    private fun dispatchMediaCommand(command: String, haptic: Boolean) {
+        if (haptic) {
+            performTapHaptic()
         }
-        sendBroadcast(intent)
+        MediaActionBridge.emit(command)
+    }
+
+    private fun updateNotification() {
+        val notification = buildNotification()
+        if (!hasEnteredForeground) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+            hasEnteredForeground = true
+            return
+        }
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(NOTIFICATION_ID, notification)
+    }
+
+    private fun performTapHaptic() {
+        runCatching {
+            val vibrator =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    val manager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+                    manager.defaultVibrator
+                } else {
+                    @Suppress("DEPRECATION")
+                    getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(
+                    VibrationEffect.createOneShot(12L, VibrationEffect.DEFAULT_AMPLITUDE)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(12L)
+            }
+        }
     }
 
     private fun updatePlaybackState() {
@@ -239,7 +341,8 @@ class MediaNotificationService : Service() {
         val listener = AudioManager.OnAudioFocusChangeListener { change ->
             when (change) {
                 AudioManager.AUDIOFOCUS_LOSS,
-                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> emitMediaCommand(COMMAND_PAUSE)
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT ->
+                    dispatchMediaCommand(COMMAND_PAUSE, haptic = false)
             }
         }
 
@@ -263,8 +366,6 @@ class MediaNotificationService : Service() {
         const val ACTION_NEXT = "com.example.music.action.NEXT"
         const val ACTION_PREVIOUS = "com.example.music.action.PREVIOUS"
 
-        const val ACTION_MEDIA_COMMAND_BROADCAST = "com.example.music.action.MEDIA_COMMAND"
-
         const val EXTRA_TITLE = "extra_title"
         const val EXTRA_ARTIST = "extra_artist"
         const val EXTRA_ALBUM = "extra_album"
@@ -272,9 +373,6 @@ class MediaNotificationService : Service() {
         const val EXTRA_IS_PLAYING = "extra_is_playing"
         const val EXTRA_POSITION_MS = "extra_position_ms"
         const val EXTRA_DURATION_MS = "extra_duration_ms"
-        const val EXTRA_COMMAND = "extra_command"
-
-        const val COMMAND_PLAY_PAUSE = "play_pause"
         const val COMMAND_PLAY = "play"
         const val COMMAND_PAUSE = "pause"
         const val COMMAND_NEXT = "next"
