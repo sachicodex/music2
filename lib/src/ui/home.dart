@@ -112,15 +112,22 @@ class _HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<_HomeScreen> {
   final ScrollController _scroll = ScrollController();
+  int _revealStage = 0;
+  Timer? _revealTimer;
+  String _lastContentSignature = '';
 
   @override
   void initState() {
     super.initState();
     _scroll.addListener(_onScroll);
+    widget.controller.addListener(_syncRevealStage);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncRevealStage());
   }
 
   @override
   void dispose() {
+    widget.controller.removeListener(_syncRevealStage);
+    _revealTimer?.cancel();
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
     super.dispose();
@@ -130,9 +137,67 @@ class _HomeScreenState extends State<_HomeScreen> {
     // Home recommendations are intentionally static for this app session.
   }
 
+  void _syncRevealStage() {
+    if (!mounted) {
+      return;
+    }
+    final OuterTuneController controller = widget.controller;
+    if (controller.isOffline || controller.offlineMusicMode) {
+      _revealTimer?.cancel();
+      if (_revealStage != 0 || _lastContentSignature.isNotEmpty) {
+        setState(() {
+          _revealStage = 0;
+          _lastContentSignature = '';
+        });
+      }
+      return;
+    }
+
+    final String signature = _homeContentSignature(controller);
+    if (signature.isEmpty) {
+      _revealTimer?.cancel();
+      if (_revealStage != 0 || _lastContentSignature.isNotEmpty) {
+        setState(() {
+          _revealStage = 0;
+          _lastContentSignature = '';
+        });
+      }
+      return;
+    }
+
+    if (signature == _lastContentSignature) {
+      return;
+    }
+
+    final bool hadVisibleContent =
+        _lastContentSignature.isNotEmpty && _revealStage >= 1;
+    _lastContentSignature = signature;
+    _revealTimer?.cancel();
+    if (hadVisibleContent) {
+      setState(() => _revealStage = 3);
+      return;
+    }
+
+    setState(() => _revealStage = 0);
+    const int targetStage = 3;
+    void advance() {
+      if (!mounted || _revealStage >= targetStage) {
+        return;
+      }
+      setState(() => _revealStage += 1);
+      if (_revealStage < targetStage) {
+        _revealTimer = Timer(const Duration(milliseconds: 160), advance);
+      }
+    }
+    advance();
+  }
+
   @override
   Widget build(BuildContext context) {
     final OuterTuneController controller = widget.controller;
+    if (controller.isOffline || controller.offlineMusicMode) {
+      return _HomeOfflineState(controller: controller);
+    }
 
     final List<HomeFeedSection> feed = controller.homeFeed
         .where((HomeFeedSection section) {
@@ -140,17 +205,23 @@ class _HomeScreenState extends State<_HomeScreen> {
           return key != 'trending now' && key != 'chill rotation';
         })
         .toList(growable: false);
-    final bool homeFeedPending = controller.homeLoading && feed.isEmpty;
     final List<LibrarySong> mayYouLikeFull = _resolvedMayYouLikeSongs(
       controller,
     );
     final List<LibrarySong> mayYouLike = mayYouLikeFull
         .take(4)
         .toList(growable: false);
+    final bool hasRevealableContent =
+        feed.isNotEmpty || mayYouLikeFull.isNotEmpty;
 
     final List<LibrarySong> jumpBackIn = controller.recentlyPlayedSongs
         .take(4)
         .toList(growable: false);
+    final bool homeFeedPending =
+        _revealStage == 0 && (controller.homeLoading || hasRevealableContent);
+    final bool showTopContent = _revealStage >= 1;
+    final bool showMiddleContent = _revealStage >= 2;
+    final bool showBottomContent = _revealStage >= 3;
 
     final _FeaturedHeroData featured = _pickFeaturedHero(
       context: context,
@@ -189,7 +260,7 @@ class _HomeScreenState extends State<_HomeScreen> {
                 children: <Widget>[
                   const _KineticTopBar(),
                   const SizedBox(height: 14),
-                  if (homeFeedPending)
+                  if (!showTopContent && homeFeedPending)
                     const _KineticHeroSkeleton()
                   else
                     _KineticHeroCard(
@@ -216,14 +287,14 @@ class _HomeScreenState extends State<_HomeScreen> {
                     },
                   ),
                   const SizedBox(height: 10),
-                  if (homeFeedPending)
+                  if (!showMiddleContent && homeFeedPending)
                     const _KineticListSkeleton(count: 4)
-                  else if (mayYouLike.isEmpty)
+                  else if (showMiddleContent && mayYouLike.isEmpty)
                     const _PersonalizationHintCard(
                       message:
                           'Play, like, and finish songs to train your personalized May You Like section.',
                     )
-                  else
+                  else if (showMiddleContent)
                     Column(
                       children: List<Widget>.generate(mayYouLike.length, (
                         int index,
@@ -242,7 +313,7 @@ class _HomeScreenState extends State<_HomeScreen> {
                         );
                       }),
                     ),
-                  if (jumpBackIn.isNotEmpty) ...<Widget>[
+                  if (showBottomContent && jumpBackIn.isNotEmpty) ...<Widget>[
                     const SizedBox(height: 18),
                     _KineticSectionHeader(
                       title: 'JUMP BACK IN',
@@ -267,42 +338,47 @@ class _HomeScreenState extends State<_HomeScreen> {
                       },
                     ),
                   ],
-                // Infinite feed: render remaining shelves as scroll continues.
-                ..._buildMoreShelves(
-                  context: context,
-                  controller: controller,
-                  skipCount: 1,
-                ),
-                if (controller.homeLoading) ...<Widget>[
-                  const SizedBox(height: 16),
-                  const Opacity(opacity: 0.8, child: _HomeFeedSkeleton()),
-                ],
+                  if (showBottomContent) ..._buildMoreShelves(
+                    context: context,
+                    controller: controller,
+                    skipCount: 1,
+                  ),
+                  if (controller.homeLoading &&
+                      !hasRevealableContent &&
+                      showMiddleContent) ...<Widget>[
+                    const SizedBox(height: 16),
+                    const Opacity(opacity: 0.8, child: _HomeFeedSkeleton()),
+                  ],
                 ],
               ),
             ),
           ),
-          if (controller.isOffline)
-            Positioned.fill(
-              child: AbsorbPointer(
-                child: _NetworkUnavailableOverlay(
-                  title: 'You Are Offline',
-                  message:
-                      'Reconnect to bring back recommendations, trending shelves, and fresh online picks.',
-                  actionLabel: 'Try Again',
-                  onAction: () async {
-                    final bool online = await controller
-                        .refreshConnectivityStatus();
-                    if (online) {
-                      await controller.refreshHomeFeed(force: true);
-                    }
-                  },
-                ),
-              ),
-            ),
         ],
       ),
     );
   }
+}
+
+String _homeContentSignature(OuterTuneController controller) {
+  final StringBuffer buffer = StringBuffer();
+  for (final SongRecommendation item in controller.personalizedHomeRecommendations
+      .take(4)) {
+    buffer
+      ..write(item.song.id)
+      ..write('|');
+  }
+  for (final HomeFeedSection section in controller.homeFeed.take(4)) {
+    buffer
+      ..write(section.title)
+      ..write(':');
+    for (final LibrarySong song in section.songs.take(3)) {
+      buffer
+        ..write(song.id)
+        ..write(',');
+    }
+    buffer.write(';');
+  }
+  return buffer.toString();
 }
 
 class _PersonalizationHintCard extends StatelessWidget {
@@ -326,6 +402,97 @@ class _PersonalizationHintCard extends StatelessWidget {
           color: const Color(0xFFFFC8A9),
           height: 1.35,
           fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeOfflineState extends StatelessWidget {
+  const _HomeOfflineState({required this.controller});
+
+  final OuterTuneController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<LibrarySong> localSongs = controller.songs
+        .where((LibrarySong song) => !song.isRemote)
+        .take(6)
+        .toList(growable: false);
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: <Color>[
+            Color(0xFF140804),
+            Color(0xFF211008),
+            Color(0xFF0D0503),
+          ],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: ListView(
+          padding: _rootScreenContentPadding(
+            context,
+            hasMiniPlayer: controller.miniPlayerSong != null,
+          ),
+          children: <Widget>[
+            const _KineticTopBar(),
+            const SizedBox(height: 18),
+            _NetworkUnavailablePanel(
+              title: controller.offlineMusicMode
+                  ? 'Offline Music Mode'
+                  : 'No Internet Connection',
+              message: controller.offlineMusicMode
+                  ? 'Only your local music is active right now. Online recommendations, search, and cloud content stay paused until you exit this mode.'
+                  : 'Home recommendations need internet. Your downloaded and local tracks are still ready instantly.',
+              actionLabel: 'Retry',
+              onAction: () async {
+                final bool online = await controller.refreshConnectivityStatus();
+                if (online && !controller.offlineMusicMode) {
+                  await controller.refreshHomeFeed(force: true);
+                }
+              },
+              secondaryActionLabel: controller.offlineMusicMode
+                  ? 'Exit Offline Mode'
+                  : 'Offline Music',
+              onSecondaryAction: () async {
+                if (controller.offlineMusicMode) {
+                  await controller.setOfflineMusicMode(false);
+                } else {
+                  await _goToOfflineMusic(context, controller);
+                }
+              },
+              icon: controller.offlineMusicMode
+                  ? Icons.offline_bolt_rounded
+                  : Icons.cloud_off_rounded,
+            ),
+            const SizedBox(height: 22),
+            Text(
+              'READY OFFLINE',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: const Color(0xFFE7BAA5),
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.6,
+              ),
+            ),
+            const SizedBox(height: 10),
+            if (localSongs.isEmpty)
+              const _PersonalizationHintCard(
+                message:
+                    'Import a folder or add local songs to build your offline library.',
+              )
+            else
+              ...localSongs.asMap().entries.map((MapEntry<int, LibrarySong> e) {
+                return _KineticPopularTrackTile(
+                  index: e.key + 1,
+                  song: e.value,
+                  onTap: () => controller.playSong(e.value, label: 'Offline'),
+                );
+              }),
+          ],
         ),
       ),
     );
@@ -1404,13 +1571,22 @@ class _KineticSubscreenScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final OuterTuneController controller = context.watch<OuterTuneController>();
     return Scaffold(
       backgroundColor: const Color(0xFF120503),
       body: DecoratedBox(
         decoration: _kineticPageDecoration(),
         child: SafeArea(
           child: ListView(
-            padding: _kScreenContentPadding,
+            padding: EdgeInsets.fromLTRB(
+              _kScreenHorizontalPadding,
+              _kScreenTopPadding,
+              _kScreenHorizontalPadding,
+              _kScreenBottomPadding +
+                  (controller.miniPlayerSong != null
+                      ? _kMiniPlayerReservedHeight
+                      : 0),
+            ),
             children: <Widget>[
               _KineticSubscreenHeader(title: title, actions: actions),
               const SizedBox(height: 10),
@@ -1419,6 +1595,23 @@ class _KineticSubscreenScaffold extends StatelessWidget {
           ),
         ),
       ),
+      bottomNavigationBar: MediaQuery.sizeOf(context).width >= 960 ||
+              controller.miniPlayerSong == null
+          ? null
+          : SafeArea(
+              top: false,
+              child: _MiniPlayer(
+                controller: controller,
+                onOpenPlayer: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (BuildContext context) =>
+                          _PlayerScreen(controller: controller),
+                    ),
+                  );
+                },
+              ),
+            ),
     );
   }
 }

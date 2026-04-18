@@ -84,6 +84,7 @@ class AppSettings {
     this.playbackRate = 1.0,
     this.smartQueueEnabled = true,
     this.gaplessPlayback = true,
+    this.offlineMusicMode = false,
     this.preferredCountryCode = 'LK',
     this.ytMusicAuthJson,
   });
@@ -94,6 +95,7 @@ class AppSettings {
   final double playbackRate;
   final bool smartQueueEnabled;
   final bool gaplessPlayback;
+  final bool offlineMusicMode;
   final String preferredCountryCode;
   final String? ytMusicAuthJson;
 
@@ -111,6 +113,7 @@ class AppSettings {
     double? playbackRate,
     bool? smartQueueEnabled,
     bool? gaplessPlayback,
+    bool? offlineMusicMode,
     String? preferredCountryCode,
     String? ytMusicAuthJson,
   }) {
@@ -121,6 +124,7 @@ class AppSettings {
       playbackRate: playbackRate ?? this.playbackRate,
       smartQueueEnabled: smartQueueEnabled ?? this.smartQueueEnabled,
       gaplessPlayback: gaplessPlayback ?? this.gaplessPlayback,
+      offlineMusicMode: offlineMusicMode ?? this.offlineMusicMode,
       preferredCountryCode: preferredCountryCode ?? this.preferredCountryCode,
       ytMusicAuthJson: ytMusicAuthJson ?? this.ytMusicAuthJson,
     );
@@ -134,6 +138,7 @@ class AppSettings {
       'playbackRate': playbackRate,
       'smartQueueEnabled': smartQueueEnabled,
       'gaplessPlayback': gaplessPlayback,
+      'offlineMusicMode': offlineMusicMode,
       'preferredCountryCode': preferredCountryCode,
       'ytMusicAuthJson': ytMusicAuthJson,
     };
@@ -154,6 +159,7 @@ class AppSettings {
       playbackRate: (json['playbackRate'] as num?)?.toDouble() ?? 1.0,
       smartQueueEnabled: json['smartQueueEnabled'] as bool? ?? true,
       gaplessPlayback: json['gaplessPlayback'] as bool? ?? true,
+      offlineMusicMode: json['offlineMusicMode'] as bool? ?? false,
       preferredCountryCode: preferredCountryCode.isEmpty
           ? 'LK'
           : preferredCountryCode,

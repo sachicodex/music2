@@ -70,12 +70,23 @@ class OuterTuneShell extends StatefulWidget {
 }
 
 class _OuterTuneShellState extends State<OuterTuneShell> {
+  static const List<AppDestination> _mainDestinations = <AppDestination>[
+    AppDestination.home,
+    AppDestination.search,
+    AppDestination.library,
+    AppDestination.settings,
+  ];
+
   AppDestination _destination = AppDestination.home;
   LibraryFilter _libraryFilter = LibraryFilter.all;
+  late final PageController _pageController;
+
+  int get _destinationPageIndex => _mainDestinations.indexOf(_destination);
 
   @override
   void initState() {
     super.initState();
+    _pageController = PageController(initialPage: _destinationPageIndex);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;
@@ -86,6 +97,12 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
             .ensureNotificationPermissionIfNeeded(),
       );
     });
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
   }
 
   @override
@@ -102,9 +119,25 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
             backgroundColor: Color(0xFF3A170C),
           ),
         Expanded(
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 220),
-            child: _buildPage(context, controller),
+          child: PageView(
+            controller: _pageController,
+            onPageChanged: (int index) {
+              final AppDestination next = _mainDestinations[index];
+              if (_destination == next) {
+                return;
+              }
+              setState(() => _destination = next);
+            },
+            children: _mainDestinations.map((AppDestination destination) {
+              return KeyedSubtree(
+                key: ValueKey<AppDestination>(destination),
+                child: _buildPageForDestination(
+                  context,
+                  controller,
+                  destination,
+                ),
+              );
+            }).toList(growable: false),
           ),
         ),
         if (wide && controller.miniPlayerSong != null)
@@ -122,12 +155,12 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
         children: <Widget>[
           if (wide)
             NavigationRail(
-              selectedIndex: _destination.index,
+              selectedIndex: _destinationPageIndex,
               extended: MediaQuery.sizeOf(context).width >= 1240,
               onDestinationSelected: (int index) {
-                setState(() => _destination = AppDestination.values[index]);
+                _setDestination(_mainDestinations[index]);
               },
-              destinations: AppDestination.values
+              destinations: _mainDestinations
                   .map(
                     (AppDestination item) => NavigationRailDestination(
                       icon: Icon(item.unselectedIcon),
@@ -149,20 +182,36 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
               child: _KineticBottomNav(
                 destination: _destination,
                 onDestinationChanged: (AppDestination value) {
-                  setState(() => _destination = value);
+                  _setDestination(value);
                 },
               ),
             ),
     );
   }
 
-  Widget _buildPage(BuildContext context, OuterTuneController controller) {
-    return switch (_destination) {
+  void _setDestination(AppDestination destination) {
+    if (_destination == destination) {
+      return;
+    }
+    setState(() => _destination = destination);
+    _pageController.animateToPage(
+      _mainDestinations.indexOf(destination),
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  Widget _buildPageForDestination(
+    BuildContext context,
+    OuterTuneController controller,
+    AppDestination destination,
+  ) {
+    return switch (destination) {
       AppDestination.home => _HomeScreen(
         key: const ValueKey<String>('home'),
         controller: controller,
         onOpenSearch: () =>
-            setState(() => _destination = AppDestination.search),
+            _setDestination(AppDestination.search),
       ),
       AppDestination.library => _LibraryScreen(
         key: const ValueKey<String>('library'),
@@ -176,14 +225,11 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
         key: const ValueKey<String>('search'),
         controller: controller,
       ),
-      AppDestination.history => _HistoryScreen(
-        key: const ValueKey<String>('history'),
-        controller: controller,
-      ),
       AppDestination.settings => _SettingsScreen(
         key: const ValueKey<String>('settings'),
         controller: controller,
       ),
+      AppDestination.history => const SizedBox.shrink(),
     };
   }
 
@@ -270,6 +316,19 @@ void _showKineticSnackBar(BuildContext context, String message) {
   );
 }
 
+Future<void> _goToOfflineMusic(
+  BuildContext context,
+  OuterTuneController controller,
+) async {
+  await controller.setOfflineMusicMode(true);
+  if (!context.mounted) {
+    return;
+  }
+  context
+      .findAncestorStateOfType<_OuterTuneShellState>()
+      ?._setDestination(AppDestination.library);
+}
+
 PopupMenuItem<String> _kineticPopupMenuItem(String value, String label) {
   return PopupMenuItem<String>(
     value: value,
@@ -289,6 +348,9 @@ class _NetworkUnavailablePanel extends StatelessWidget {
     required this.message,
     required this.actionLabel,
     required this.onAction,
+    this.secondaryActionLabel,
+    this.onSecondaryAction,
+    this.icon = Icons.wifi_off_rounded,
     this.compact = false,
   });
 
@@ -296,6 +358,9 @@ class _NetworkUnavailablePanel extends StatelessWidget {
   final String message;
   final String actionLabel;
   final Future<void> Function() onAction;
+  final String? secondaryActionLabel;
+  final Future<void> Function()? onSecondaryAction;
+  final IconData icon;
   final bool compact;
 
   @override
@@ -365,7 +430,7 @@ class _NetworkUnavailablePanel extends StatelessWidget {
                   ),
                 ),
                 child: Icon(
-                  Icons.wifi_off_rounded,
+                  icon,
                   color: const Color(0xFFFFB784),
                   size: compact ? 24 : 28,
                 ),
@@ -390,26 +455,56 @@ class _NetworkUnavailablePanel extends StatelessWidget {
                 ),
               ),
               SizedBox(height: compact ? 16 : 18),
-              FilledButton.icon(
-                onPressed: onAction,
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFFFF8A2A),
-                  foregroundColor: const Color(0xFF2D1308),
-                  padding: EdgeInsets.symmetric(
-                    horizontal: compact ? 16 : 18,
-                    vertical: compact ? 12 : 14,
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: <Widget>[
+                  FilledButton.icon(
+                    onPressed: onAction,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFFF8A2A),
+                      foregroundColor: const Color(0xFF2D1308),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: compact ? 16 : 18,
+                        vertical: compact ? 12 : 14,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    icon: const Icon(Icons.wifi_find_rounded),
+                    label: Text(
+                      actionLabel,
+                      style: GoogleFonts.splineSans(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                ),
-                icon: const Icon(Icons.wifi_find_rounded),
-                label: Text(
-                  actionLabel,
-                  style: GoogleFonts.splineSans(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+                  if (secondaryActionLabel != null && onSecondaryAction != null)
+                    OutlinedButton.icon(
+                      onPressed: onSecondaryAction,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _kTextPrimary,
+                        side: BorderSide(
+                          color: Colors.white.withValues(alpha: 0.18),
+                        ),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: compact ? 16 : 18,
+                          vertical: compact ? 12 : 14,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                      icon: const Icon(Icons.offline_bolt_rounded),
+                      label: Text(
+                        secondaryActionLabel!,
+                        style: GoogleFonts.splineSans(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ],
           ),
@@ -425,30 +520,61 @@ class _NetworkUnavailableOverlay extends StatelessWidget {
     required this.message,
     required this.actionLabel,
     required this.onAction,
+    this.secondaryActionLabel,
+    this.onSecondaryAction,
+    this.icon = Icons.wifi_off_rounded,
   });
 
   final String title;
   final String message;
   final String actionLabel;
   final Future<void> Function() onAction;
+  final String? secondaryActionLabel;
+  final Future<void> Function()? onSecondaryAction;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: Colors.black.withValues(alpha: 0.70),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 360),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: _NetworkUnavailablePanel(
-              title: title,
-              message: message,
-              actionLabel: actionLabel,
-              onAction: onAction,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {},
+      child: Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          ColoredBox(color: Colors.black.withValues(alpha: 0.50)),
+          BackdropFilter(
+            filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: const SizedBox.expand(),
+          ),
+          Center(
+            child: TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: 0.9, end: 1.0),
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
+              builder: (BuildContext context, double value, Widget? child) {
+                return Opacity(
+                  opacity: value.clamp(0.0, 1.0),
+                  child: Transform.scale(scale: value, child: child),
+                );
+              },
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 380),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: _NetworkUnavailablePanel(
+                    title: title,
+                    message: message,
+                    actionLabel: actionLabel,
+                    onAction: onAction,
+                    secondaryActionLabel: secondaryActionLabel,
+                    onSecondaryAction: onSecondaryAction,
+                    icon: icon,
+                  ),
+                ),
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }

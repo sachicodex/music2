@@ -760,16 +760,21 @@ class _SearchScreenState extends State<_SearchScreen> {
               ],
             ),
           ),
-          if (widget.controller.isOffline)
+          if (widget.controller.isOffline || widget.controller.offlineMusicMode)
             Positioned.fill(
-              child: AbsorbPointer(
-                child: _NetworkUnavailableOverlay(
-                  title: 'Search Needs Internet',
-                  message:
-                      'Reconnect to browse charts, discover online tracks, and search beyond your local music.',
-                  actionLabel: 'Reconnect',
-                  onAction: () => widget.controller.refreshConnectivityStatus(),
-                ),
+              child: _NetworkUnavailableOverlay(
+                title: 'No Internet Connection',
+                message: widget.controller.offlineMusicMode
+                    ? 'Search is limited to offline music while Offline Music mode is active.'
+                    : 'Search is unavailable offline.',
+                actionLabel: 'Retry',
+                onAction: () => widget.controller.refreshConnectivityStatus(),
+                secondaryActionLabel: 'Go to Offline Music',
+                onSecondaryAction: () =>
+                    _goToOfflineMusic(context, widget.controller),
+                icon: widget.controller.offlineMusicMode
+                    ? Icons.offline_bolt_rounded
+                    : Icons.wifi_off_rounded,
               ),
             ),
         ],

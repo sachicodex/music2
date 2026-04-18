@@ -16,6 +16,7 @@ class _LibraryScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final List<UserPlaylist> playlists = controller.playlists;
     final bool offline = controller.isOffline;
+    final bool offlineMode = controller.offlineMusicMode;
 
     return DecoratedBox(
       decoration: _kineticPageDecoration(),
@@ -28,6 +29,18 @@ class _LibraryScreen extends StatelessWidget {
           ),
           children: <Widget>[
             const _LibraryHeader(),
+            if (offlineMode) ...<Widget>[
+              _NetworkUnavailablePanel(
+                title: 'Offline Music Mode',
+                message:
+                    'Only local files are active. Cloud playlists and online suggestions stay paused until you exit this mode.',
+                actionLabel: 'Exit Mode',
+                onAction: () => controller.setOfflineMusicMode(false),
+                compact: true,
+                icon: Icons.offline_bolt_rounded,
+              ),
+              const SizedBox(height: 20),
+            ],
             const SizedBox(height: 28),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,

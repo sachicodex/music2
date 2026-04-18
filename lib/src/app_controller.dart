@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:audiotags/audiotags.dart';
 import 'package:collection/collection.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
@@ -39,7 +40,9 @@ class OuterTuneController extends ChangeNotifier {
 
   final Player _player;
   final YoutubeExplode _yt;
+  final Connectivity _connectivity = Connectivity();
   StreamSubscription<String>? _notificationActionSubscription;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   YTMusic? _ytMusic;
   final Uuid _uuid = const Uuid();
   final List<StreamSubscription<dynamic>> _subscriptions =
@@ -90,6 +93,7 @@ class OuterTuneController extends ChangeNotifier {
   final Set<String> _smartQueueSongIds = <String>{};
   String? _activePlaybackSongId;
   double _activePlaybackCompletionRatio = 0;
+  DateTime? _lastAutoHomeRefreshAt;
 
   List<String> _queueSongIds = <String>[];
   String _queueLabel = 'Now Playing';
@@ -112,6 +116,7 @@ class OuterTuneController extends ChangeNotifier {
   bool get homeLoading => _homeLoading;
   bool get smartQueueLoading => _smartQueueLoading;
   bool get isOffline => _isOffline;
+  bool get offlineMusicMode => _settings.offlineMusicMode;
   String? get statusMessage => _statusMessage;
   String? get errorMessage => _errorMessage;
   String? get onlineError => _onlineError;
@@ -420,6 +425,7 @@ class OuterTuneController extends ChangeNotifier {
     await _loadSnapshot();
     await _recreateYtMusicClient();
     await refreshConnectivityStatus(notify: false);
+    _startConnectivityMonitoring();
     await _player.setRate(_settings.playbackRate);
     // Never block app startup on Android runtime permission UI.
     unawaited(_ensureNotificationPermission());
@@ -428,25 +434,83 @@ class OuterTuneController extends ChangeNotifier {
     _initialized = true;
     unawaited(AndroidMediaNotificationBridge.stop());
     notifyListeners();
-    unawaited(refreshHomeFeed());
+    _requestAutoHomeRefresh();
   }
 
   Future<bool> refreshConnectivityStatus({bool notify = true}) async {
-    bool online;
+    final List<ConnectivityResult> results = await _connectivity
+        .checkConnectivity();
+    final bool online = await _isNetworkReachable(results);
+    _setOffline(!online, notify: notify);
+    return online;
+  }
+
+  void _startConnectivityMonitoring() {
+    _connectivitySubscription?.cancel();
+    _connectivitySubscription = _connectivity.onConnectivityChanged.listen((
+      List<ConnectivityResult> results,
+    ) {
+      unawaited(_handleConnectivityChange(results));
+    });
+  }
+
+  Future<void> _handleConnectivityChange(
+    List<ConnectivityResult> results,
+  ) async {
+    final bool online = await _isNetworkReachable(results);
+    final bool wasOffline = _isOffline;
+    _setOffline(!online, notify: false);
+    if (!online) {
+      _onlineLoading = false;
+      _trendingNowLoading = false;
+      _onlineError = 'Internet is unavailable right now.';
+      _trendingNowError = 'No internet connection.';
+      if (_homeFeed.isEmpty) {
+        _homeError = 'No internet connection. Reconnect and tap Refresh.';
+      }
+      notifyListeners();
+      return;
+    }
+    notifyListeners();
+    if (_initialized &&
+        wasOffline &&
+        _homeFeed.isEmpty &&
+        !_homeLoading &&
+        !offlineMusicMode) {
+      _requestAutoHomeRefresh(force: true);
+    }
+  }
+
+  void _requestAutoHomeRefresh({bool force = false}) {
+    final DateTime now = DateTime.now();
+    if (_homeLoading) {
+      return;
+    }
+    if (_lastAutoHomeRefreshAt != null &&
+        now.difference(_lastAutoHomeRefreshAt!) <
+            const Duration(milliseconds: 1500)) {
+      return;
+    }
+    _lastAutoHomeRefreshAt = now;
+    unawaited(refreshHomeFeed(force: force));
+  }
+
+  Future<bool> _isNetworkReachable(List<ConnectivityResult> results) async {
+    if (results.isEmpty || results.contains(ConnectivityResult.none)) {
+      return false;
+    }
     try {
       final List<InternetAddress> lookup = await InternetAddress.lookup(
         'youtube.com',
-      ).timeout(const Duration(seconds: 3));
-      online = lookup.isNotEmpty && lookup.first.rawAddress.isNotEmpty;
+      ).timeout(const Duration(milliseconds: 1200));
+      return lookup.isNotEmpty && lookup.first.rawAddress.isNotEmpty;
     } on SocketException {
-      online = false;
+      return false;
     } on TimeoutException {
-      online = false;
+      return false;
     } catch (_) {
-      online = true;
+      return true;
     }
-    _setOffline(!online, notify: notify);
-    return online;
   }
 
   Future<void> _ensureNotificationPermission() async {
@@ -481,6 +545,17 @@ class OuterTuneController extends ChangeNotifier {
     if (_isOffline) {
       _onlineResults = <LibrarySong>[];
       _onlineError = 'Internet is unavailable right now.';
+      _onlineLoading = false;
+      _onlineQuery = trimmed;
+      _onlineResultLimit = 0;
+      _onlineHasMore = false;
+      notifyListeners();
+      return;
+    }
+
+    if (offlineMusicMode) {
+      _onlineResults = <LibrarySong>[];
+      _onlineError = 'Offline Music mode is on.';
       _onlineLoading = false;
       _onlineQuery = trimmed;
       _onlineResultLimit = 0;
@@ -559,6 +634,13 @@ class OuterTuneController extends ChangeNotifier {
     String? countryCode,
     bool force = false,
   }) async {
+    if (offlineMusicMode) {
+      _trendingNowSongs = <LibrarySong>[];
+      _trendingNowLoading = false;
+      _trendingNowError = 'Offline Music mode is on.';
+      notifyListeners();
+      return;
+    }
     final int requestId = ++_trendingNowRequestId;
     final String normalizedLanguage = languageCode.trim().toLowerCase();
     final String normalizedCountry =
@@ -659,6 +741,12 @@ class OuterTuneController extends ChangeNotifier {
     notifyListeners();
 
     try {
+      if (offlineMusicMode) {
+        _homeFeed = <HomeFeedSection>[];
+        _personalizedHomeRecommendations = <SongRecommendation>[];
+        _homeError = 'Offline Music mode is on.';
+        return;
+      }
       final bool online = await refreshConnectivityStatus(notify: false);
       if (!online) {
         _homeError = 'No internet connection. Reconnect and tap Refresh.';
@@ -711,12 +799,8 @@ class OuterTuneController extends ChangeNotifier {
         already: sections,
         desiredCount: 6,
       );
+      _commitHomeFeedSections(expanded, seedSong: seedSong);
 
-      _homeFeed = expanded;
-      _personalizedHomeRecommendations = _buildPersonalizedHomeSongs(
-        sections: _homeFeed,
-        seedSong: seedSong,
-      );
       if (_homeFeed.isEmpty && _personalizedHomeRecommendations.isEmpty) {
         _homeFeed = previousFeed;
         _personalizedHomeRecommendations = previousPersonalized;
@@ -739,6 +823,9 @@ class OuterTuneController extends ChangeNotifier {
     if (_homeLoading) {
       return;
     }
+    if (_isOffline || offlineMusicMode) {
+      return;
+    }
     if (_homeFeed.isEmpty) {
       await refreshHomeFeed();
       return;
@@ -750,16 +837,16 @@ class OuterTuneController extends ChangeNotifier {
 
     try {
       final LibrarySong? seedSong = _primaryRecommendationSeed();
-      _homeFeed = await _loadMoreHomeSections(
+      final List<HomeFeedSection> expanded = await _loadMoreHomeSections(
         seedSong: seedSong,
         force: false,
         already: List<HomeFeedSection>.from(_homeFeed),
         desiredCount: desiredTotal,
-        onProgress: _publishHomeFeedProgress,
       );
-      _personalizedHomeRecommendations = _buildPersonalizedHomeSongs(
-        sections: _homeFeed,
+      _commitHomeFeedSections(
+        expanded,
         seedSong: seedSong,
+        preservePersonalized: true,
       );
     } catch (error) {
       _homeError = _friendlyOnlineError(error);
@@ -774,7 +861,6 @@ class OuterTuneController extends ChangeNotifier {
     required bool force,
     required List<HomeFeedSection> already,
     required int desiredCount,
-    void Function(List<HomeFeedSection> sections)? onProgress,
   }) async {
     final List<HomeFeedSection> sections = already;
     if (sections.length >= desiredCount) {
@@ -831,19 +917,24 @@ class OuterTuneController extends ChangeNotifier {
           songs: filtered.take(50).toList(growable: false),
         ),
       );
-      onProgress?.call(sections);
     }
 
     _homeQueryCursor = recycledQueries ? cursor + queries.length : cursor;
     return sections;
   }
 
-  void _publishHomeFeedProgress(List<HomeFeedSection> sections) {
+  void _commitHomeFeedSections(
+    List<HomeFeedSection> sections, {
+    required LibrarySong? seedSong,
+    bool preservePersonalized = false,
+  }) {
     _homeFeed = List<HomeFeedSection>.from(sections);
-    _personalizedHomeRecommendations = _buildPersonalizedHomeSongs(
-      sections: _homeFeed,
-      seedSong: _primaryRecommendationSeed(),
-    );
+    if (!preservePersonalized || _personalizedHomeRecommendations.isEmpty) {
+      _personalizedHomeRecommendations = _buildPersonalizedHomeSongs(
+        sections: _homeFeed,
+        seedSong: seedSong,
+      );
+    }
     notifyListeners();
   }
 
@@ -3037,8 +3128,10 @@ class OuterTuneController extends ChangeNotifier {
   }
 
   Future<void> playOnlineSong(LibrarySong song) async {
-    if (_isOffline) {
-      _errorMessage = 'Internet is unavailable right now.';
+    if (_isOffline || offlineMusicMode) {
+      _errorMessage = offlineMusicMode
+          ? 'Offline Music mode is on.'
+          : 'Internet is unavailable right now.';
       notifyListeners();
       return;
     }
@@ -3860,6 +3953,26 @@ class OuterTuneController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setOfflineMusicMode(bool value) async {
+    if (_settings.offlineMusicMode == value) {
+      return;
+    }
+    _settings = _settings.copyWith(offlineMusicMode: value);
+    if (value) {
+      _onlineResults = <LibrarySong>[];
+      _onlineError = 'Offline Music mode is on.';
+      _trendingNowSongs = <LibrarySong>[];
+      _trendingNowError = 'Offline Music mode is on.';
+      _homeFeed = <HomeFeedSection>[];
+      _personalizedHomeRecommendations = <SongRecommendation>[];
+      _homeError = 'Offline Music mode is on.';
+    } else if (!_isOffline) {
+      _requestAutoHomeRefresh(force: true);
+    }
+    await _saveSnapshot();
+    notifyListeners();
+  }
+
   void _primePendingTrackTransition(int targetIndex) {
     final LibrarySong? pending = songById(_queueSongIds[targetIndex]);
     if (pending == null) {
@@ -4269,6 +4382,8 @@ class OuterTuneController extends ChangeNotifier {
     _subscriptions.clear();
     unawaited(_notificationActionSubscription?.cancel());
     _notificationActionSubscription = null;
+    unawaited(_connectivitySubscription?.cancel());
+    _connectivitySubscription = null;
     unawaited(AndroidMediaNotificationBridge.stop());
     _ytMusic?.close();
     _yt.close();
