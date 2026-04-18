@@ -4,134 +4,11 @@ Future<void> _showCreatePlaylistDialog(
   BuildContext context,
   OuterTuneController controller,
 ) async {
-  final TextEditingController input = TextEditingController();
   final String? name = await showDialog<String>(
     context: context,
     barrierDismissible: true,
-    builder: (BuildContext context) {
-      final double bottomInset = MediaQuery.of(context).viewInsets.bottom;
-      return AnimatedPadding(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        padding: EdgeInsets.fromLTRB(28, 24, 28, 24 + bottomInset),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Material(
-              color: _kSurface,
-              borderRadius: BorderRadius.circular(28),
-              clipBehavior: Clip.antiAlias,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(28, 26, 28, 24),
-                child: StatefulBuilder(
-                  builder: (BuildContext context, StateSetter setState) {
-                    final bool canCreate = input.text.trim().isNotEmpty;
-                    return Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          'Create playlist',
-                          style: GoogleFonts.splineSans(
-                            color: _kTextPrimary,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 26),
-                        TextField(
-                          controller: input,
-                          autofocus: true,
-                          onChanged: (_) => setState(() {}),
-                          onSubmitted: (String value) {
-                            final String trimmed = value.trim();
-                            if (trimmed.isNotEmpty) {
-                              Navigator.of(
-                                context,
-                                rootNavigator: true,
-                              ).pop(trimmed);
-                            }
-                          },
-                          style: GoogleFonts.splineSans(
-                            color: _kTextPrimary,
-                            fontSize: 18,
-                          ),
-                          cursorColor: _kAccent,
-                          decoration: InputDecoration(
-                            hintText: 'New playlist',
-                            hintStyle: GoogleFonts.splineSans(
-                              color: _kTextSecondary.withValues(alpha: 0.72),
-                              fontSize: 18,
-                            ),
-                            isDense: true,
-                            contentPadding: const EdgeInsets.only(bottom: 14),
-                            enabledBorder: const UnderlineInputBorder(
-                              borderSide: BorderSide(
-                                color: _kSurfaceEdge,
-                                width: 2,
-                              ),
-                            ),
-                            focusedBorder: const UnderlineInputBorder(
-                              borderSide: BorderSide(color: _kAccent, width: 2),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 28),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: <Widget>[
-                            TextButton(
-                              onPressed: () => Navigator.of(
-                                context,
-                                rootNavigator: true,
-                              ).pop(),
-                              style: TextButton.styleFrom(
-                                foregroundColor: _kTextSecondary,
-                              ),
-                              child: Text(
-                                'Cancel',
-                                style: GoogleFonts.splineSans(fontSize: 16),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            FilledButton(
-                              onPressed: canCreate
-                                  ? () => Navigator.of(
-                                      context,
-                                      rootNavigator: true,
-                                    ).pop(input.text.trim())
-                                  : null,
-                              style: FilledButton.styleFrom(
-                                backgroundColor: _kAccent,
-                                foregroundColor: Colors.black,
-                                disabledBackgroundColor: _kAccent.withValues(
-                                  alpha: 0.38,
-                                ),
-                                disabledForegroundColor: Colors.black54,
-                                minimumSize: const Size(112, 40),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                              ),
-                              child: Text(
-                                'Create',
-                                style: GoogleFonts.splineSans(fontSize: 16),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    },
+    builder: (BuildContext context) => const _CreatePlaylistDialog(),
   );
-  input.dispose();
 
   if (name != null && name.trim().isNotEmpty) {
     await Future<void>.delayed(const Duration(milliseconds: 220));
@@ -139,6 +16,139 @@ Future<void> _showCreatePlaylistDialog(
       return;
     }
     await controller.createPlaylist(name);
+  }
+}
+
+class _CreatePlaylistDialog extends StatefulWidget {
+  const _CreatePlaylistDialog();
+
+  @override
+  State<_CreatePlaylistDialog> createState() => _CreatePlaylistDialogState();
+}
+
+class _CreatePlaylistDialogState extends State<_CreatePlaylistDialog> {
+  late final TextEditingController _input;
+
+  @override
+  void initState() {
+    super.initState();
+    _input = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _input.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final String trimmed = _input.text.trim();
+    if (trimmed.isEmpty) {
+      return;
+    }
+    Navigator.of(context, rootNavigator: true).pop(trimmed);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final double bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final bool canCreate = _input.text.trim().isNotEmpty;
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.fromLTRB(28, 24, 28, 24 + bottomInset),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Material(
+            color: _kSurface,
+            borderRadius: BorderRadius.circular(28),
+            clipBehavior: Clip.antiAlias,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(28, 26, 28, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    'Create playlist',
+                    style: GoogleFonts.splineSans(
+                      color: _kTextPrimary,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 26),
+                  TextField(
+                    controller: _input,
+                    autofocus: true,
+                    onChanged: (_) => setState(() {}),
+                    onSubmitted: (_) => _submit(),
+                    style: GoogleFonts.splineSans(
+                      color: _kTextPrimary,
+                      fontSize: 18,
+                    ),
+                    cursorColor: _kAccent,
+                    decoration: InputDecoration(
+                      hintText: 'New playlist',
+                      hintStyle: GoogleFonts.splineSans(
+                        color: _kTextSecondary.withValues(alpha: 0.72),
+                        fontSize: 18,
+                      ),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.only(bottom: 14),
+                      enabledBorder: const UnderlineInputBorder(
+                        borderSide: BorderSide(color: _kSurfaceEdge, width: 2),
+                      ),
+                      focusedBorder: const UnderlineInputBorder(
+                        borderSide: BorderSide(color: _kAccent, width: 2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: <Widget>[
+                      TextButton(
+                        onPressed: () =>
+                            Navigator.of(context, rootNavigator: true).pop(),
+                        style: TextButton.styleFrom(
+                          foregroundColor: _kTextSecondary,
+                        ),
+                        child: Text(
+                          'Cancel',
+                          style: GoogleFonts.splineSans(fontSize: 16),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      FilledButton(
+                        onPressed: canCreate ? _submit : null,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _kAccent,
+                          foregroundColor: Colors.black,
+                          disabledBackgroundColor: _kAccent.withValues(
+                            alpha: 0.38,
+                          ),
+                          disabledForegroundColor: Colors.black54,
+                          minimumSize: const Size(112, 40),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                        child: Text(
+                          'Create',
+                          style: GoogleFonts.splineSans(fontSize: 16),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

@@ -11,34 +11,40 @@ class _HistoryScreen extends StatelessWidget {
       return const Center(child: Text('Playback history will appear here.'));
     }
 
-    return ListView.builder(
-      padding: _kScreenContentPadding,
-      itemCount: controller.history.length,
-      itemBuilder: (BuildContext context, int index) {
-        final PlaybackEntry entry = controller.history[index];
-        final LibrarySong? song = controller.songById(entry.songId);
-        if (song == null) {
-          return const SizedBox.shrink();
-        }
-        return ListTile(
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 0,
-            vertical: 4,
-          ),
-          leading: _Artwork(
-            seed: song.id,
-            title: song.title,
-            size: 52,
-            imageUrl: song.artworkUrl,
-          ),
-          title: Text(song.title),
-          subtitle: Text(_songArtistLabel(song)),
-          trailing: IconButton(
-            onPressed: () => controller.playSong(song, label: 'History'),
-            icon: const Icon(Icons.play_arrow_rounded),
-          ),
-        );
-      },
+    return SafeArea(
+      bottom: false,
+      child: ListView.builder(
+        padding: _rootScreenContentPadding(
+          context,
+          hasMiniPlayer: controller.miniPlayerSong != null,
+        ),
+        itemCount: controller.history.length,
+        itemBuilder: (BuildContext context, int index) {
+          final PlaybackEntry entry = controller.history[index];
+          final LibrarySong? song = controller.songById(entry.songId);
+          if (song == null) {
+            return const SizedBox.shrink();
+          }
+          return ListTile(
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 0,
+              vertical: 4,
+            ),
+            leading: _Artwork(
+              seed: song.id,
+              title: song.title,
+              size: 52,
+              imageUrl: song.artworkUrl,
+            ),
+            title: Text(song.title),
+            subtitle: Text(_songArtistLabel(song)),
+            trailing: IconButton(
+              onPressed: () => controller.playSong(song, label: 'History'),
+              icon: const Icon(Icons.play_arrow_rounded),
+            ),
+          );
+        },
+      ),
     );
   }
 }
@@ -122,6 +128,7 @@ class _SettingsScreen extends StatelessWidget {
     Future<void> pickRegion() async {
       final String? selected = await showModalBottomSheet<String>(
         context: context,
+        isScrollControlled: true,
         backgroundColor: const Color(0xFF1C0904),
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -130,55 +137,68 @@ class _SettingsScreen extends StatelessWidget {
           final List<AppRegion> regions = controller.availableRegions;
           return SafeArea(
             top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    'Choose region',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: titleColor,
-                      fontWeight: FontWeight.w800,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.78,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'Choose region',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        color: titleColor,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Regional trending and charts will follow this region.',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.copyWith(color: subtitleColor),
-                  ),
-                  const SizedBox(height: 12),
-                  ...regions.map((AppRegion region) {
-                    final bool active =
-                        region.countryCode == controller.preferredCountryCode;
-                    return ListTile(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Regional trending and charts will follow this region.',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: subtitleColor),
+                    ),
+                    const SizedBox(height: 12),
+                    Flexible(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: regions.length,
+                        itemBuilder: (BuildContext context, int index) {
+                          final AppRegion region = regions[index];
+                          final bool active =
+                              region.countryCode ==
+                              controller.preferredCountryCode;
+                          return ListTile(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            onTap: () =>
+                                Navigator.of(context).pop(region.countryCode),
+                            title: Text(
+                              region.label,
+                              style: TextStyle(
+                                color: active ? accent : titleColor,
+                                fontWeight: active
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                              ),
+                            ),
+                            subtitle: Text(
+                              region.countryCode,
+                              style: const TextStyle(color: subtitleColor),
+                            ),
+                            trailing: active
+                                ? const Icon(Icons.check_rounded, color: accent)
+                                : null,
+                          );
+                        },
                       ),
-                      onTap: () =>
-                          Navigator.of(context).pop(region.countryCode),
-                      title: Text(
-                        region.label,
-                        style: TextStyle(
-                          color: active ? accent : titleColor,
-                          fontWeight: active
-                              ? FontWeight.w700
-                              : FontWeight.w500,
-                        ),
-                      ),
-                      subtitle: Text(
-                        region.countryCode,
-                        style: const TextStyle(color: subtitleColor),
-                      ),
-                      trailing: active
-                          ? const Icon(Icons.check_rounded, color: accent)
-                          : null,
-                    );
-                  }),
-                ],
+                    ),
+                  ],
+                ),
               ),
             ),
           );
@@ -197,15 +217,20 @@ class _SettingsScreen extends StatelessWidget {
           end: Alignment.bottomCenter,
         ),
       ),
-      child: ListView(
-        padding: _kScreenContentPadding,
-        children: <Widget>[
-          const _HomeStyleHeader(
-            title: 'SETTINGS',
-            leading: _HomeStyleProfileBadge(),
-            trailing: _HomeStyleNotificationIcon(),
+      child: SafeArea(
+        bottom: false,
+        child: ListView(
+          padding: _rootScreenContentPadding(
+            context,
+            hasMiniPlayer: controller.miniPlayerSong != null,
           ),
-          const SizedBox(height: 14),
+          children: <Widget>[
+            const _HomeStyleHeader(
+              title: 'SETTINGS',
+              leading: _HomeStyleProfileBadge(),
+              trailing: _HomeStyleNotificationIcon(),
+            ),
+            const SizedBox(height: 14),
 
           Container(
             decoration: BoxDecoration(
@@ -560,7 +585,8 @@ class _SettingsScreen extends StatelessWidget {
               child: const Text('SIGN OUT OF PULSE'),
             ),
           ),
-        ],
+          ],
+        ),
       ),
     );
   }

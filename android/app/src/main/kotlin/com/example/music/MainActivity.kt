@@ -14,6 +14,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private var actionEventSink: EventChannel.EventSink? = null
     private val pendingActions = ArrayDeque<Map<String, String>>()
+    private var actionReceiverRegistered = false
 
     private val actionReceiver =
         object : BroadcastReceiver() {
@@ -54,10 +55,14 @@ class MainActivity : FlutterActivity() {
                 }
             }
         )
+
+        registerActionReceiverIfNeeded()
     }
 
-    override fun onStart() {
-        super.onStart()
+    private fun registerActionReceiverIfNeeded() {
+        if (actionReceiverRegistered) {
+            return
+        }
         val filter = IntentFilter(MediaNotificationService.ACTION_MEDIA_COMMAND_BROADCAST)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(actionReceiver, filter, RECEIVER_NOT_EXPORTED)
@@ -65,11 +70,15 @@ class MainActivity : FlutterActivity() {
             @Suppress("DEPRECATION")
             registerReceiver(actionReceiver, filter)
         }
+        actionReceiverRegistered = true
     }
 
-    override fun onStop() {
-        runCatching { unregisterReceiver(actionReceiver) }
-        super.onStop()
+    override fun onDestroy() {
+        if (actionReceiverRegistered) {
+            runCatching { unregisterReceiver(actionReceiver) }
+            actionReceiverRegistered = false
+        }
+        super.onDestroy()
     }
 
     private fun handleMethodCall(call: MethodCall, result: MethodChannel.Result) {

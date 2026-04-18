@@ -173,96 +173,100 @@ class _HomeScreenState extends State<_HomeScreen> {
       ),
       child: Stack(
         children: <Widget>[
-          RefreshIndicator(
-            color: const Color(0xFFFF8A2A),
-            backgroundColor: const Color(0xFF2A1007),
-            onRefresh: () => controller.refreshHomeFeed(force: true),
-            child: ListView(
-              controller: _scroll,
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: _kScreenContentPadding,
-              children: <Widget>[
-                const SizedBox(height: 6),
-                const _KineticTopBar(),
-                const SizedBox(height: 14),
-                if (homeFeedPending)
-                  const _KineticHeroSkeleton()
-                else
-                  _KineticHeroCard(
-                    badge: featured.badge,
-                    title: featured.title,
-                    subtitle: featured.subtitle,
-                    imageUrl: featured.imageUrl,
-                    onListenNow: featured.onListenNow,
-                  ),
-                const SizedBox(height: 18),
-                _KineticSectionHeader(
-                  title: 'MAY YOU LIKE',
-                  onViewAll: () {
-                    if (mayYouLikeFull.isEmpty) {
-                      widget.onOpenSearch();
-                      return;
-                    }
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (BuildContext context) =>
-                            _MayYouLikeScreen(controller: controller),
-                      ),
-                    );
-                  },
+          SafeArea(
+            bottom: false,
+            child: RefreshIndicator(
+              color: const Color(0xFFFF8A2A),
+              backgroundColor: const Color(0xFF2A1007),
+              onRefresh: () => controller.refreshHomeFeed(force: true),
+              child: ListView(
+                controller: _scroll,
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: _rootScreenContentPadding(
+                  context,
+                  hasMiniPlayer: controller.miniPlayerSong != null,
                 ),
-                const SizedBox(height: 10),
-                if (homeFeedPending)
-                  const _KineticListSkeleton(count: 4)
-                else if (mayYouLike.isEmpty)
-                  const _PersonalizationHintCard(
-                    message:
-                        'Play, like, and finish songs to train your personalized May You Like section.',
-                  )
-                else
-                  Column(
-                    children: List<Widget>.generate(mayYouLike.length, (
-                      int index,
-                    ) {
-                      final LibrarySong song = mayYouLike[index];
-                      return _KineticPopularTrackTile(
-                        index: index + 1,
-                        song: song,
-                        onTap: () {
-                          if (song.isRemote) {
-                            controller.playOnlineSong(song);
-                          } else {
-                            controller.playSong(song, label: 'May you like');
-                          }
-                        },
-                      );
-                    }),
-                  ),
-                if (jumpBackIn.isNotEmpty) ...<Widget>[
+                children: <Widget>[
+                  const _KineticTopBar(),
+                  const SizedBox(height: 14),
+                  if (homeFeedPending)
+                    const _KineticHeroSkeleton()
+                  else
+                    _KineticHeroCard(
+                      badge: featured.badge,
+                      title: featured.title,
+                      subtitle: featured.subtitle,
+                      imageUrl: featured.imageUrl,
+                      onListenNow: featured.onListenNow,
+                    ),
                   const SizedBox(height: 18),
                   _KineticSectionHeader(
-                    title: 'JUMP BACK IN',
+                    title: 'MAY YOU LIKE',
                     onViewAll: () {
+                      if (mayYouLikeFull.isEmpty) {
+                        widget.onOpenSearch();
+                        return;
+                      }
                       Navigator.of(context).push(
                         MaterialPageRoute<void>(
                           builder: (BuildContext context) =>
-                              _RecentPlaysScreen(controller: controller),
+                              _MayYouLikeScreen(controller: controller),
                         ),
                       );
                     },
                   ),
                   const SizedBox(height: 10),
-                  _KineticJumpBackGrid(
-                    items: jumpBackIn,
-                    onTapItem: (LibrarySong song) {
-                      if (song.isRemote) {
-                        controller.playOnlineSong(song);
-                      } else {
-                        controller.playSong(song, label: 'Jump back in');
-                      }
-                    },
-                  ),
-                ],
+                  if (homeFeedPending)
+                    const _KineticListSkeleton(count: 4)
+                  else if (mayYouLike.isEmpty)
+                    const _PersonalizationHintCard(
+                      message:
+                          'Play, like, and finish songs to train your personalized May You Like section.',
+                    )
+                  else
+                    Column(
+                      children: List<Widget>.generate(mayYouLike.length, (
+                        int index,
+                      ) {
+                        final LibrarySong song = mayYouLike[index];
+                        return _KineticPopularTrackTile(
+                          index: index + 1,
+                          song: song,
+                          onTap: () {
+                            if (song.isRemote) {
+                              controller.playOnlineSong(song);
+                            } else {
+                              controller.playSong(song, label: 'May you like');
+                            }
+                          },
+                        );
+                      }),
+                    ),
+                  if (jumpBackIn.isNotEmpty) ...<Widget>[
+                    const SizedBox(height: 18),
+                    _KineticSectionHeader(
+                      title: 'JUMP BACK IN',
+                      onViewAll: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (BuildContext context) =>
+                                _RecentPlaysScreen(controller: controller),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    _KineticJumpBackGrid(
+                      items: jumpBackIn,
+                      onTapItem: (LibrarySong song) {
+                        if (song.isRemote) {
+                          controller.playOnlineSong(song);
+                        } else {
+                          controller.playSong(song, label: 'Jump back in');
+                        }
+                      },
+                    ),
+                  ],
                 // Infinite feed: render remaining shelves as scroll continues.
                 ..._buildMoreShelves(
                   context: context,
@@ -273,103 +277,29 @@ class _HomeScreenState extends State<_HomeScreen> {
                   const SizedBox(height: 16),
                   const Opacity(opacity: 0.8, child: _HomeFeedSkeleton()),
                 ],
-              ],
+                ],
+              ),
             ),
           ),
           if (controller.isOffline)
             Positioned.fill(
-              child: _NoInternetOverlay(
-                onRefresh: () async {
-                  final bool online = await controller
-                      .refreshConnectivityStatus();
-                  if (online) {
-                    await controller.refreshHomeFeed(force: true);
-                  }
-                },
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _NoInternetOverlay extends StatelessWidget {
-  const _NoInternetOverlay({required this.onRefresh});
-
-  final Future<void> Function() onRefresh;
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      ignoring: false,
-      child: ColoredBox(
-        color: Colors.black.withValues(alpha: 0.68),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 320),
-            child: Card(
-              color: const Color(0xFF2A1007),
-              elevation: 16,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
-                side: const BorderSide(color: Color(0x66FF8A2A)),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    const Icon(
-                      Icons.wifi_off_rounded,
-                      color: Color(0xFFFFA25E),
-                      size: 34,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'No internet connection',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.splineSans(
-                        color: const Color(0xFFFFE8DA),
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Reconnect to load your online recommendations.',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.splineSans(
-                        color: const Color(0xFFFFC8A9),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: onRefresh,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFFFF8A2A),
-                          foregroundColor: const Color(0xFF2D1308),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        icon: const Icon(Icons.refresh_rounded),
-                        label: Text(
-                          'Refresh',
-                          style: GoogleFonts.splineSans(
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+              child: AbsorbPointer(
+                child: _NetworkUnavailableOverlay(
+                  title: 'You Are Offline',
+                  message:
+                      'Reconnect to bring back recommendations, trending shelves, and fresh online picks.',
+                  actionLabel: 'Try Again',
+                  onAction: () async {
+                    final bool online = await controller
+                        .refreshConnectivityStatus();
+                    if (online) {
+                      await controller.refreshHomeFeed(force: true);
+                    }
+                  },
                 ),
               ),
             ),
-          ),
-        ),
+        ],
       ),
     );
   }
@@ -1342,14 +1272,7 @@ class _KineticJumpBackCard extends StatelessWidget {
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(18),
-          gradient: LinearGradient(
-            colors: <Color>[
-              const Color(0xFF2A160C).withValues(alpha: 0.55),
-              const Color(0xFF0B0A0C).withValues(alpha: 0.55),
-            ],
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-          ),
+          color: const Color(0xFF2A160C).withValues(alpha: 0.70),
           border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
         ),
         child: Row(

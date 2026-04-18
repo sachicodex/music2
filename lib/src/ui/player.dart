@@ -9,16 +9,35 @@ class _PlayerScreen extends StatefulWidget {
   State<_PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends State<_PlayerScreen> {
+class _PlayerScreenState extends State<_PlayerScreen>
+    with TickerProviderStateMixin {
   static const double _kPlayerGestureVelocity = 420;
+
+  late final AnimationController _tapFeedbackController;
+  late final AnimationController _likeFeedbackController;
+  Offset _artCenter = Offset.zero;
+  Offset _tapPosition = Offset.zero;
+  Offset _likePosition = Offset.zero;
+  bool _showPlayGlyph = false;
+  List<_HeartParticleData> _heartParticles = const <_HeartParticleData>[];
 
   @override
   void initState() {
     super.initState();
+    _tapFeedbackController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    _likeFeedbackController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    );
   }
 
   @override
   void dispose() {
+    _tapFeedbackController.dispose();
+    _likeFeedbackController.dispose();
     super.dispose();
   }
 
@@ -57,13 +76,56 @@ class _PlayerScreenState extends State<_PlayerScreen> {
   }
 
   Future<void> _handleAlbumArtDoubleTap(LibrarySong song) async {
-    await HapticFeedback.mediumImpact();
+    await _triggerLikeFeedback();
     if (!song.isLiked) {
       await widget.controller.likeSong(song.id);
-      if (mounted) {
-        _showKineticSnackBar(context, 'Liked ${song.title}');
-      }
     }
+  }
+
+  Future<void> _handleAlbumArtTap() async {
+    await _triggerPlaybackFeedback();
+    unawaited(widget.controller.togglePlayback());
+  }
+
+  Future<void> _triggerPlaybackFeedback() async {
+    final OuterTuneController controller = widget.controller;
+    _tapPosition = _artCenter;
+    _showPlayGlyph =
+        !(controller.isPlaying && !controller.miniPlayerSelectionLoading);
+    _tapFeedbackController
+      ..stop()
+      ..reset()
+      ..forward();
+    unawaited(HapticFeedback.lightImpact());
+  }
+
+  Future<void> _triggerLikeFeedback() async {
+    _likePosition = _artCenter;
+    _heartParticles = _buildHeartParticles();
+    _likeFeedbackController
+      ..stop()
+      ..reset()
+      ..forward();
+    unawaited(HapticFeedback.selectionClick());
+  }
+
+  List<_HeartParticleData> _buildHeartParticles() {
+    const List<double> angles = <double>[
+      -1.95,
+      -1.55,
+      -1.15,
+      -0.75,
+      -2.3,
+      -0.35,
+    ];
+    const List<double> distances = <double>[28, 34, 31, 38, 26, 30];
+    return List<_HeartParticleData>.generate(angles.length, (int index) {
+      return _HeartParticleData(
+        angle: angles[index],
+        distance: distances[index],
+        size: index.isEven ? 6 : 4,
+      );
+    });
   }
 
   Future<void> _handlePlayerPanEnd(DragEndDetails details) async {
@@ -148,323 +210,395 @@ class _PlayerScreenState extends State<_PlayerScreen> {
               child: SafeArea(
                 child: LayoutBuilder(
                   builder: (BuildContext context, BoxConstraints constraints) {
-                    final double artSize = math.min(
-                      constraints.maxWidth - 64,
-                      328,
-                    );
+                    final double layoutScale = (constraints.maxHeight / 780)
+                        .clamp(0.68, 1.0);
+                    double scale(
+                      double value, {
+                      double? min,
+                      double? max,
+                    }) {
+                      final double scaled = value * layoutScale;
+                      return scaled.clamp(
+                        min ?? double.negativeInfinity,
+                        max ?? double.infinity,
+                      );
+                    }
 
-                    return SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          minHeight: constraints.maxHeight - 36,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: <Widget>[
-                            Row(
-                              children: <Widget>[
-                                IconButton(
-                                  onPressed: () => Navigator.of(context).pop(),
-                                  icon: const Icon(
-                                    Icons.keyboard_arrow_down_rounded,
-                                  ),
-                                  color: accent,
-                                  iconSize: 28,
+                    final double horizontalPadding = constraints.maxWidth < 360
+                        ? 12
+                        : 16;
+                    final double artSize = math.min(
+                      constraints.maxWidth - (horizontalPadding * 2),
+                      math.min(
+                        scale(328, min: 220, max: 328),
+                        constraints.maxHeight * 0.38,
+                      ),
+                    );
+                    _artCenter = Offset(artSize / 2, artSize / 2);
+
+                    return Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        horizontalPadding,
+                        scale(8, min: 6, max: 8),
+                        horizontalPadding,
+                        scale(20, min: 16, max: 28),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          Row(
+                            children: <Widget>[
+                              IconButton(
+                                onPressed: () => Navigator.of(context).pop(),
+                                icon: const Icon(
+                                  Icons.keyboard_arrow_down_rounded,
                                 ),
-                                Expanded(
-                                  child: Text(
-                                    'NOW PLAYING',
-                                    textAlign: TextAlign.center,
-                                    style: GoogleFonts.splineSans(
-                                      color: accent,
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.w700,
-                                      letterSpacing: 1.6,
-                                    ),
+                                color: accent,
+                                iconSize: scale(28, min: 24, max: 28),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  'NOW PLAYING',
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.splineSans(
+                                    color: accent,
+                                    fontSize: scale(17, min: 14, max: 17),
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: scale(1.6, min: 1.1),
                                   ),
                                 ),
-                                PopupMenuButton<String>(
-                                  color: _kSurface,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                    side: const BorderSide(
-                                      color: _kSurfaceEdge,
-                                    ),
+                              ),
+                              PopupMenuButton<String>(
+                                color: _kSurface,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  side: const BorderSide(
+                                    color: _kSurfaceEdge,
                                   ),
-                                  icon: const Icon(Icons.more_vert_rounded),
-                                  iconColor: accent,
-                                  onSelected: (String value) async {
-                                    await _handlePlayerMenuSelection(
-                                      value,
-                                      song,
-                                    );
-                                  },
-                                  itemBuilder: (BuildContext context) =>
-                                      <PopupMenuEntry<String>>[
-                                        _kineticPopupMenuItem('save', 'Save'),
-                                        _kineticPopupMenuItem(
-                                          'like',
-                                          song.isLiked
-                                              ? 'Unlike song'
-                                              : 'Like song',
-                                        ),
-                                        _kineticPopupMenuItem(
-                                          'dislike',
-                                          song.isDisliked
-                                              ? 'Remove dislike'
-                                              : 'Dislike song',
-                                        ),
-                                        _kineticPopupMenuItem(
-                                          'queue',
-                                          'Add to queue',
-                                        ),
-                                      ],
                                 ),
-                              ],
-                            ),
-                            const SizedBox(height: 26),
-                            Center(
+                                icon: const Icon(Icons.more_vert_rounded),
+                                iconColor: accent,
+                                onSelected: (String value) async {
+                                  await _handlePlayerMenuSelection(
+                                    value,
+                                    song,
+                                  );
+                                },
+                                itemBuilder: (BuildContext context) =>
+                                    <PopupMenuEntry<String>>[
+                                      _kineticPopupMenuItem('save', 'Save'),
+                                      _kineticPopupMenuItem(
+                                        'like',
+                                        song.isLiked
+                                            ? 'Unlike song'
+                                            : 'Like song',
+                                      ),
+                                      _kineticPopupMenuItem(
+                                        'dislike',
+                                        song.isDisliked
+                                            ? 'Remove dislike'
+                                            : 'Dislike song',
+                                      ),
+                                      _kineticPopupMenuItem(
+                                        'queue',
+                                        'Add to queue',
+                                      ),
+                                    ],
+                              ),
+                            ],
+                          ),
+                          Spacer(flex: layoutScale < 0.8 ? 1 : 2),
+                          Center(
+                            child: SizedBox(
+                              width: artSize,
+                              height: artSize,
                               child: GestureDetector(
                                 behavior: HitTestBehavior.opaque,
-                                onTap: controller.togglePlayback,
-                                onDoubleTap: () =>
-                                    _handleAlbumArtDoubleTap(song),
-                                child: Container(
-                                  width: artSize,
-                                  height: artSize,
+                                onTap: _handleAlbumArtTap,
+                                onDoubleTap: () => _handleAlbumArtDoubleTap(song),
+                                child: DecoratedBox(
                                   decoration: BoxDecoration(
                                     color: surface,
-                                    borderRadius: BorderRadius.circular(34),
+                                    borderRadius: BorderRadius.circular(
+                                      scale(34, min: 24, max: 34),
+                                    ),
                                     boxShadow: <BoxShadow>[
                                       BoxShadow(
                                         color: Colors.black.withValues(
                                           alpha: 0.42,
                                         ),
-                                        blurRadius: 32,
-                                        offset: const Offset(14, 18),
-                                      ),
-                                    ],
-                                  ),
-                                  clipBehavior: Clip.antiAlias,
-                                  child:
-                                      song.artworkUrl != null &&
-                                          song.artworkUrl!.trim().isNotEmpty
-                                      ? Image.network(
-                                          song.artworkUrl!,
-                                          fit: BoxFit.cover,
-                                          filterQuality: FilterQuality.high,
-                                          errorBuilder:
-                                              (
-                                                BuildContext context,
-                                                Object error,
-                                                StackTrace? stackTrace,
-                                              ) {
-                                                return const _PlayerArtFallback();
-                                              },
-                                        )
-                                      : const _PlayerArtFallback(),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 34),
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: <Widget>[
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: <Widget>[
-                                      Text(
-                                        song.title,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: GoogleFonts.splineSans(
-                                          color: textPrimary,
-                                          fontSize: 33,
-                                          fontWeight: FontWeight.w700,
-                                          letterSpacing: -1.6,
-                                          height: 0.96,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        song.artist,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: GoogleFonts.splineSans(
-                                          color: textSecondary,
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w500,
+                                        blurRadius: scale(32, min: 18, max: 32),
+                                        offset: Offset(
+                                          scale(14, min: 8, max: 14),
+                                          scale(18, min: 10, max: 18),
                                         ),
                                       ),
                                     ],
                                   ),
-                                ),
-                                const SizedBox(width: 16),
-                                Padding(
-                                  padding: const EdgeInsets.only(bottom: 6),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: <Widget>[
-                                      IconButton(
-                                        onPressed: () =>
-                                            controller.likeSong(song.id),
-                                        icon: Icon(
-                                          song.isLiked
-                                              ? Icons.thumb_up_rounded
-                                              : Icons.thumb_up_outlined,
-                                          color: accent,
-                                          size: 28,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 4),
-                                      IconButton(
-                                        onPressed: () =>
-                                            controller.dislikeSong(song.id),
-                                        icon: Icon(
-                                          song.isDisliked
-                                              ? Icons.thumb_down_rounded
-                                              : Icons.thumb_down_outlined,
-                                          color: song.isDisliked
-                                              ? Colors.redAccent
-                                              : accent,
-                                          size: 28,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 20),
-                            SliderTheme(
-                              data: SliderTheme.of(context).copyWith(
-                                trackHeight: 6,
-                                activeTrackColor: accent,
-                                inactiveTrackColor: trackInactive,
-                                thumbColor: accent,
-                                overlayShape: SliderComponentShape.noOverlay,
-                                thumbShape: const RoundSliderThumbShape(
-                                  enabledThumbRadius: 0,
-                                ),
-                              ),
-                              child: Slider(
-                                value: sliderValue,
-                                min: 0,
-                                max: sliderMax,
-                                onChanged: (double value) {
-                                  controller.seek(
-                                    Duration(milliseconds: value.round()),
-                                  );
-                                },
-                              ),
-                            ),
-                            const SizedBox(height: 15),
-                            Row(
-                              children: <Widget>[
-                                Text(
-                                  _formatClock(controller.position),
-                                  style: GoogleFonts.splineSans(
-                                    color: textPrimary.withValues(alpha: 0.86),
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                const Spacer(),
-                                Text(
-                                  _formatClock(duration),
-                                  style: GoogleFonts.splineSans(
-                                    color: textPrimary.withValues(alpha: 0.86),
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 26),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: <Widget>[
-                                _PlayerIconButton(
-                                  icon: Icons.shuffle_rounded,
-                                  onPressed: controller.toggleShuffle,
-                                  color: controller.isShuffleEnabled
-                                      ? accent
-                                      : textPrimary.withValues(alpha: 0.6),
-                                ),
-                                _PlayerIconButton(
-                                  icon: Icons.skip_previous_rounded,
-                                  onPressed: controller.previousTrack,
-                                  color: textPrimary,
-                                  size: 34,
-                                ),
-                                GestureDetector(
-                                  onTap: controller.togglePlayback,
-                                  child: Container(
-                                    width: 70,
-                                    height: 70,
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(24),
-                                      color: accent,
-                                      boxShadow: <BoxShadow>[
-                                        BoxShadow(
-                                          color: accent.withValues(alpha: 0.38),
-                                          blurRadius: 28,
-                                          spreadRadius: 1,
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(
+                                      scale(34, min: 24, max: 34),
+                                    ),
+                                    child: Stack(
+                                      fit: StackFit.expand,
+                                      children: <Widget>[
+                                        if (song.artworkUrl != null &&
+                                            song.artworkUrl!.trim().isNotEmpty)
+                                          Image.network(
+                                            song.artworkUrl!,
+                                            fit: BoxFit.cover,
+                                            filterQuality: FilterQuality.high,
+                                            errorBuilder:
+                                                (
+                                                  BuildContext context,
+                                                  Object error,
+                                                  StackTrace? stackTrace,
+                                                ) {
+                                                  return const _PlayerArtFallback();
+                                                },
+                                          )
+                                        else
+                                          const _PlayerArtFallback(),
+                                        IgnorePointer(
+                                          child: _PlayerArtInteractionOverlay(
+                                            tapController: _tapFeedbackController,
+                                            likeController:
+                                                _likeFeedbackController,
+                                            tapPosition: _tapPosition,
+                                            likePosition: _likePosition,
+                                            showPlayGlyph: _showPlayGlyph,
+                                            isLiked: song.isLiked,
+                                            particles: _heartParticles,
+                                          ),
                                         ),
                                       ],
                                     ),
-                                    child: isPlayerLoading
-                                        ? const Center(
-                                            child: SizedBox(
-                                              width: 25,
-                                              height: 25,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 3.2,
-                                                valueColor:
-                                                    AlwaysStoppedAnimation<
-                                                      Color
-                                                    >(Colors.black),
-                                              ),
-                                            ),
-                                          )
-                                        : Icon(
-                                            showPauseIcon
-                                                ? Icons.pause_rounded
-                                                : Icons.play_arrow_rounded,
-                                            size: showPauseIcon ? 36 : 42,
-                                            color: Colors.black,
-                                          ),
                                   ),
                                 ),
-                                _PlayerIconButton(
-                                  icon: Icons.skip_next_rounded,
-                                  onPressed: controller.nextTrack,
-                                  color: textPrimary,
-                                  size: 34,
-                                ),
-                                _PlayerIconButton(
-                                  icon: _repeatIcon(controller.repeatMode),
-                                  onPressed: controller.cycleRepeatMode,
-                                  color: textPrimary.withValues(alpha: 0.6),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 20),
-                            Center(
-                              child: IconButton(
-                                onPressed: _showQueueSheet,
-                                icon: const Icon(
-                                  Icons.keyboard_arrow_up_rounded,
-                                ),
-                                color: textPrimary.withValues(alpha: 0.3),
-                                iconSize: 34,
                               ),
                             ),
-                          ],
-                        ),
+                          ),
+                          Spacer(flex: layoutScale < 0.8 ? 1 : 2),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: <Widget>[
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: <Widget>[
+                                    Text(
+                                      song.title,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.splineSans(
+                                        color: textPrimary,
+                                        fontSize: scale(33, min: 24, max: 33),
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: -scale(
+                                          1.6,
+                                          min: 1.0,
+                                          max: 1.6,
+                                        ),
+                                        height: 0.96,
+                                      ),
+                                    ),
+                                    SizedBox(height: scale(8, min: 4, max: 8)),
+                                    Text(
+                                      song.artist,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.splineSans(
+                                        color: textSecondary,
+                                        fontSize: scale(16, min: 13, max: 16),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              SizedBox(width: scale(16, min: 8, max: 16)),
+                              Padding(
+                                padding: EdgeInsets.only(
+                                  bottom: scale(6, min: 2, max: 6),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: <Widget>[
+                                    IconButton(
+                                      onPressed: () async {
+                                        if (!song.isLiked) {
+                                          await _triggerLikeFeedback();
+                                        }
+                                        await controller.likeSong(song.id);
+                                      },
+                                      icon: Icon(
+                                        song.isLiked
+                                            ? Icons.thumb_up_rounded
+                                            : Icons.thumb_up_outlined,
+                                        color: accent,
+                                        size: scale(28, min: 22, max: 28),
+                                      ),
+                                    ),
+                                    SizedBox(width: scale(4, min: 0, max: 4)),
+                                    IconButton(
+                                      onPressed: () =>
+                                          controller.dislikeSong(song.id),
+                                      icon: Icon(
+                                        song.isDisliked
+                                            ? Icons.thumb_down_rounded
+                                            : Icons.thumb_down_outlined,
+                                        color: song.isDisliked
+                                            ? Colors.redAccent
+                                            : accent,
+                                        size: scale(28, min: 22, max: 28),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: scale(14, min: 10, max: 20)),
+                          SliderTheme(
+                            data: SliderTheme.of(context).copyWith(
+                              trackHeight: scale(6, min: 4, max: 6),
+                              activeTrackColor: accent,
+                              inactiveTrackColor: trackInactive,
+                              thumbColor: accent,
+                              overlayShape: SliderComponentShape.noOverlay,
+                              thumbShape: const RoundSliderThumbShape(
+                                enabledThumbRadius: 0,
+                              ),
+                            ),
+                            child: Slider(
+                              value: sliderValue,
+                              min: 0,
+                              max: sliderMax,
+                              onChanged: (double value) {
+                                controller.seek(
+                                  Duration(milliseconds: value.round()),
+                                );
+                              },
+                            ),
+                          ),
+                          SizedBox(height: scale(10, min: 6, max: 15)),
+                          Row(
+                            children: <Widget>[
+                              Text(
+                                _formatClock(controller.position),
+                                style: GoogleFonts.splineSans(
+                                  color: textPrimary.withValues(alpha: 0.86),
+                                  fontSize: scale(14, min: 12, max: 14),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const Spacer(),
+                              Text(
+                                _formatClock(duration),
+                                style: GoogleFonts.splineSans(
+                                  color: textPrimary.withValues(alpha: 0.86),
+                                  fontSize: scale(14, min: 12, max: 14),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Spacer(flex: layoutScale < 0.8 ? 1 : 2),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: <Widget>[
+                              _PlayerIconButton(
+                                icon: Icons.shuffle_rounded,
+                                onPressed: controller.toggleShuffle,
+                                color: controller.isShuffleEnabled
+                                    ? accent
+                                    : textPrimary.withValues(alpha: 0.6),
+                                size: scale(28, min: 24, max: 28),
+                              ),
+                              _PlayerIconButton(
+                                icon: Icons.skip_previous_rounded,
+                                onPressed: controller.previousTrack,
+                                color: textPrimary,
+                                size: scale(34, min: 28, max: 34),
+                              ),
+                              GestureDetector(
+                                onTap: () async {
+                                  await _triggerPlaybackFeedback();
+                                  unawaited(controller.togglePlayback());
+                                },
+                                child: Container(
+                                  width: scale(70, min: 58, max: 70),
+                                  height: scale(70, min: 58, max: 70),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(
+                                      scale(24, min: 18, max: 24),
+                                    ),
+                                    color: accent,
+                                    boxShadow: <BoxShadow>[
+                                      BoxShadow(
+                                        color: accent.withValues(alpha: 0.38),
+                                        blurRadius: scale(
+                                          28,
+                                          min: 18,
+                                          max: 28,
+                                        ),
+                                        spreadRadius: 1,
+                                      ),
+                                    ],
+                                  ),
+                                  child: isPlayerLoading
+                                      ? Center(
+                                          child: SizedBox(
+                                            width: scale(25, min: 20, max: 25),
+                                            height: scale(
+                                              25,
+                                              min: 20,
+                                              max: 25,
+                                            ),
+                                            child: const CircularProgressIndicator(
+                                              strokeWidth: 3.2,
+                                              valueColor:
+                                                  AlwaysStoppedAnimation<Color>(
+                                                    Colors.black,
+                                                  ),
+                                            ),
+                                          ),
+                                        )
+                                      : Icon(
+                                          showPauseIcon
+                                              ? Icons.pause_rounded
+                                              : Icons.play_arrow_rounded,
+                                          size: showPauseIcon
+                                              ? scale(36, min: 30, max: 36)
+                                              : scale(42, min: 34, max: 42),
+                                          color: Colors.black,
+                                        ),
+                                ),
+                              ),
+                              _PlayerIconButton(
+                                icon: Icons.skip_next_rounded,
+                                onPressed: controller.nextTrack,
+                                color: textPrimary,
+                                size: scale(34, min: 28, max: 34),
+                              ),
+                              _PlayerIconButton(
+                                icon: _repeatIcon(controller.repeatMode),
+                                onPressed: controller.cycleRepeatMode,
+                                color: textPrimary.withValues(alpha: 0.6),
+                                size: scale(28, min: 24, max: 28),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: scale(10, min: 6, max: 20)),
+                          Center(
+                            child: IconButton(
+                              onPressed: _showQueueSheet,
+                              icon: const Icon(Icons.keyboard_arrow_up_rounded),
+                              color: textPrimary.withValues(alpha: 0.3),
+                              iconSize: scale(34, min: 28, max: 34),
+                            ),
+                          ),
+                        ],
                       ),
                     );
                   },
@@ -483,26 +617,244 @@ class _PlayerArtFallback extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: RadialGradient(
-          colors: <Color>[
-            Color(0xFF43100B),
-            Color(0xFF120607),
-            Color(0xFF070508),
+    return const _ArtworkFallbackSurface(
+      colors: <Color>[
+        Color(0xFF43100B),
+        Color(0xFF120607),
+        Color(0xFF070508),
+      ],
+    );
+  }
+}
+
+class _PlayerArtInteractionOverlay extends StatelessWidget {
+  const _PlayerArtInteractionOverlay({
+    required this.tapController,
+    required this.likeController,
+    required this.tapPosition,
+    required this.likePosition,
+    required this.showPlayGlyph,
+    required this.isLiked,
+    required this.particles,
+  });
+
+  final AnimationController tapController;
+  final AnimationController likeController;
+  final Offset tapPosition;
+  final Offset likePosition;
+  final bool showPlayGlyph;
+  final bool isLiked;
+  final List<_HeartParticleData> particles;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: Listenable.merge(<Listenable>[tapController, likeController]),
+      builder: (BuildContext context, _) {
+        final double tapValue = tapController.value;
+        final double likeValue = likeController.value;
+        final double tapOpacity = tapValue <= 0.6
+            ? Curves.easeOutCubic.transform(tapValue / 0.6)
+            : 1 - Curves.easeOutCubic.transform((tapValue - 0.6) / 0.4);
+        final double iconScale =
+            0.86 + (0.14 * Curves.easeOutCubic.transform(tapValue));
+        final double rippleScale =
+            0.35 + (1.55 * Curves.easeOutQuart.transform(tapValue));
+        final double likeFade = 1 - Curves.easeOutCubic.transform(likeValue);
+        final double veilOpacity = math.max(
+          tapValue > 0 ? 0.28 * tapOpacity.clamp(0.0, 1.0) : 0,
+          likeValue > 0 ? 0.32 * likeFade.clamp(0.0, 1.0) : 0,
+        );
+        final double heartScale = TweenSequence<double>(<TweenSequenceItem<double>>[
+          TweenSequenceItem<double>(
+            tween: Tween<double>(begin: 0.72, end: 1.12).chain(
+              CurveTween(curve: Curves.easeOutBack),
+            ),
+            weight: 58,
+          ),
+          TweenSequenceItem<double>(
+            tween: Tween<double>(begin: 1.12, end: 1.0).chain(
+              CurveTween(curve: Curves.easeOutCubic),
+            ),
+            weight: 42,
+          ),
+        ]).transform(likeValue.clamp(0.0, 1.0));
+
+        return Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            if (veilOpacity > 0)
+              Opacity(
+                opacity: veilOpacity,
+                child: const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: RadialGradient(
+                      colors: <Color>[
+                        Color(0xDD110907),
+                        Color(0xF0120806),
+                      ],
+                      radius: 0.95,
+                    ),
+                  ),
+                ),
+              ),
+            if (tapValue > 0)
+              Positioned(
+                left: tapPosition.dx - 26,
+                top: tapPosition.dy - 26,
+                child: Opacity(
+                  opacity: 0.14 * tapOpacity.clamp(0.0, 1.0),
+                  child: Transform.scale(
+                    scale: rippleScale,
+                    child: Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFFFFF1E6),
+                        boxShadow: <BoxShadow>[
+                          BoxShadow(
+                            color: const Color(0xFFFFB071).withValues(
+                              alpha: 0.34,
+                            ),
+                            blurRadius: 26,
+                            spreadRadius: 4,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            if (tapValue > 0)
+              Center(
+                child: Opacity(
+                  opacity: 0.92 * tapOpacity.clamp(0.0, 1.0),
+                  child: Transform.scale(
+                    scale: iconScale,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: <Widget>[
+                        Container(
+                          width: 128,
+                          height: 128,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: RadialGradient(
+                              colors: <Color>[
+                                const Color(0xFFFF9E5C).withValues(alpha: 0.42),
+                                Colors.transparent,
+                              ],
+                            ),
+                          ),
+                        ),
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.24),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.12),
+                            ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Icon(
+                              showPlayGlyph
+                                  ? Icons.play_arrow_rounded
+                                  : Icons.pause_rounded,
+                              color: const Color(0xFFFFF6F0),
+                              size: 54,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            if (likeValue > 0)
+              ...particles.map((_HeartParticleData particle) {
+                final double distance =
+                    particle.distance * Curves.easeOutQuart.transform(likeValue);
+                return Positioned(
+                  left:
+                      likePosition.dx +
+                      (math.cos(particle.angle) * distance) -
+                      (particle.size / 2),
+                  top:
+                      likePosition.dy +
+                      (math.sin(particle.angle) * distance) -
+                      (particle.size / 2),
+                  child: Opacity(
+                    opacity: (1 - Curves.easeIn.transform(likeValue)).clamp(
+                      0.0,
+                      1.0,
+                    ),
+                    child: Container(
+                      width: particle.size,
+                      height: particle.size,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFC19A).withValues(alpha: 0.88),
+                        shape: BoxShape.circle,
+                        boxShadow: <BoxShadow>[
+                          BoxShadow(
+                            color: const Color(0xFFFF9C74).withValues(
+                              alpha: 0.34,
+                            ),
+                            blurRadius: 12,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            if (likeValue > 0)
+              Positioned(
+                left: likePosition.dx - 34,
+                top: likePosition.dy - 34,
+                child: Opacity(
+                  opacity: likeFade.clamp(0.0, 1.0),
+                  child: Transform.scale(
+                    scale: heartScale,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: <Widget>[
+                        Container(
+                          width: 132,
+                          height: 132,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: RadialGradient(
+                              colors: <Color>[
+                                const Color(0xFFFF7F8C).withValues(alpha: 0.30),
+                                Colors.transparent,
+                              ],
+                            ),
+                          ),
+                        ),
+                        Icon(
+                          isLiked || likeValue >= 0.16
+                              ? Icons.favorite_rounded
+                              : Icons.favorite_border,
+                          color: Color.lerp(
+                            Colors.white,
+                            const Color(0xFFFF7F8C),
+                            Curves.easeOutCubic.transform(
+                              (likeValue / 0.35).clamp(0.0, 1.0),
+                            ),
+                          ),
+                          size: 68,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
           ],
-          stops: <double>[0.0, 0.56, 1.0],
-          center: Alignment(0, -0.25),
-          radius: 1.05,
-        ),
-      ),
-      child: Center(
-        child: Icon(
-          Icons.music_note_rounded,
-          size: 72,
-          color: Colors.white.withValues(alpha: 0.2),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -1238,12 +1590,14 @@ class _KineticPlaylistScreen extends StatefulWidget {
     required this.title,
     required this.songs,
     this.playlist,
+    this.localPlaybackOnly = false,
   });
 
   final OuterTuneController controller;
   final String title;
   final List<LibrarySong> songs;
   final UserPlaylist? playlist;
+  final bool localPlaybackOnly;
 
   @override
   State<_KineticPlaylistScreen> createState() => _KineticPlaylistScreenState();
@@ -1344,8 +1698,14 @@ class _KineticPlaylistScreenState extends State<_KineticPlaylistScreen> {
               ),
             ] else ...<Widget>[
               IconButton(
-                onPressed: () =>
-                    widget.controller.playSongs(songs, label: title),
+                onPressed: () => widget.controller.playSongs(
+                  widget.localPlaybackOnly
+                      ? songs
+                            .where((LibrarySong song) => !song.isRemote)
+                            .toList(growable: false)
+                      : songs,
+                  label: title,
+                ),
                 icon: const Icon(Icons.play_arrow_rounded, color: _kAccent),
               ),
               if (playlist != null)
@@ -1397,6 +1757,15 @@ class _KineticPlaylistScreenState extends State<_KineticPlaylistScreen> {
                   onLongPress: () => _toggleSongSelection(song.id),
                   onTap: _selectionMode
                       ? () => _toggleSongSelection(song.id)
+                      : widget.localPlaybackOnly
+                      ? () {
+                          if (!song.isRemote) {
+                            widget.controller.playSong(
+                              song,
+                              label: song.sourceLabel,
+                            );
+                          }
+                        }
                       : null,
                   enableQueueSwipe: !_selectionMode,
                   enablePlaylistRemovalSwipe: !_selectionMode,
@@ -1641,6 +2010,92 @@ class _LibraryFeatureCard extends StatelessWidget {
   }
 }
 
+class _LibraryBlockedCard extends StatelessWidget {
+  const _LibraryBlockedCard({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 164,
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        gradient: LinearGradient(
+          colors: <Color>[
+            const Color(0xFF29120D),
+            const Color(0xFF1A0A08),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Stack(
+        children: <Widget>[
+          Positioned(
+            top: 0,
+            left: 0,
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xFFFF8A2A).withValues(alpha: 0.16),
+              ),
+              child: Icon(icon, color: const Color(0xFFFFC79F), size: 24),
+            ),
+          ),
+          Positioned(
+            right: -18,
+            top: -10,
+            child: Icon(
+              Icons.lock_rounded,
+              size: 110,
+              color: Colors.white.withValues(alpha: 0.05),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  title,
+                  style: GoogleFonts.splineSans(
+                    color: const Color(0xFFF6E3D2),
+                    fontSize: 23,
+                    fontWeight: FontWeight.w700,
+                    height: 0.98,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  subtitle,
+                  style: GoogleFonts.splineSans(
+                    color: const Color(0xFFD6B099),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _LibraryEmptyPlaylistCard extends StatelessWidget {
   const _LibraryEmptyPlaylistCard({required this.onCreate});
 
@@ -1697,9 +2152,12 @@ class _LibraryPlaylistRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final List<LibrarySong> songs = controller.songsForPlaylist(playlist);
     final LibrarySong? leadSong = songs.isEmpty ? null : songs.first;
+    final bool blocked = controller.isOffline;
 
     return InkWell(
-      onTap: () {
+      onTap: blocked
+          ? null
+          : () {
         Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (BuildContext context) => _KineticPlaylistScreen(
@@ -1773,8 +2231,8 @@ class _LibraryPlaylistRow extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Icon(
-            Icons.chevron_right_rounded,
-            color: const Color(0xFF7E4B2B),
+            blocked ? Icons.cloud_off_rounded : Icons.chevron_right_rounded,
+            color: blocked ? const Color(0xFFFF9B54) : const Color(0xFF7E4B2B),
             size: 24,
           ),
         ],
@@ -2489,17 +2947,80 @@ class _MiniArtworkFallback extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const DecoratedBox(
+    return const _ArtworkFallbackSurface(
+      colors: <Color>[Color(0xFF1F8E96), Color(0xFF23516E)],
+    );
+  }
+}
+
+class _ArtworkFallbackSurface extends StatelessWidget {
+  const _ArtworkFallbackSurface({required this.colors});
+
+  final List<Color> colors;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: <Color>[Color(0xFF1F8E96), Color(0xFF23516E)],
+          colors: colors,
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
       ),
-      child: Icon(Icons.album_rounded, color: Color(0xFFE4F3EE), size: 34),
+      child: Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          Positioned(
+            right: -12,
+            top: -10,
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.10),
+              ),
+            ),
+          ),
+          Positioned(
+            left: -10,
+            bottom: -12,
+            child: Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.black.withValues(alpha: 0.12),
+              ),
+            ),
+          ),
+          Center(
+            child: Container(
+              width: 18,
+              height: 18,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.18),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
+}
+
+class _HeartParticleData {
+  const _HeartParticleData({
+    required this.angle,
+    required this.distance,
+    required this.size,
+  });
+
+  final double angle;
+  final double distance;
+  final double size;
 }
 
 class _Artwork extends StatelessWidget {
@@ -2507,20 +3028,21 @@ class _Artwork extends StatelessWidget {
     required this.seed,
     required this.title,
     required this.size,
-    this.icon = Icons.music_note_rounded,
+    this.icon,
     this.imageUrl,
   });
 
   final String seed;
   final String title;
   final double size;
-  final IconData icon;
+  final IconData? icon;
   final String? imageUrl;
 
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final List<Color> colors = _gradientFor(seed, scheme);
+    final bool hasArtwork = imageUrl != null && imageUrl!.trim().isNotEmpty;
 
     return Container(
       width: size,
@@ -2536,7 +3058,7 @@ class _Artwork extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: Stack(
         children: <Widget>[
-          if (imageUrl != null)
+          if (hasArtwork)
             Positioned.fill(
               child: Image.network(
                 imageUrl!,
@@ -2550,31 +3072,16 @@ class _Artwork extends StatelessWidget {
                     ) => const SizedBox.shrink(),
               ),
             ),
-          Align(
-            alignment: Alignment.center,
-            child: Icon(
-              icon,
-              size: size * 0.36,
-              color: colors.last.withValues(alpha: 0.9),
-            ),
-          ),
-          Positioned(
-            left: 12,
-            right: 12,
-            bottom: 10,
-            child: Text(
-              _initials(title),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color:
-                    ThemeData.estimateBrightnessForColor(colors.first) ==
-                        Brightness.dark
-                    ? Colors.white
-                    : Colors.black87,
+          if (!hasArtwork) _ArtworkFallbackSurface(colors: colors),
+          if (!hasArtwork && icon != null)
+            Align(
+              alignment: Alignment.center,
+              child: Icon(
+                icon,
+                size: size * 0.34,
+                color: Colors.white.withValues(alpha: 0.82),
               ),
             ),
-          ),
         ],
       ),
     );

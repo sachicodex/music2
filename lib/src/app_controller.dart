@@ -99,6 +99,9 @@ class OuterTuneController extends ChangeNotifier {
   PlaylistMode _repeatMode = PlaylistMode.none;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
+  double _volume = 100.0;
+  bool _crossfadeTransitionInFlight = false;
+  String? _crossfadePrimedSongId;
   LibrarySong? _pendingSelectionSong;
   bool _hasPublishedPlaybackNotification = false;
 
@@ -461,6 +464,17 @@ class OuterTuneController extends ChangeNotifier {
       _onlineError = null;
       _onlineLoading = false;
       _onlineQuery = '';
+      _onlineResultLimit = 0;
+      _onlineHasMore = false;
+      notifyListeners();
+      return;
+    }
+
+    if (_isOffline) {
+      _onlineResults = <LibrarySong>[];
+      _onlineError = 'Internet is unavailable right now.';
+      _onlineLoading = false;
+      _onlineQuery = trimmed;
       _onlineResultLimit = 0;
       _onlineHasMore = false;
       notifyListeners();
@@ -1354,19 +1368,11 @@ class OuterTuneController extends ChangeNotifier {
   }
 
   String _regionLabelFromCountryCode(String countryCode) {
-    return switch (countryCode) {
-      'LK' => 'Sri Lanka',
-      'IN' => 'India',
-      'PK' => 'Pakistan',
-      'BD' => 'Bangladesh',
-      'US' => 'United States',
-      'GB' => 'United Kingdom',
-      'CA' => 'Canada',
-      'AU' => 'Australia',
-      'JP' => 'Japan',
-      'KR' => 'South Korea',
-      _ => countryCode.isEmpty ? 'Your region' : countryCode,
-    };
+    final String normalized = _normalizeCountryCode(countryCode);
+    final AppRegion? matched = kAppRegions.firstWhereOrNull(
+      (AppRegion region) => region.countryCode == normalized,
+    );
+    return matched?.label ?? (normalized.isEmpty ? 'Your region' : normalized);
   }
 
   String _normalizeCountryCode(String? value) {
@@ -3023,6 +3029,11 @@ class OuterTuneController extends ChangeNotifier {
   }
 
   Future<void> playOnlineSong(LibrarySong song) async {
+    if (_isOffline) {
+      _errorMessage = 'Internet is unavailable right now.';
+      notifyListeners();
+      return;
+    }
     _pendingSelectionSong = song;
     notifyListeners();
     try {
@@ -3056,6 +3067,7 @@ class OuterTuneController extends ChangeNotifier {
         _position = value as Duration;
         _updateActivePlaybackProgress();
         _syncQueueIndexFromPlayerState();
+        unawaited(_maybeRunAutomaticCrossfade());
         _publishNotificationState();
         notifyListeners();
       }),
@@ -3067,8 +3079,18 @@ class OuterTuneController extends ChangeNotifier {
           return;
         }
         _duration = value as Duration;
+        _crossfadePrimedSongId = null;
         _publishNotificationState();
         notifyListeners();
+      }),
+    );
+
+    _subscriptions.add(
+      _player.stream.volume.listen((dynamic value) {
+        if (_isDisposing || _isDisposed) {
+          return;
+        }
+        _volume = value as double;
       }),
     );
 
@@ -3121,6 +3143,7 @@ class OuterTuneController extends ChangeNotifier {
         if (song != null && (pending == null || pending.id == song.id)) {
           _pendingSelectionSong = null;
         }
+        _crossfadePrimedSongId = null;
         if (song != null && song.id != _lastTrackedSongId) {
           _trackPlayback(song.id);
         }
@@ -3675,7 +3698,12 @@ class OuterTuneController extends ChangeNotifier {
     if (index < 0 || index >= _queueSongIds.length) {
       return;
     }
-    await _player.jump(index);
+    if (settings.crossfadeSeconds > 0 && _isPlaying) {
+      await _crossfadeTo(() => _player.jump(index));
+    } else {
+      await _player.jump(index);
+      await _ensurePlayerVolume();
+    }
     _queueIndex = index;
     notifyListeners();
   }
@@ -3730,11 +3758,21 @@ class OuterTuneController extends ChangeNotifier {
   }
 
   Future<void> nextTrack() async {
+    if (settings.crossfadeSeconds > 0 && _isPlaying) {
+      await _crossfadeTo(_player.next);
+      return;
+    }
     await _player.next();
+    await _ensurePlayerVolume();
   }
 
   Future<void> previousTrack() async {
+    if (settings.crossfadeSeconds > 0 && _isPlaying) {
+      await _crossfadeTo(_player.previous);
+      return;
+    }
     await _player.previous();
+    await _ensurePlayerVolume();
   }
 
   Future<void> seek(Duration target) async {
@@ -3792,6 +3830,10 @@ class OuterTuneController extends ChangeNotifier {
     const Set<int> allowed = <int>{0, 3, 5, 7};
     final int normalized = allowed.contains(seconds) ? seconds : 0;
     _settings = _settings.copyWith(crossfadeSeconds: normalized);
+    if (normalized == 0) {
+      _crossfadePrimedSongId = null;
+      await _ensurePlayerVolume();
+    }
     await _saveSnapshot();
     notifyListeners();
   }
@@ -3800,6 +3842,86 @@ class OuterTuneController extends ChangeNotifier {
     _settings = _settings.copyWith(gaplessPlayback: value);
     await _saveSnapshot();
     notifyListeners();
+  }
+
+  Future<void> _maybeRunAutomaticCrossfade() async {
+    if (_crossfadeTransitionInFlight ||
+        !_isPlaying ||
+        settings.crossfadeSeconds <= 0 ||
+        _duration <= Duration.zero) {
+      return;
+    }
+    final LibrarySong? song = currentSong;
+    if (song == null) {
+      return;
+    }
+    final Duration fadeWindow = Duration(seconds: settings.crossfadeSeconds);
+    if (_duration <= fadeWindow + const Duration(milliseconds: 250)) {
+      return;
+    }
+    final Duration remaining = _duration - _position;
+    if (remaining > fadeWindow) {
+      _crossfadePrimedSongId = null;
+      return;
+    }
+    if (_crossfadePrimedSongId == song.id) {
+      return;
+    }
+    final bool hasNextTrack =
+        _queueSongIds.length > 1 &&
+        (_queueIndex < _queueSongIds.length - 1 ||
+            _repeatMode == PlaylistMode.loop ||
+            _repeatMode == PlaylistMode.single);
+    if (!hasNextTrack) {
+      return;
+    }
+    _crossfadePrimedSongId = song.id;
+    await _crossfadeTo(_player.next);
+  }
+
+  Future<void> _crossfadeTo(Future<void> Function() action) async {
+    if (_crossfadeTransitionInFlight) {
+      return;
+    }
+    _crossfadeTransitionInFlight = true;
+    final double targetVolume = _volume.clamp(0.0, 100.0);
+    final int fadeMs = math.max(
+      220,
+      settings.crossfadeSeconds <= 0 ? 320 : settings.crossfadeSeconds * 350,
+    );
+    try {
+      await _fadePlayerVolume(from: targetVolume, to: 0, durationMs: fadeMs);
+      await action();
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+      await _fadePlayerVolume(from: 0, to: targetVolume, durationMs: fadeMs);
+    } finally {
+      _crossfadeTransitionInFlight = false;
+      _crossfadePrimedSongId = null;
+    }
+  }
+
+  Future<void> _ensurePlayerVolume() async {
+    if ((_volume - 100.0).abs() < 0.1) {
+      return;
+    }
+    await _player.setVolume(100.0);
+  }
+
+  Future<void> _fadePlayerVolume({
+    required double from,
+    required double to,
+    required int durationMs,
+  }) async {
+    final int steps = durationMs <= 300 ? 6 : 10;
+    for (int index = 0; index <= steps; index += 1) {
+      final double t = index / steps;
+      final double eased = Curves.easeInOut.transform(t);
+      final double value = from + ((to - from) * eased);
+      await _player.setVolume(value.clamp(0.0, 100.0));
+      if (index < steps) {
+        await Future<void>.delayed(Duration(milliseconds: durationMs ~/ steps));
+      }
+    }
   }
 
   Future<void> updateYtMusicAuth(String rawInput) async {

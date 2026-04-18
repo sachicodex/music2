@@ -77,6 +77,7 @@ class _SearchHistoryChip extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: const Color(0xFFFFE7DB),
                   fontWeight: FontWeight.w700,
+                  fontSize: 13,
                 ),
               ),
               const SizedBox(width: 8),
@@ -84,7 +85,7 @@ class _SearchHistoryChip extends StatelessWidget {
                 onTap: onRemove,
                 child: const Icon(
                   Icons.close_rounded,
-                  size: 16,
+                  size: 18,
                   color: Color(0xFFC99173),
                 ),
               ),
@@ -238,11 +239,8 @@ class _SearchGenreThumbnailFallback extends StatelessWidget {
           end: Alignment.bottomRight,
         ),
       ),
-      child: Icon(
-        Icons.music_note_rounded,
-        color: Colors.white.withValues(alpha: 0.92),
-        size: size * 0.42,
-      ),
+      clipBehavior: Clip.antiAlias,
+      child: _ArtworkFallbackSurface(colors: shelf.colors),
     );
   }
 }
@@ -564,197 +562,216 @@ class _SearchScreenState extends State<_SearchScreen> {
           end: Alignment.bottomCenter,
         ),
       ),
-      child: ListView(
-        controller: _scrollController,
-        padding: _kScreenContentPadding,
+      child: Stack(
         children: <Widget>[
-          const _SearchPulseHeader(),
-          const SizedBox(height: 18),
-          TextField(
-            controller: _searchController,
-            onChanged: _runSearch,
-            onSubmitted: _rememberSearch,
-            style: const TextStyle(
-              color: Color(0xFFFFDFC8),
-              fontWeight: FontWeight.w600,
-            ),
-            decoration: InputDecoration(
-              prefixIcon: const Icon(
-                Icons.search_rounded,
-                color: Color(0xFFD8A68C),
+          SafeArea(
+            bottom: false,
+            child: ListView(
+              controller: _scrollController,
+              padding: _rootScreenContentPadding(
+                context,
+                hasMiniPlayer: widget.controller.miniPlayerSong != null,
               ),
-              suffixIcon: IconButton(
-                onPressed: _showUrlSheet,
-                icon: const Icon(Icons.link_rounded, color: Color(0xFFFF8A2A)),
-              ),
-              hintText: 'Artists, songs, or podcasts',
-              hintStyle: const TextStyle(color: Color(0xFFC99173)),
-              filled: true,
-              fillColor: const Color(0xFF5A2904),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(18),
-                borderSide: BorderSide.none,
-              ),
-              contentPadding: const EdgeInsets.symmetric(vertical: 18),
-            ),
-          ),
-          const SizedBox(height: 22),
-          if (_recentSearches.isNotEmpty) ...<Widget>[
-            const _SearchSectionLabel('RECENTLY SEARCHED'),
-            const SizedBox(height: 14),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: _recentSearches.map((String term) {
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 10),
-                    child: _SearchHistoryChip(
-                      label: term,
-                      onTap: () => _applySearch(term),
-                      onRemove: () {
-                        setState(() => _recentSearches.remove(term));
-                      },
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
-            const SizedBox(height: 28),
-          ],
-          if (query.isEmpty) ...<Widget>[
-            Text(
-              'Browse All',
-              style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                color: const Color(0xFFFFE7DB),
-                fontWeight: FontWeight.w900,
-              ),
-            ),
+              children: <Widget>[
+            const _SearchPulseHeader(),
             const SizedBox(height: 18),
-            LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints constraints) {
-                final double width = constraints.maxWidth;
-                final double smallWidth = ((width - 14) / 2).clamp(
-                  120.0,
-                  260.0,
-                );
-                final _SearchGenreShelf large = browseShelves.last;
-                final List<_SearchGenreShelf> small = browseShelves
-                    .take(browseShelves.length - 1)
-                    .toList(growable: false);
-                return Wrap(
-                  spacing: 14,
-                  runSpacing: 16,
-                  children: <Widget>[
-                    ...small.map(
-                      (_SearchGenreShelf shelf) => SizedBox(
-                        width: smallWidth,
+            TextField(
+              controller: _searchController,
+              onChanged: _runSearch,
+              onSubmitted: _rememberSearch,
+              style: const TextStyle(
+                color: Color(0xFFFFDFC8),
+                fontWeight: FontWeight.w600,
+              ),
+              decoration: InputDecoration(
+                prefixIcon: Padding(
+                  padding: const EdgeInsets.only(left: 10),
+                  child: const Icon(
+                    Icons.search_rounded,
+                    color: Color(0xFFD8A68C),
+                  ),
+                ),
+                hintText: 'Artists, songs, or podcasts',
+                hintStyle: const TextStyle(color: Color(0xFFC99173)),
+                filled: true,
+                fillColor: const Color(0xFF5A2904),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(18),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 18),
+              ),
+            ),
+            const SizedBox(height: 15),
+            if (_recentSearches.isNotEmpty) ...<Widget>[
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: _recentSearches.map((String term) {
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 10),
+                      child: _SearchHistoryChip(
+                        label: term,
+                        onTap: () => _applySearch(term),
+                        onRemove: () {
+                          setState(() => _recentSearches.remove(term));
+                        },
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+            if (query.isEmpty) ...<Widget>[
+              Text(
+                'Browse All',
+                style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                  color: const Color(0xFFFFE7DB),
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 18),
+              LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  final double width = constraints.maxWidth;
+                  final double smallWidth = ((width - 14) / 2).clamp(
+                    120.0,
+                    260.0,
+                  );
+                  final _SearchGenreShelf large = browseShelves.last;
+                  final List<_SearchGenreShelf> small = browseShelves
+                      .take(browseShelves.length - 1)
+                      .toList(growable: false);
+                  return Wrap(
+                    spacing: 14,
+                    runSpacing: 16,
+                    children: <Widget>[
+                      ...small.map(
+                        (_SearchGenreShelf shelf) => SizedBox(
+                          width: smallWidth,
+                          child: _SearchGenreCard(
+                            shelf: shelf,
+                            height: 164,
+                            onTap: () => _applySearch(shelf.query),
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        width: width,
                         child: _SearchGenreCard(
-                          shelf: shelf,
-                          height: 164,
-                          onTap: () => _applySearch(shelf.query),
+                          shelf: large,
+                          height: 196,
+                          wide: true,
+                          onTap: () => _applySearch(large.query),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: 34),
+              const _SearchSectionTitle('Trending Now'),
+              const SizedBox(height: 6),
+              Text(
+                '${_lastMonthLabel()} chart • ${widget.controller.trendingNowRegionLabel}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: const Color(0xFFD1A793),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 18),
+              if (monthlyTrendingSongs.isEmpty &&
+                  !widget.controller.trendingNowLoading)
+                Text(
+                  'Regional chart songs are loading for ${widget.controller.preferredRegionLabel}.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: const Color(0xFFD1A793),
+                  ),
+                )
+              else
+                ...monthlyTrendingSongs.asMap().entries.map(
+                  (MapEntry<int, LibrarySong> entry) => _SearchTrendingTile(
+                    rank: entry.key + 1,
+                    song: entry.value,
+                    controller: widget.controller,
+                  ),
+                ),
+              if (widget.controller.trendingNowLoading)
+                const Padding(
+                  padding: EdgeInsets.only(top: 12),
+                  child: _OnlineSongResultsSkeleton(),
+                ),
+              if (widget.controller.trendingNowError != null &&
+                  monthlyTrendingSongs.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(
+                    widget.controller.trendingNowError!,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: const Color(0xFFFFA27C),
+                    ),
+                  ),
+                ),
+            ] else ...<Widget>[
+              _SearchSectionTitle('Top Results'),
+              const SizedBox(height: 14),
+              if (topResults.isEmpty && !widget.controller.onlineLoading)
+                Text(
+                  'No matches found for "${_searchController.text.trim()}".',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: const Color(0xFFD1A793),
+                  ),
+                )
+              else ...<Widget>[
+                ...topResults.map(
+                  (LibrarySong song) => _SearchTrendingTile(
+                    rank: topResults.indexOf(song) + 1,
+                    song: song,
+                    controller: widget.controller,
+                  ),
+                ),
+                if (widget.controller.onlineLoading)
+                  const _OnlineSongResultsSkeleton()
+                else if (widget.controller.onlineHasMore)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Center(
+                      child: Text(
+                        'Scroll for more',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: const Color(0xFFD1A793),
                         ),
                       ),
                     ),
-                    SizedBox(
-                      width: width,
-                      child: _SearchGenreCard(
-                        shelf: large,
-                        height: 196,
-                        wide: true,
-                        onTap: () => _applySearch(large.query),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: 34),
-            const _SearchSectionTitle('Trending Now'),
-            const SizedBox(height: 6),
-            Text(
-              '${_lastMonthLabel()} chart • ${widget.controller.trendingNowRegionLabel}',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: const Color(0xFFD1A793),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 18),
-            if (monthlyTrendingSongs.isEmpty &&
-                !widget.controller.trendingNowLoading)
-              Text(
-                'Regional chart songs are loading for ${widget.controller.preferredRegionLabel}.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: const Color(0xFFD1A793),
-                ),
-              )
-            else
-              ...monthlyTrendingSongs.asMap().entries.map(
-                (MapEntry<int, LibrarySong> entry) => _SearchTrendingTile(
-                  rank: entry.key + 1,
-                  song: entry.value,
-                  controller: widget.controller,
-                ),
-              ),
-            if (widget.controller.trendingNowLoading)
-              const Padding(
-                padding: EdgeInsets.only(top: 12),
-                child: _OnlineSongResultsSkeleton(),
-              ),
-            if (widget.controller.trendingNowError != null &&
-                monthlyTrendingSongs.isEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Text(
-                  widget.controller.trendingNowError!,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: const Color(0xFFFFA27C),
                   ),
-                ),
-              ),
-          ] else ...<Widget>[
-            _SearchSectionTitle('Top Results'),
-            const SizedBox(height: 14),
-            if (topResults.isEmpty && !widget.controller.onlineLoading)
-              Text(
-                'No matches found for "${_searchController.text.trim()}".',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: const Color(0xFFD1A793),
-                ),
-              )
-            else ...<Widget>[
-              ...topResults.map(
-                (LibrarySong song) => _SearchTrendingTile(
-                  rank: topResults.indexOf(song) + 1,
-                  song: song,
-                  controller: widget.controller,
-                ),
-              ),
-              if (widget.controller.onlineLoading)
-                const _OnlineSongResultsSkeleton()
-              else if (widget.controller.onlineHasMore)
+              ],
+              if (widget.controller.onlineError != null)
                 Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Center(
-                    child: Text(
-                      'Scroll for more',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: const Color(0xFFD1A793),
-                      ),
+                  padding: const EdgeInsets.only(top: 18),
+                  child: Text(
+                    widget.controller.onlineError!,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: const Color(0xFFFFA27C),
                     ),
                   ),
                 ),
             ],
-            if (widget.controller.onlineError != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 18),
-                child: Text(
-                  widget.controller.onlineError!,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: const Color(0xFFFFA27C),
-                  ),
+              ],
+            ),
+          ),
+          if (widget.controller.isOffline)
+            Positioned.fill(
+              child: AbsorbPointer(
+                child: _NetworkUnavailableOverlay(
+                  title: 'Search Needs Internet',
+                  message:
+                      'Reconnect to browse charts, discover online tracks, and search beyond your local music.',
+                  actionLabel: 'Reconnect',
+                  onAction: () => widget.controller.refreshConnectivityStatus(),
                 ),
               ),
-          ],
+            ),
         ],
       ),
     );
