@@ -180,7 +180,9 @@ class OuterTuneController extends ChangeNotifier {
   LibrarySong? get miniPlayerSong {
     final String? transitioningSongId = _transitioningSongId;
     if (transitioningSongId != null) {
-      return songById(transitioningSongId) ?? _pendingSelectionSong ?? currentSong;
+      return songById(transitioningSongId) ??
+          _pendingSelectionSong ??
+          currentSong;
     }
     return _pendingSelectionSong ?? currentSong;
   }
@@ -3621,6 +3623,7 @@ class OuterTuneController extends ChangeNotifier {
       _queueLabel = label;
       _queueIndex = safeIndex;
       await _player.open(Playlist(medias, index: safeIndex));
+      await _player.play();
       _trackPlayback(preparedSongs[safeIndex].id);
       unawaited(
         _maybeExtendSmartQueue(seed: preparedSongs[safeIndex], force: true),
@@ -3713,7 +3716,6 @@ class OuterTuneController extends ChangeNotifier {
     final StreamManifest manifest = await _yt.videos.streams.getManifest(
       song.path,
     );
-
     String resolvedUrl;
     if (manifest.hls.isNotEmpty) {
       resolvedUrl = manifest.hls.first.url.toString();

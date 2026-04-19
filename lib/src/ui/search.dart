@@ -766,12 +766,16 @@ class _SearchScreenState extends State<_SearchScreen> {
                 title: 'No Internet Connection',
                 message: widget.controller.offlineMusicMode
                     ? 'Search is limited to offline music while Offline Music mode is active.'
-                    : 'Search is unavailable offline.',
+                    : 'Search is unavailable until the connection comes back.',
                 actionLabel: 'Retry',
                 onAction: () => widget.controller.refreshConnectivityStatus(),
-                secondaryActionLabel: 'Go to Offline Music',
+                secondaryActionLabel: widget.controller.offlineMusicMode
+                    ? 'Exit Offline Mode'
+                    : 'Open Offline Music',
                 onSecondaryAction: () =>
-                    _goToOfflineMusic(context, widget.controller),
+                    widget.controller.offlineMusicMode
+                        ? widget.controller.setOfflineMusicMode(false)
+                        : _goToOfflineMusic(context, widget.controller),
                 icon: widget.controller.offlineMusicMode
                     ? Icons.offline_bolt_rounded
                     : Icons.wifi_off_rounded,

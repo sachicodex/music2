@@ -1080,16 +1080,16 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
                             color: active
                                 ? accent.withValues(alpha: 0.14)
                                 : tile,
+                            borderRadius: BorderRadius.circular(22),
+                            child: InkWell(
                               borderRadius: BorderRadius.circular(22),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(22),
-                                onTap: () async {
-                                  unawaited(HapticFeedback.selectionClick());
-                                  await controller.jumpToQueue(index);
-                                  if (context.mounted) {
-                                    Navigator.of(context).pop();
-                                  }
-                                },
+                              onTap: () async {
+                                unawaited(HapticFeedback.selectionClick());
+                                await controller.jumpToQueue(index);
+                                if (context.mounted) {
+                                  Navigator.of(context).pop();
+                                }
+                              },
                               child: Padding(
                                 padding: const EdgeInsets.fromLTRB(
                                   12,

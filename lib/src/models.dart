@@ -5,7 +5,11 @@ enum AppDestination {
   library('Library', Icons.library_music_rounded, Icons.library_music_outlined),
   search('Search', Icons.manage_search_rounded, Icons.search_rounded),
   history('History', Icons.history_rounded, Icons.history_toggle_off_rounded),
-  settings('Profile', Icons.account_circle_rounded, Icons.person_outline_rounded);
+  settings(
+    'Profile',
+    Icons.account_circle_rounded,
+    Icons.person_outline_rounded,
+  );
 
   const AppDestination(this.label, this.selectedIcon, this.unselectedIcon);
 
@@ -45,7 +49,11 @@ const List<AppRegion> kAppRegions = <AppRegion>[
   AppRegion(countryCode: 'PK', label: 'Pakistan', languageCode: 'ur'),
   AppRegion(countryCode: 'BD', label: 'Bangladesh', languageCode: 'bn'),
   AppRegion(countryCode: 'NP', label: 'Nepal', languageCode: 'ne'),
-  AppRegion(countryCode: 'AE', label: 'United Arab Emirates', languageCode: 'ar'),
+  AppRegion(
+    countryCode: 'AE',
+    label: 'United Arab Emirates',
+    languageCode: 'ar',
+  ),
   AppRegion(countryCode: 'SA', label: 'Saudi Arabia', languageCode: 'ar'),
   AppRegion(countryCode: 'QA', label: 'Qatar', languageCode: 'ar'),
   AppRegion(countryCode: 'SG', label: 'Singapore', languageCode: 'en'),

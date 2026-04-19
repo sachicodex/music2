@@ -79,14 +79,11 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
 
   AppDestination _destination = AppDestination.home;
   LibraryFilter _libraryFilter = LibraryFilter.all;
-  late final PageController _pageController;
-
   int get _destinationPageIndex => _mainDestinations.indexOf(_destination);
 
   @override
   void initState() {
     super.initState();
-    _pageController = PageController(initialPage: _destinationPageIndex);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;
@@ -97,12 +94,6 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
             .ensureNotificationPermissionIfNeeded(),
       );
     });
-  }
-
-  @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
   }
 
   @override
@@ -119,25 +110,20 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
             backgroundColor: Color(0xFF3A170C),
           ),
         Expanded(
-          child: PageView(
-            controller: _pageController,
-            onPageChanged: (int index) {
-              final AppDestination next = _mainDestinations[index];
-              if (_destination == next) {
-                return;
-              }
-              setState(() => _destination = next);
-            },
-            children: _mainDestinations.map((AppDestination destination) {
-              return KeyedSubtree(
-                key: ValueKey<AppDestination>(destination),
-                child: _buildPageForDestination(
-                  context,
-                  controller,
-                  destination,
-                ),
-              );
-            }).toList(growable: false),
+          child: IndexedStack(
+            index: _destinationPageIndex,
+            children: _mainDestinations
+                .map((AppDestination destination) {
+                  return KeyedSubtree(
+                    key: ValueKey<AppDestination>(destination),
+                    child: _buildPageForDestination(
+                      context,
+                      controller,
+                      destination,
+                    ),
+                  );
+                })
+                .toList(growable: false),
           ),
         ),
         if (wide && controller.miniPlayerSong != null)
@@ -146,6 +132,22 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
             onOpenPlayer: () => _openPlayer(context, controller),
           ),
       ],
+    );
+
+    final Widget swipeableContent = GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragEnd: (DragEndDetails details) {
+        final double velocity = details.primaryVelocity ?? 0;
+        if (velocity.abs() < 350) {
+          return;
+        }
+        if (velocity < 0) {
+          _moveToAdjacentDestination(1);
+        } else {
+          _moveToAdjacentDestination(-1);
+        }
+      },
+      child: content,
     );
 
     return Scaffold(
@@ -170,7 +172,7 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
                   )
                   .toList(),
             ),
-          Expanded(child: content),
+          Expanded(child: swipeableContent),
         ],
       ),
 
@@ -194,11 +196,21 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
       return;
     }
     setState(() => _destination = destination);
-    _pageController.animateToPage(
-      _mainDestinations.indexOf(destination),
-      duration: const Duration(milliseconds: 260),
-      curve: Curves.easeOutCubic,
+  }
+
+  void _moveToAdjacentDestination(int step) {
+    final int currentIndex = _destinationPageIndex;
+    if (currentIndex < 0) {
+      return;
+    }
+    final int targetIndex = (currentIndex + step).clamp(
+      0,
+      _mainDestinations.length - 1,
     );
+    if (targetIndex == currentIndex) {
+      return;
+    }
+    _setDestination(_mainDestinations[targetIndex]);
   }
 
   Widget _buildPageForDestination(
@@ -210,8 +222,7 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
       AppDestination.home => _HomeScreen(
         key: const ValueKey<String>('home'),
         controller: controller,
-        onOpenSearch: () =>
-            _setDestination(AppDestination.search),
+        onOpenSearch: () => _setDestination(AppDestination.search),
       ),
       AppDestination.library => _LibraryScreen(
         key: const ValueKey<String>('library'),
@@ -320,13 +331,15 @@ Future<void> _goToOfflineMusic(
   BuildContext context,
   OuterTuneController controller,
 ) async {
-  await controller.setOfflineMusicMode(true);
+  if (!controller.isOffline) {
+    await controller.setOfflineMusicMode(true);
+  }
   if (!context.mounted) {
     return;
   }
-  context
-      .findAncestorStateOfType<_OuterTuneShellState>()
-      ?._setDestination(AppDestination.library);
+  context.findAncestorStateOfType<_OuterTuneShellState>()?._setDestination(
+    AppDestination.library,
+  );
 }
 
 PopupMenuItem<String> _kineticPopupMenuItem(String value, String label) {
@@ -425,9 +438,7 @@ class _NetworkUnavailablePanel extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: const Color(0xFFFF8A2A).withValues(alpha: 0.18),
-                  border: Border.all(
-                    color: const Color(0x55FFC39B),
-                  ),
+                  border: Border.all(color: const Color(0x55FFC39B)),
                 ),
                 child: Icon(
                   icon,

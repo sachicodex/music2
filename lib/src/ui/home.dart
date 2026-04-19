@@ -447,7 +447,7 @@ class _HomeOfflineState extends StatelessWidget {
                   : 'No Internet Connection',
               message: controller.offlineMusicMode
                   ? 'Only your local music is active right now. Online recommendations, search, and cloud content stay paused until you exit this mode.'
-                  : 'Home recommendations need internet. Your downloaded and local tracks are still ready instantly.',
+                  : 'Home recommendations need internet. Your downloaded and local tracks stay available until the connection comes back.',
               actionLabel: 'Retry',
               onAction: () async {
                 final bool online = await controller.refreshConnectivityStatus();
@@ -457,7 +457,7 @@ class _HomeOfflineState extends StatelessWidget {
               },
               secondaryActionLabel: controller.offlineMusicMode
                   ? 'Exit Offline Mode'
-                  : 'Offline Music',
+                  : 'Open Offline Music',
               onSecondaryAction: () async {
                 if (controller.offlineMusicMode) {
                   await controller.setOfflineMusicMode(false);
