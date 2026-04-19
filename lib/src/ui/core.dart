@@ -79,11 +79,13 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
 
   AppDestination _destination = AppDestination.home;
   LibraryFilter _libraryFilter = LibraryFilter.all;
+  late final PageController _pageController;
   int get _destinationPageIndex => _mainDestinations.indexOf(_destination);
 
   @override
   void initState() {
     super.initState();
+    _pageController = PageController(initialPage: _destinationPageIndex);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;
@@ -94,6 +96,12 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
             .ensureNotificationPermissionIfNeeded(),
       );
     });
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
   }
 
   @override
@@ -110,19 +118,23 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
             backgroundColor: Color(0xFF3A170C),
           ),
         Expanded(
-          child: IndexedStack(
-            index: _destinationPageIndex,
+          child: PageView(
+            controller: _pageController,
+            onPageChanged: (int index) {
+              final AppDestination destination = _mainDestinations[index];
+              if (_destination != destination && mounted) {
+                setState(() => _destination = destination);
+              }
+            },
             children: _mainDestinations
-                .map((AppDestination destination) {
-                  return KeyedSubtree(
-                    key: ValueKey<AppDestination>(destination),
-                    child: _buildPageForDestination(
-                      context,
-                      controller,
-                      destination,
-                    ),
-                  );
-                })
+                .map((AppDestination destination) => KeyedSubtree(
+                      key: ValueKey<AppDestination>(destination),
+                      child: _buildPageForDestination(
+                        context,
+                        controller,
+                        destination,
+                      ),
+                    ))
                 .toList(growable: false),
           ),
         ),
@@ -132,22 +144,6 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
             onOpenPlayer: () => _openPlayer(context, controller),
           ),
       ],
-    );
-
-    final Widget swipeableContent = GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onHorizontalDragEnd: (DragEndDetails details) {
-        final double velocity = details.primaryVelocity ?? 0;
-        if (velocity.abs() < 350) {
-          return;
-        }
-        if (velocity < 0) {
-          _moveToAdjacentDestination(1);
-        } else {
-          _moveToAdjacentDestination(-1);
-        }
-      },
-      child: content,
     );
 
     return Scaffold(
@@ -172,7 +168,7 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
                   )
                   .toList(),
             ),
-          Expanded(child: swipeableContent),
+          Expanded(child: content),
         ],
       ),
 
@@ -195,22 +191,20 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
     if (_destination == destination) {
       return;
     }
+    final int pageIndex = _mainDestinations.indexOf(destination);
+    if (pageIndex < 0) {
+      return;
+    }
     setState(() => _destination = destination);
-  }
-
-  void _moveToAdjacentDestination(int step) {
-    final int currentIndex = _destinationPageIndex;
-    if (currentIndex < 0) {
-      return;
+    if (_pageController.hasClients) {
+      unawaited(
+        _pageController.animateToPage(
+          pageIndex,
+          duration: const Duration(milliseconds: 360),
+          curve: Curves.easeOutCubic,
+        ),
+      );
     }
-    final int targetIndex = (currentIndex + step).clamp(
-      0,
-      _mainDestinations.length - 1,
-    );
-    if (targetIndex == currentIndex) {
-      return;
-    }
-    _setDestination(_mainDestinations[targetIndex]);
   }
 
   Widget _buildPageForDestination(
@@ -327,21 +321,6 @@ void _showKineticSnackBar(BuildContext context, String message) {
   );
 }
 
-Future<void> _goToOfflineMusic(
-  BuildContext context,
-  OuterTuneController controller,
-) async {
-  if (!controller.isOffline) {
-    await controller.setOfflineMusicMode(true);
-  }
-  if (!context.mounted) {
-    return;
-  }
-  context.findAncestorStateOfType<_OuterTuneShellState>()?._setDestination(
-    AppDestination.library,
-  );
-}
-
 PopupMenuItem<String> _kineticPopupMenuItem(String value, String label) {
   return PopupMenuItem<String>(
     value: value,
@@ -359,35 +338,29 @@ class _NetworkUnavailablePanel extends StatelessWidget {
   const _NetworkUnavailablePanel({
     required this.title,
     required this.message,
-    required this.actionLabel,
-    required this.onAction,
-    this.secondaryActionLabel,
-    this.onSecondaryAction,
+    this.actionLabel,
+    this.onAction,
     this.icon = Icons.wifi_off_rounded,
-    this.compact = false,
   });
 
   final String title;
   final String message;
-  final String actionLabel;
-  final Future<void> Function() onAction;
-  final String? secondaryActionLabel;
-  final Future<void> Function()? onSecondaryAction;
+  final String? actionLabel;
+  final Future<void> Function()? onAction;
   final IconData icon;
-  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
       padding: EdgeInsets.fromLTRB(
-        compact ? 18 : 24,
-        compact ? 18 : 22,
-        compact ? 18 : 24,
-        compact ? 18 : 22,
+        24,
+        22,
+        24,
+        22,
       ),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(compact ? 24 : 30),
+        borderRadius: BorderRadius.circular(30),
         gradient: const LinearGradient(
           colors: <Color>[Color(0xFF35130A), Color(0xFF160806)],
           begin: Alignment.topLeft,
@@ -408,8 +381,8 @@ class _NetworkUnavailablePanel extends StatelessWidget {
             right: -18,
             top: -16,
             child: Container(
-              width: compact ? 94 : 118,
-              height: compact ? 94 : 118,
+              width: 118,
+              height: 118,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: const Color(0xFFFF8A2A).withValues(alpha: 0.10),
@@ -420,8 +393,8 @@ class _NetworkUnavailablePanel extends StatelessWidget {
             left: -12,
             bottom: -20,
             child: Container(
-              width: compact ? 76 : 92,
-              height: compact ? 76 : 92,
+              width: 92,
+              height: 92,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: Colors.white.withValues(alpha: 0.05),
@@ -433,8 +406,8 @@ class _NetworkUnavailablePanel extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Container(
-                width: compact ? 50 : 58,
-                height: compact ? 50 : 58,
+                width: 58,
+                height: 58,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: const Color(0xFFFF8A2A).withValues(alpha: 0.18),
@@ -443,147 +416,58 @@ class _NetworkUnavailablePanel extends StatelessWidget {
                 child: Icon(
                   icon,
                   color: const Color(0xFFFFB784),
-                  size: compact ? 24 : 28,
+                  size: 28,
                 ),
               ),
-              SizedBox(height: compact ? 14 : 18),
+              const SizedBox(height: 18),
               Text(
                 title,
                 style: GoogleFonts.splineSans(
                   color: _kTextPrimary,
-                  fontSize: compact ? 20 : 24,
+                  fontSize: 24,
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              SizedBox(height: compact ? 8 : 10),
+              const SizedBox(height: 10),
               Text(
                 message,
                 style: GoogleFonts.splineSans(
                   color: _kTextSecondary.withValues(alpha: 0.92),
-                  fontSize: compact ? 14 : 15,
+                  fontSize: 15,
                   fontWeight: FontWeight.w500,
                   height: 1.45,
                 ),
               ),
-              SizedBox(height: compact ? 16 : 18),
+              const SizedBox(height: 18),
               Wrap(
                 spacing: 10,
                 runSpacing: 10,
                 children: <Widget>[
-                  FilledButton.icon(
-                    onPressed: onAction,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFFFF8A2A),
-                      foregroundColor: const Color(0xFF2D1308),
-                      padding: EdgeInsets.symmetric(
-                        horizontal: compact ? 16 : 18,
-                        vertical: compact ? 12 : 14,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                    ),
-                    icon: const Icon(Icons.wifi_find_rounded),
-                    label: Text(
-                      actionLabel,
-                      style: GoogleFonts.splineSans(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  if (secondaryActionLabel != null && onSecondaryAction != null)
-                    OutlinedButton.icon(
-                      onPressed: onSecondaryAction,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: _kTextPrimary,
-                        side: BorderSide(
-                          color: Colors.white.withValues(alpha: 0.18),
-                        ),
-                        padding: EdgeInsets.symmetric(
-                          horizontal: compact ? 16 : 18,
-                          vertical: compact ? 12 : 14,
+                  if (actionLabel != null && onAction != null)
+                    FilledButton.icon(
+                      onPressed: onAction,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFFFF8A2A),
+                        foregroundColor: const Color(0xFF2D1308),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 14,
                         ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(999),
                         ),
                       ),
-                      icon: const Icon(Icons.offline_bolt_rounded),
+                      icon: const Icon(Icons.wifi_find_rounded),
                       label: Text(
-                        secondaryActionLabel!,
+                        actionLabel!,
                         style: GoogleFonts.splineSans(
                           fontWeight: FontWeight.w700,
                         ),
+                        ),
                       ),
-                    ),
                 ],
               ),
             ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _NetworkUnavailableOverlay extends StatelessWidget {
-  const _NetworkUnavailableOverlay({
-    required this.title,
-    required this.message,
-    required this.actionLabel,
-    required this.onAction,
-    this.secondaryActionLabel,
-    this.onSecondaryAction,
-    this.icon = Icons.wifi_off_rounded,
-  });
-
-  final String title;
-  final String message;
-  final String actionLabel;
-  final Future<void> Function() onAction;
-  final String? secondaryActionLabel;
-  final Future<void> Function()? onSecondaryAction;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {},
-      child: Stack(
-        fit: StackFit.expand,
-        children: <Widget>[
-          ColoredBox(color: Colors.black.withValues(alpha: 0.50)),
-          BackdropFilter(
-            filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: const SizedBox.expand(),
-          ),
-          Center(
-            child: TweenAnimationBuilder<double>(
-              tween: Tween<double>(begin: 0.9, end: 1.0),
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOutCubic,
-              builder: (BuildContext context, double value, Widget? child) {
-                return Opacity(
-                  opacity: value.clamp(0.0, 1.0),
-                  child: Transform.scale(scale: value, child: child),
-                );
-              },
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 380),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: _NetworkUnavailablePanel(
-                    title: title,
-                    message: message,
-                    actionLabel: actionLabel,
-                    onAction: onAction,
-                    secondaryActionLabel: secondaryActionLabel,
-                    onSecondaryAction: onSecondaryAction,
-                    icon: icon,
-                  ),
-                ),
-              ),
-            ),
           ),
         ],
       ),

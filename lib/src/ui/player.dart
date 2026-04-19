@@ -1748,10 +1748,19 @@ class _KineticPlaylistScreenState extends State<_KineticPlaylistScreen> {
                       : widget.localPlaybackOnly
                       ? () {
                           if (!song.isRemote) {
-                            widget.controller.playSong(
-                              song,
-                              label: song.sourceLabel,
+                            final List<LibrarySong> localSongs = songs
+                                .where((LibrarySong item) => !item.isRemote)
+                                .toList(growable: false);
+                            final int startIndex = localSongs.indexWhere(
+                              (LibrarySong item) => item.id == song.id,
                             );
+                            if (startIndex >= 0) {
+                              widget.controller.playSongs(
+                                localSongs,
+                                startIndex: startIndex,
+                                label: title,
+                              );
+                            }
                           }
                         }
                       : null,

@@ -13,24 +13,6 @@ class _SearchPulseHeader extends StatelessWidget {
   }
 }
 
-class _SearchSectionLabel extends StatelessWidget {
-  const _SearchSectionLabel(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-        color: const Color(0xFFE7BAA5),
-        fontWeight: FontWeight.w800,
-        letterSpacing: 1.4,
-      ),
-    );
-  }
-}
-
 class _SearchSectionTitle extends StatelessWidget {
   const _SearchSectionTitle(this.text);
 
@@ -372,7 +354,6 @@ class _SearchScreen extends StatefulWidget {
 class _SearchScreenState extends State<_SearchScreen> {
   static const Duration _searchDebounceDuration = Duration(milliseconds: 250);
   final TextEditingController _searchController = TextEditingController();
-  final TextEditingController _urlController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final List<String> _recentSearches = <String>[];
   Timer? _searchDebounce;
@@ -402,7 +383,6 @@ class _SearchScreenState extends State<_SearchScreen> {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _searchController.dispose();
-    _urlController.dispose();
     super.dispose();
   }
 
@@ -456,81 +436,14 @@ class _SearchScreenState extends State<_SearchScreen> {
     _runSearch(value);
   }
 
-  Future<void> _showUrlSheet() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: const Color(0xFF2A1209),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      builder: (BuildContext context) {
-        return Padding(
-          padding: EdgeInsets.fromLTRB(
-            20,
-            20,
-            20,
-            20 + MediaQuery.of(context).viewInsets.bottom,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                'Play From URL',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  color: const Color(0xFFFFE0CF),
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _urlController,
-                onSubmitted: (String value) {
-                  widget.controller.playFromUrl(value);
-                  Navigator.of(context).pop();
-                },
-                style: const TextStyle(color: Color(0xFFFFE0CF)),
-                decoration: InputDecoration(
-                  hintText: 'Paste a YouTube link or direct audio URL',
-                  hintStyle: const TextStyle(color: Color(0xFFC99173)),
-                  prefixIcon: const Icon(
-                    Icons.link_rounded,
-                    color: Color(0xFFFF8A2A),
-                  ),
-                  filled: true,
-                  fillColor: const Color(0xFF4A2204),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(20),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: () {
-                    widget.controller.playFromUrl(_urlController.text);
-                    Navigator.of(context).pop();
-                  },
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFFFF8A2A),
-                    foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                  icon: const Icon(Icons.play_arrow_rounded),
-                  label: const Text('Play URL'),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
+    final bool searchOffline =
+        widget.controller.isOffline || widget.controller.offlineMusicMode;
+    if (searchOffline) {
+      return _SearchOfflineState(controller: widget.controller);
+    }
+
     final String query = _searchController.text.trim().toLowerCase();
 
     final List<LibrarySong> songs = widget.controller.songs
@@ -760,28 +673,55 @@ class _SearchScreenState extends State<_SearchScreen> {
               ],
             ),
           ),
-          if (widget.controller.isOffline || widget.controller.offlineMusicMode)
-            Positioned.fill(
-              child: _NetworkUnavailableOverlay(
-                title: 'No Internet Connection',
-                message: widget.controller.offlineMusicMode
-                    ? 'Search is limited to offline music while Offline Music mode is active.'
-                    : 'Search is unavailable until the connection comes back.',
+        ],
+      ),
+    );
+  }
+}
+
+class _SearchOfflineState extends StatelessWidget {
+  const _SearchOfflineState({required this.controller});
+
+  final OuterTuneController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: <Color>[Color(0xFF2B0D02), Color(0xFF170602)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: _rootScreenContentPadding(
+            context,
+            hasMiniPlayer: controller.miniPlayerSong != null,
+          ),
+          child: Column(
+            children: <Widget>[
+              const _SearchPulseHeader(),
+              const Spacer(),
+              _NetworkUnavailablePanel(
+                title: controller.offlineMusicMode
+                    ? 'Offline Music Only'
+                    : 'Search Is Offline',
+                message: controller.offlineMusicMode
+                    ? 'Search is limited to your local music right now. Reconnect to search online songs again.'
+                    : 'Internet is required for online search. Your local music is still available in Home and Library.',
                 actionLabel: 'Retry',
-                onAction: () => widget.controller.refreshConnectivityStatus(),
-                secondaryActionLabel: widget.controller.offlineMusicMode
-                    ? 'Exit Offline Mode'
-                    : 'Open Offline Music',
-                onSecondaryAction: () =>
-                    widget.controller.offlineMusicMode
-                        ? widget.controller.setOfflineMusicMode(false)
-                        : _goToOfflineMusic(context, widget.controller),
-                icon: widget.controller.offlineMusicMode
+                onAction: () => controller.refreshConnectivityStatus(),
+                icon: controller.offlineMusicMode
                     ? Icons.offline_bolt_rounded
                     : Icons.wifi_off_rounded,
               ),
-            ),
-        ],
+              const Spacer(),
+            ],
+          ),
+        ),
       ),
     );
   }

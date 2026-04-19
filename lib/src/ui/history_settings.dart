@@ -1,7 +1,8 @@
 part of '../ui.dart';
 
+// ignore: unused_element
 class _HistoryScreen extends StatelessWidget {
-  const _HistoryScreen({super.key, required this.controller});
+  const _HistoryScreen({required this.controller});
 
   final OuterTuneController controller;
 
@@ -66,58 +67,6 @@ class _SettingsScreen extends StatelessWidget {
 
     final bool gapless = controller.settings.gaplessPlayback;
     final String preferredRegion = controller.preferredRegionLabel;
-
-    if (controller.isOffline || controller.offlineMusicMode) {
-      return DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: <Color>[pageTop, pageBottom],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: SafeArea(
-          bottom: false,
-          child: ListView(
-            padding: _rootScreenContentPadding(
-              context,
-              hasMiniPlayer: controller.miniPlayerSong != null,
-            ),
-            children: <Widget>[
-              const _HomeStyleHeader(
-                title: 'PROFILE',
-                leading: _HomeStyleProfileBadge(),
-                trailing: _HomeStyleNotificationIcon(),
-              ),
-              const SizedBox(height: 18),
-              _NetworkUnavailablePanel(
-                title: controller.offlineMusicMode
-                    ? 'Offline Music Mode'
-                    : 'Profile Is Offline',
-                message: controller.offlineMusicMode
-                    ? 'Account sync, trending preferences, and cloud profile features are paused while Offline Music mode is active.'
-                    : 'Account sync and online profile features stay unavailable until you reconnect.',
-                actionLabel: 'Retry',
-                onAction: () => controller.refreshConnectivityStatus(),
-                secondaryActionLabel: controller.offlineMusicMode
-                    ? 'Exit Offline Mode'
-                    : 'Open Offline Music',
-                onSecondaryAction: () async {
-                  if (controller.offlineMusicMode) {
-                    await controller.setOfflineMusicMode(false);
-                  } else {
-                    await _goToOfflineMusic(context, controller);
-                  }
-                },
-                icon: controller.offlineMusicMode
-                    ? Icons.offline_bolt_rounded
-                    : Icons.cloud_off_rounded,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
 
     Future<void> pickRegion() async {
       final String? selected = await showModalBottomSheet<String>(

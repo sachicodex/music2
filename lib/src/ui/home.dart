@@ -223,7 +223,7 @@ class _HomeScreenState extends State<_HomeScreen> {
     final bool showMiddleContent = _revealStage >= 2;
     final bool showBottomContent = _revealStage >= 3;
 
-    final _FeaturedHeroData featured = _pickFeaturedHero(
+    final _FeaturedHeroData? featured = _pickFeaturedHero(
       context: context,
       controller: controller,
       feed: feed,
@@ -262,13 +262,18 @@ class _HomeScreenState extends State<_HomeScreen> {
                   const SizedBox(height: 14),
                   if (!showTopContent && homeFeedPending)
                     const _KineticHeroSkeleton()
-                  else
+                  else if (featured != null)
                     _KineticHeroCard(
                       badge: featured.badge,
                       title: featured.title,
                       subtitle: featured.subtitle,
                       imageUrl: featured.imageUrl,
                       onListenNow: featured.onListenNow,
+                    )
+                  else
+                    const _PersonalizationHintCard(
+                      message:
+                          'Play local songs, like tracks, or reconnect to load personalized recommendations here.',
                     ),
                   const SizedBox(height: 18),
                   _KineticSectionHeader(
@@ -446,23 +451,13 @@ class _HomeOfflineState extends StatelessWidget {
                   ? 'Offline Music Mode'
                   : 'No Internet Connection',
               message: controller.offlineMusicMode
-                  ? 'Only your local music is active right now. Online recommendations, search, and cloud content stay paused until you exit this mode.'
+                  ? 'Only your local music is active right now. Online recommendations, search, and cloud content stay paused while you are offline.'
                   : 'Home recommendations need internet. Your downloaded and local tracks stay available until the connection comes back.',
               actionLabel: 'Retry',
               onAction: () async {
                 final bool online = await controller.refreshConnectivityStatus();
                 if (online && !controller.offlineMusicMode) {
                   await controller.refreshHomeFeed(force: true);
-                }
-              },
-              secondaryActionLabel: controller.offlineMusicMode
-                  ? 'Exit Offline Mode'
-                  : 'Open Offline Music',
-              onSecondaryAction: () async {
-                if (controller.offlineMusicMode) {
-                  await controller.setOfflineMusicMode(false);
-                } else {
-                  await _goToOfflineMusic(context, controller);
                 }
               },
               icon: controller.offlineMusicMode
@@ -489,7 +484,11 @@ class _HomeOfflineState extends StatelessWidget {
                 return _KineticPopularTrackTile(
                   index: e.key + 1,
                   song: e.value,
-                  onTap: () => controller.playSong(e.value, label: 'Offline'),
+                  onTap: () => controller.playSongs(
+                    localSongs,
+                    startIndex: e.key,
+                    label: 'Offline',
+                  ),
                 );
               }),
           ],
@@ -842,7 +841,7 @@ class _FeaturedHeroData {
   final VoidCallback onListenNow;
 }
 
-_FeaturedHeroData _pickFeaturedHero({
+_FeaturedHeroData? _pickFeaturedHero({
   required BuildContext context,
   required OuterTuneController controller,
   required List<HomeFeedSection> feed,
@@ -866,15 +865,9 @@ _FeaturedHeroData _pickFeaturedHero({
           controller.playSong(song, label: 'Home');
         }
       },
-    ); 
+    );
   }
-
-  return _FeaturedHeroData(
-    badge: 'DISCOVER',
-    title: 'KINETIC',
-    subtitle: 'Search and play songs to unlock smarter recommendations.',
-    onListenNow: controller.importFolder,
-  );
+  return null;
 }
 
 LibrarySong? _pickAdvancedHeroSong({

@@ -16,7 +16,6 @@ class _LibraryScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final List<UserPlaylist> playlists = controller.playlists;
     final bool offline = controller.isOffline;
-    final bool offlineMode = controller.offlineMusicMode;
 
     return DecoratedBox(
       decoration: _kineticPageDecoration(),
@@ -29,18 +28,6 @@ class _LibraryScreen extends StatelessWidget {
           ),
           children: <Widget>[
             const _LibraryHeader(),
-            if (offlineMode) ...<Widget>[
-              _NetworkUnavailablePanel(
-                title: 'Offline Music Mode',
-                message:
-                    'Only local files are active. Cloud playlists and online suggestions stay paused until you exit this mode.',
-                actionLabel: 'Exit Mode',
-                onAction: () => controller.setOfflineMusicMode(false),
-                compact: true,
-                icon: Icons.offline_bolt_rounded,
-              ),
-              const SizedBox(height: 20),
-            ],
             const SizedBox(height: 28),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -135,20 +122,11 @@ class _LibraryScreen extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 18),
-            if (offline)
-              _NetworkUnavailablePanel(
-                title: 'Playlists Are Offline',
-                message:
-                    'Reconnect to open your cloud playlists and liked collection. Local Offline music still works.',
-                actionLabel: 'Check Connection',
-                compact: true,
-                onAction: () => controller.refreshConnectivityStatus(),
-              )
-            else if (playlists.isEmpty)
+            if (!offline && playlists.isEmpty)
               _LibraryEmptyPlaylistCard(
                 onCreate: () => _showCreatePlaylistDialog(context, controller),
               )
-            else
+            else if (playlists.isNotEmpty)
               ...playlists.map(
                 (UserPlaylist playlist) => Padding(
                   padding: const EdgeInsets.only(bottom: 18),
@@ -157,6 +135,12 @@ class _LibraryScreen extends StatelessWidget {
                     playlist: playlist,
                   ),
                 ),
+              )
+            else
+              const _LibraryBlockedCard(
+                title: 'Cloud Playlists',
+                subtitle: 'Reconnect to open playlists from the cloud.',
+                icon: Icons.cloud_off_rounded,
               ),
           ],
         ),

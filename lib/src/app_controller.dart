@@ -210,7 +210,10 @@ class OuterTuneController extends ChangeNotifier {
     int batchSize = 10,
     bool force = false,
   }) async {
-    if ((!_settings.smartQueueEnabled && !force) || _smartQueueLoading) {
+    if (_isOffline ||
+        offlineMusicMode ||
+        (!_settings.smartQueueEnabled && !force) ||
+        _smartQueueLoading) {
       return;
     }
 
@@ -961,7 +964,6 @@ class OuterTuneController extends ChangeNotifier {
         limit: limit,
         force: force,
       );
-      _setOffline(false, notify: false);
       _searchCache[cacheKey] = songs;
       return songs;
     } catch (error) {
@@ -974,7 +976,6 @@ class OuterTuneController extends ChangeNotifier {
           limit: limit,
           force: force,
         );
-        _setOffline(false, notify: false);
         _searchCache[cacheKey] = fallback;
         return fallback;
       } catch (fallbackError) {
@@ -1870,6 +1871,8 @@ class OuterTuneController extends ChangeNotifier {
   }) async {
     if (_isDisposing ||
         _isDisposed ||
+        _isOffline ||
+        offlineMusicMode ||
         (!_settings.smartQueueEnabled && !force) ||
         _smartQueueLoading) {
       return;
@@ -3625,9 +3628,11 @@ class OuterTuneController extends ChangeNotifier {
       await _player.open(Playlist(medias, index: safeIndex));
       await _player.play();
       _trackPlayback(preparedSongs[safeIndex].id);
-      unawaited(
-        _maybeExtendSmartQueue(seed: preparedSongs[safeIndex], force: true),
-      );
+      if (!_isOffline && !offlineMusicMode) {
+        unawaited(
+          _maybeExtendSmartQueue(seed: preparedSongs[safeIndex], force: true),
+        );
+      }
       notifyListeners();
     } catch (_) {
       _pendingSelectionSong = null;
