@@ -206,7 +206,7 @@ class _SettingsScreen extends StatelessWidget {
                       children: <Widget>[
                         const SizedBox(height: 2),
                         Text(
-                          'ALEX RIVERS',
+                          'SACHICODEX',
                           style: Theme.of(context).textTheme.headlineSmall
                               ?.copyWith(
                                 color: titleColor,
@@ -347,78 +347,6 @@ class _SettingsScreen extends StatelessWidget {
                       inactiveTrackColor: const Color(0xFF5C2A17),
                       onChanged: controller.setOfflinePlaybackCacheEnabled,
                     ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            Container(
-              decoration: BoxDecoration(
-                color: card,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: cardEdge),
-              ),
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Row(
-                    children: <Widget>[
-                      const Icon(
-                        Icons.library_music_rounded,
-                        color: subtitleColor,
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        'Library Import',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              color: titleColor,
-                              fontWeight: FontWeight.w700,
-                            ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Import audio files or a full folder into your library.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: subtitleColor,
-                      height: 1.45,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: <Widget>[
-                      FilledButton.icon(
-                        onPressed: controller.importFiles,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: accent,
-                          foregroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 14,
-                          ),
-                        ),
-                        icon: const Icon(Icons.queue_music_rounded),
-                        label: const Text('Import files'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: controller.importFolder,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: titleColor,
-                          side: const BorderSide(color: cardEdge),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 14,
-                          ),
-                        ),
-                        icon: const Icon(Icons.folder_open_rounded),
-                        label: const Text('Import folder'),
-                      ),
-                    ],
                   ),
                 ],
               ),

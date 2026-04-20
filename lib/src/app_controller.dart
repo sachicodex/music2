@@ -7,6 +7,7 @@ import 'package:audiotags/audiotags.dart';
 import 'package:collection/collection.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -44,6 +45,10 @@ class OuterTuneController extends ChangeNotifier {
   final Player _player;
   final YoutubeExplode _yt;
   final Connectivity _connectivity = Connectivity();
+  final ValueNotifier<NowPlayingState> nowPlayingState =
+      ValueNotifier<NowPlayingState>(const NowPlayingState());
+  final ValueNotifier<PlaybackProgressState> playbackProgressState =
+      ValueNotifier<PlaybackProgressState>(const PlaybackProgressState());
   StreamSubscription<String>? _notificationActionSubscription;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   YTMusic? _ytMusic;
@@ -75,6 +80,7 @@ class OuterTuneController extends ChangeNotifier {
 
   AppSettings _settings = const AppSettings();
   List<String> _sources = <String>[];
+  List<String> _autoSources = <String>[];
   List<LibrarySong> _songs = <LibrarySong>[];
   List<UserPlaylist> _playlists = <UserPlaylist>[];
   List<PlaybackEntry> _history = <PlaybackEntry>[];
@@ -94,15 +100,19 @@ class OuterTuneController extends ChangeNotifier {
   final Map<String, String?> _ytMusicVideoIdCache = <String, String?>{};
   final Map<String, String?> _ytMusicArtistImageCache = <String, String?>{};
   final Set<String> _smartQueueSongIds = <String>{};
-  final Map<String, String> _offlinePlaybackCachePaths =
-      <String, String>{};
+  final Map<String, String> _offlinePlaybackCachePaths = <String, String>{};
   final Set<String> _offlinePlaybackPrefetchInFlight = <String>{};
   String? _activePlaybackSongId;
   double _activePlaybackCompletionRatio = 0;
   DateTime? _lastAutoHomeRefreshAt;
   bool _refreshingOfflinePlaybackCache = false;
+  bool _activatingOfflineQueuePlayback = false;
+  bool _offlineQueueAdvancePending = false;
+  String? _offlineQueueActivationTargetSongId;
+  int? _offlineQueueActivationTargetIndex;
+  List<String>? _offlineQueueActivationSongIds;
 
-  List<String> _queueSongIds = <String>[]; 
+  List<String> _queueSongIds = <String>[];
   String _queueLabel = 'Now Playing';
   int _queueIndex = 0;
   bool _isPlaying = false;
@@ -112,6 +122,7 @@ class OuterTuneController extends ChangeNotifier {
   Duration _duration = Duration.zero;
   LibrarySong? _pendingSelectionSong;
   String? _transitioningSongId;
+  int? _transitioningQueueIndex;
   bool _hasPublishedPlaybackNotification = false;
 
   String? _lastTrackedSongId;
@@ -124,8 +135,7 @@ class OuterTuneController extends ChangeNotifier {
   bool get smartQueueLoading => _smartQueueLoading;
   bool get isOffline => _isOffline;
   bool get offlineMusicMode => _settings.offlineMusicMode;
-  bool get offlinePlaybackCacheEnabled =>
-      _settings.offlinePlaybackCacheEnabled;
+  bool get offlinePlaybackCacheEnabled => _settings.offlinePlaybackCacheEnabled;
   String? get statusMessage => _statusMessage;
   String? get errorMessage => _errorMessage;
   String? get onlineError => _onlineError;
@@ -206,6 +216,45 @@ class OuterTuneController extends ChangeNotifier {
     }
     final LibrarySong? active = currentSong;
     return active == null || active.id != pending.id;
+  }
+
+  NowPlayingState _buildNowPlayingState() {
+    return NowPlayingState(
+      song: miniPlayerSong,
+      isLoading: miniPlayerSelectionLoading,
+      isShuffleEnabled: _isShuffleEnabled,
+      repeatMode: _repeatMode,
+      queueIndex: _queueIndex,
+      queueLength: _queueSongIds.length,
+    );
+  }
+
+  PlaybackProgressState _buildPlaybackProgressState() {
+    return PlaybackProgressState(
+      isPlaying: _isPlaying,
+      position: _position,
+      duration: _duration,
+    );
+  }
+
+  void _syncPlaybackNotifiers() {
+    if (_isDisposed) {
+      return;
+    }
+    final NowPlayingState nextNowPlaying = _buildNowPlayingState();
+    if (nowPlayingState.value != nextNowPlaying) {
+      nowPlayingState.value = nextNowPlaying;
+    }
+    final PlaybackProgressState nextProgress = _buildPlaybackProgressState();
+    if (playbackProgressState.value != nextProgress) {
+      playbackProgressState.value = nextProgress;
+    }
+  }
+
+  @override
+  void notifyListeners() {
+    _syncPlaybackNotifiers();
+    super.notifyListeners();
   }
 
   bool isSmartQueueSong(String songId) => _smartQueueSongIds.contains(songId);
@@ -467,9 +516,11 @@ class OuterTuneController extends ChangeNotifier {
     unawaited(_ensureNotificationPermission());
     _bindNotificationActions();
     _attachPlayerListeners();
+    _syncPlaybackNotifiers();
     _initialized = true;
     unawaited(AndroidMediaNotificationBridge.stop());
     notifyListeners();
+    unawaited(rescanLibrary());
     _requestAutoHomeRefresh();
   }
 
@@ -517,6 +568,123 @@ class OuterTuneController extends ChangeNotifier {
     }
   }
 
+  Future<void> _activateOfflineQueuePlayback() async {
+    if (_activatingOfflineQueuePlayback ||
+        _isDisposing ||
+        _isDisposed ||
+        _queueSongIds.isEmpty ||
+        !offlinePlaybackCacheEnabled) {
+      return;
+    }
+    final List<LibrarySong> queue = queueSongs;
+    if (queue.isEmpty) {
+      return;
+    }
+
+    final bool hasAnyCachedSong = queue.any(
+      (LibrarySong song) => _offlinePlaybackCachePathForSong(song.id) != null,
+    );
+    if (!hasAnyCachedSong) {
+      return;
+    }
+
+    _activatingOfflineQueuePlayback = true;
+    try {
+      final int preferredIndex =
+          _transitioningQueueIndex != null &&
+              _transitioningQueueIndex! >= 0 &&
+              _transitioningQueueIndex! < queue.length
+          ? _transitioningQueueIndex!
+          : _queueIndex;
+      final int index = preferredIndex.clamp(0, queue.length - 1);
+      final Duration resumePosition = _position;
+      final bool shouldResume = _isPlaying;
+      final String targetSongId = queue[index].id;
+      _debugPlayback(
+        'offline.activate start '
+        'index=$index '
+        'target=${_debugSongLabel(queue[index])} '
+        'resumeMs=${resumePosition.inMilliseconds} '
+        'shouldResume=$shouldResume '
+        'queueIndex=$_queueIndex '
+        'transitionIndex=$_transitioningQueueIndex',
+      );
+      final List<LibrarySong> rebuiltQueue = <LibrarySong>[
+        for (final LibrarySong song in queue)
+          () {
+            final String? cachedPath = _offlinePlaybackCachePathForSong(
+              song.id,
+            );
+            return cachedPath == null ? song : song.copyWith(path: cachedPath);
+          }(),
+      ];
+      _primeOfflineQueueActivation(
+        targetSongId: targetSongId,
+        targetIndex: index,
+        queueSongIds: rebuiltQueue.map((LibrarySong song) => song.id).toList(),
+      );
+      _queueSongIds = rebuiltQueue.map((LibrarySong song) => song.id).toList();
+      _queueIndex = index;
+      notifyListeners();
+
+      await _player.open(
+        Playlist(rebuiltQueue.map(_mediaForSong).toList(), index: index),
+      );
+      if (resumePosition > Duration.zero) {
+        await _player.seek(resumePosition);
+      }
+      if (shouldResume) {
+        await _player.play();
+      }
+      _queueSongIds = rebuiltQueue.map((LibrarySong song) => song.id).toList();
+      _queueIndex = index;
+      _clearOfflineQueueActivationState();
+      _resolveTrackTransition(songById(targetSongId));
+      _debugPlayback(
+        'offline.activate complete '
+        'index=$index target=${_debugSongLabel(songById(targetSongId))}',
+      );
+      notifyListeners();
+    } catch (error, stackTrace) {
+      debugPrint('Offline queue activation failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      _debugPlayback('offline.activate failed error=$error');
+      _clearOfflineQueueActivationState();
+    } finally {
+      _activatingOfflineQueuePlayback = false;
+    }
+  }
+
+  void _maybeAdvanceOfflineQueueAtTrackEnd() {
+    if (_offlineQueueAdvancePending ||
+        !_isOffline ||
+        offlineMusicMode ||
+        _duration <= Duration.zero) {
+      return;
+    }
+    final LibrarySong? song = currentSong;
+    if (song == null || !song.isRemote) {
+      return;
+    }
+    final Duration remaining = _duration - _position;
+    if (remaining > const Duration(milliseconds: 450)) {
+      return;
+    }
+    final int? targetIndex = _nextQueueIndex();
+    if (targetIndex == null) {
+      return;
+    }
+    _offlineQueueAdvancePending = true;
+    unawaited(() async {
+      try {
+        await _reopenQueueAtIndex(targetIndex);
+        await play();
+      } finally {
+        _offlineQueueAdvancePending = false;
+      }
+    }());
+  }
+
   void _requestAutoHomeRefresh({bool force = false}) {
     final DateTime now = DateTime.now();
     if (_homeLoading) {
@@ -562,6 +730,25 @@ class OuterTuneController extends ChangeNotifier {
 
   Future<void> ensureNotificationPermissionIfNeeded() async {
     await _ensureNotificationPermission();
+  }
+
+  Future<void> _ensureLibraryAccessPermissionIfNeeded() async {
+    if (!Platform.isAndroid) {
+      return;
+    }
+    final List<Permission> permissions = <Permission>[
+      Permission.audio,
+      Permission.storage,
+    ];
+    for (final Permission permission in permissions) {
+      final PermissionStatus status = await permission.status;
+      if (status.isGranted || status.isLimited) {
+        return;
+      }
+    }
+    for (final Permission permission in permissions) {
+      await permission.request();
+    }
   }
 
   Future<void> searchOnline(String query) async {
@@ -1705,12 +1892,22 @@ class OuterTuneController extends ChangeNotifier {
     int limit = 10,
   }) {
     final Set<String> seenKeys = <String>{};
+    final Set<String> seenIds = <String>{};
+    final Set<String> dislikedKeys = dislikedSongs
+        .map(_songIdentityKey)
+        .toSet();
     final List<LibrarySong> result = <LibrarySong>[];
     for (final LibrarySong song in songs) {
-      if (excludedIds.contains(song.id)) {
+      final String identityKey = _songIdentityKey(song);
+      if (excludedIds.contains(song.id) ||
+          song.isDisliked ||
+          dislikedKeys.contains(identityKey)) {
         continue;
       }
-      if (!seenKeys.add(_songIdentityKey(song))) {
+      if (!seenIds.add(song.id)) {
+        continue;
+      }
+      if (!seenKeys.add(identityKey)) {
         continue;
       }
       result.add(song);
@@ -1967,17 +2164,27 @@ class OuterTuneController extends ChangeNotifier {
         return;
       }
 
+      final Set<String> dislikedKeys = dislikedSongs
+          .map(_songIdentityKey)
+          .toSet();
       final Set<String> queuedIds = <String>{..._queueSongIds};
+      final Set<String> queuedKeys = queueSongs.map(_songIdentityKey).toSet();
       int addedCount = 0;
       for (final LibrarySong song in predictions) {
         if (_isDisposing || _isDisposed) {
           return;
         }
+        if (song.isDisliked || dislikedKeys.contains(_songIdentityKey(song))) {
+          continue;
+        }
         final LibrarySong prepared = await _preparePlayableSong(song);
         if (_isDisposing || _isDisposed) {
           return;
         }
-        if (!queuedIds.add(prepared.id)) {
+        final String preparedKey = _songIdentityKey(prepared);
+        if (dislikedKeys.contains(preparedKey) ||
+            !queuedIds.add(prepared.id) ||
+            !queuedKeys.add(preparedKey)) {
           continue;
         }
 
@@ -3192,7 +3399,7 @@ class OuterTuneController extends ChangeNotifier {
         }
         _isPlaying = value as bool;
         _publishNotificationState();
-        notifyListeners();
+        _syncPlaybackNotifiers();
       }),
     );
 
@@ -3207,8 +3414,9 @@ class OuterTuneController extends ChangeNotifier {
         _position = value as Duration;
         _updateActivePlaybackProgress();
         _syncQueueIndexFromPlayerState();
+        _maybeAdvanceOfflineQueueAtTrackEnd();
         _publishNotificationState();
-        notifyListeners();
+        _syncPlaybackNotifiers();
       }),
     );
 
@@ -3222,7 +3430,7 @@ class OuterTuneController extends ChangeNotifier {
         }
         _duration = value as Duration;
         _publishNotificationState();
-        notifyListeners();
+        _syncPlaybackNotifiers();
       }),
     );
 
@@ -3232,7 +3440,7 @@ class OuterTuneController extends ChangeNotifier {
           return;
         }
         _isShuffleEnabled = value as bool;
-        notifyListeners();
+        _syncPlaybackNotifiers();
       }),
     );
 
@@ -3242,7 +3450,7 @@ class OuterTuneController extends ChangeNotifier {
           return;
         }
         _repeatMode = value as PlaylistMode;
-        notifyListeners();
+        _syncPlaybackNotifiers();
       }),
     );
 
@@ -3252,6 +3460,53 @@ class OuterTuneController extends ChangeNotifier {
           return;
         }
         _errorMessage = value as String;
+        _debugPlayback(
+          'player.error message="$_errorMessage" '
+          'current=${_debugSongLabel(currentSong)} '
+          'pending=${_debugSongLabel(_pendingSelectionSong)} '
+          'transitionSong=$_transitioningSongId '
+          'transitionIndex=$_transitioningQueueIndex '
+          'queueIndex=$_queueIndex '
+          'playerIndex=${_player.state.playlist.index}',
+        );
+        if (_isConnectivityError(_errorMessage!)) {
+          _setOffline(true, notify: false);
+        }
+        if (_isOffline || offlineMusicMode) {
+          final int? transitionIndex = _transitioningQueueIndex;
+          if (_offlineQueueActivationTargetSongId == null &&
+              transitionIndex != null &&
+              transitionIndex >= 0 &&
+              transitionIndex < _queueSongIds.length) {
+            final LibrarySong? target = songById(
+              _queueSongIds[transitionIndex],
+            );
+            if (target != null &&
+                _offlinePlaybackCachePathForSong(target.id) != null) {
+              _debugPlayback(
+                'player.error reopening cached target '
+                'index=$transitionIndex song=${_debugSongLabel(target)}',
+              );
+              unawaited(_reopenQueueAtIndex(transitionIndex));
+              notifyListeners();
+              return;
+            }
+          }
+          final String? erroredSongId = currentSong?.id;
+          unawaited(() async {
+            await Future<void>.delayed(const Duration(milliseconds: 320));
+            if (_isDisposing || _isDisposed) {
+              return;
+            }
+            if ((!_isOffline && !offlineMusicMode) ||
+                _isPlaying ||
+                erroredSongId == null ||
+                currentSong?.id != erroredSongId) {
+              return;
+            }
+            await _activateOfflineQueuePlayback();
+          }());
+        }
         notifyListeners();
       }),
     );
@@ -3262,16 +3517,52 @@ class OuterTuneController extends ChangeNotifier {
           return;
         }
         final Playlist playlist = value as Playlist;
-        _queueSongIds = playlist.medias
+        final List<String> nextQueueSongIds = playlist.medias
             .map((Media media) => media.extras?['songId'] as String?)
             .whereType<String>()
             .toList();
-        _queueIndex = playlist.index.clamp(
+        final int nextQueueIndex = playlist.index.clamp(
           0,
-          _queueSongIds.isEmpty ? 0 : _queueSongIds.length - 1,
+          nextQueueSongIds.isEmpty ? 0 : nextQueueSongIds.length - 1,
         );
+        _debugPlayback(
+          'player.playlist event '
+          'playerIndex=${playlist.index} '
+          'nextIndex=$nextQueueIndex '
+          'nextSong=${nextQueueSongIds.isEmpty ? 'null' : nextQueueSongIds[nextQueueIndex]} '
+          'queueLen=${nextQueueSongIds.length} '
+          'activationTarget=$_offlineQueueActivationTargetSongId '
+          'transitionSong=$_transitioningSongId '
+          'transitionIndex=$_transitioningQueueIndex',
+        );
+        if (_offlineQueueActivationTargetSongId != null) {
+          final String? activeSongId = nextQueueSongIds.isEmpty
+              ? null
+              : nextQueueSongIds[nextQueueIndex];
+          final bool activationResolved =
+              activeSongId == _offlineQueueActivationTargetSongId &&
+              nextQueueIndex == _offlineQueueActivationTargetIndex &&
+              listEquals(nextQueueSongIds, _offlineQueueActivationSongIds);
+          if (!activationResolved) {
+            _debugPlayback(
+              'player.playlist ignored during activation '
+              'active=$activeSongId '
+              'expected=$_offlineQueueActivationTargetSongId '
+              'expectedIndex=$_offlineQueueActivationTargetIndex',
+            );
+            return;
+          }
+          _debugPlayback(
+            'player.playlist activation resolved '
+            'song=$activeSongId index=$nextQueueIndex',
+          );
+        }
+        _queueSongIds = nextQueueSongIds;
+        _queueIndex = nextQueueIndex;
         final LibrarySong? song = currentSong;
-        _resolveTrackTransition(song);
+        if (_offlineQueueActivationTargetSongId == null) {
+          _resolveTrackTransition(song);
+        }
         if (song != null && song.id != _lastTrackedSongId) {
           _trackPlayback(song.id);
         }
@@ -3335,6 +3626,18 @@ class OuterTuneController extends ChangeNotifier {
     if (_isDisposing || _isDisposed) {
       return;
     }
+    if (_offlineQueueActivationTargetSongId != null ||
+        _transitioningSongId != null) {
+      _debugPlayback(
+        'player.position queue sync skipped '
+        'activation=$_offlineQueueActivationTargetSongId '
+        'transitionSong=$_transitioningSongId '
+        'transitionIndex=$_transitioningQueueIndex '
+        'queueIndex=$_queueIndex '
+        'playerIndex=${_player.state.playlist.index}',
+      );
+      return;
+    }
     if (_queueSongIds.isEmpty) {
       return;
     }
@@ -3345,6 +3648,11 @@ class OuterTuneController extends ChangeNotifier {
     if (nextIndex == _queueIndex) {
       return;
     }
+    _debugPlayback(
+      'player.position queue sync apply '
+      'queueIndex=$_queueIndex -> $nextIndex '
+      'playerIndex=${_player.state.playlist.index}',
+    );
     _queueIndex = nextIndex;
     final LibrarySong? song = currentSong;
     if (song != null && song.id != _lastTrackedSongId) {
@@ -3434,12 +3742,18 @@ class OuterTuneController extends ChangeNotifier {
 
   Future<void> _rescanAllSources() async {
     _scanning = true;
-    _statusMessage = 'Scanning library...';
+    _statusMessage = 'Scanning device audio...';
     _errorMessage = null;
     notifyListeners();
 
     try {
-      final List<String> files = await _expandSourceFiles(_sources);
+      await _ensureLibraryAccessPermissionIfNeeded();
+      _autoSources = await _discoverAutomaticSources();
+      final List<String> activeSources = <String>{
+        ..._autoSources,
+        ..._sources,
+      }.toList()..sort();
+      final List<String> files = await _expandSourceFiles(activeSources);
       final Map<String, LibrarySong> previousByPath = <String, LibrarySong>{
         for (final LibrarySong song in _songs) song.path: song,
       };
@@ -3474,17 +3788,87 @@ class OuterTuneController extends ChangeNotifier {
           .toList();
 
       _statusMessage = scanned.isEmpty
-          ? 'No supported audio files found in the selected sources.'
-          : 'Imported ${scanned.length} tracks from ${_sources.length} source(s).';
+          ? 'No supported audio files found on this device.'
+          : 'Loaded ${scanned.length} tracks from device storage.';
       await _saveSnapshot();
     } catch (error, stackTrace) {
       debugPrintStack(stackTrace: stackTrace);
       _errorMessage = '$error';
-      _statusMessage = 'Scan failed.';
+      _statusMessage = 'Device scan failed.';
     } finally {
       _scanning = false;
       notifyListeners();
     }
+  }
+
+  Future<List<String>> _discoverAutomaticSources() async {
+    final Set<String> results = <String>{};
+    if (Platform.isAndroid) {
+      results.addAll(await _discoverAndroidAudioRoots());
+    } else if (Platform.isWindows) {
+      results.addAll(_discoverWindowsAudioRoots());
+    }
+    return results.toList()..sort();
+  }
+
+  Future<List<String>> _discoverAndroidAudioRoots() async {
+    final Set<String> candidates = <String>{
+      '/storage/emulated/0/Music',
+      '/storage/emulated/0/Download',
+      '/storage/emulated/0/Downloads',
+      '/storage/emulated/0/Podcasts',
+      '/sdcard/Music',
+      '/sdcard/Download',
+      '/sdcard/Downloads',
+      '/sdcard/Podcasts',
+    };
+    for (final String key in <String>[
+      'EXTERNAL_STORAGE',
+      'SECONDARY_STORAGE',
+      'EMULATED_STORAGE_TARGET',
+    ]) {
+      final String? raw = Platform.environment[key];
+      if (raw == null || raw.trim().isEmpty) {
+        continue;
+      }
+      for (final String root in raw.split(':')) {
+        final String trimmed = root.trim();
+        if (trimmed.isEmpty) {
+          continue;
+        }
+        candidates.add(trimmed);
+        candidates.add(p.join(trimmed, 'Music'));
+        candidates.add(p.join(trimmed, 'Download'));
+        candidates.add(p.join(trimmed, 'Downloads'));
+        candidates.add(p.join(trimmed, 'Podcasts'));
+      }
+    }
+
+    final Set<String> existing = <String>{};
+    for (final String path in candidates) {
+      final Directory directory = Directory(path);
+      if (await directory.exists()) {
+        existing.add(directory.path);
+      }
+    }
+    return existing.toList()..sort();
+  }
+
+  List<String> _discoverWindowsAudioRoots() {
+    final String? userProfile = Platform.environment['USERPROFILE'];
+    if (userProfile == null || userProfile.trim().isEmpty) {
+      return <String>[];
+    }
+    final Set<String> candidates = <String>{
+      p.join(userProfile, 'Music'),
+      p.join(userProfile, 'Downloads'),
+      p.join(userProfile, 'Desktop'),
+      p.join(userProfile, 'Videos'),
+    };
+    return candidates
+        .where((String path) => Directory(path).existsSync())
+        .toList()
+      ..sort();
   }
 
   Future<List<String>> _expandSourceFiles(List<String> sources) async {
@@ -3621,7 +4005,7 @@ class OuterTuneController extends ChangeNotifier {
 
   String _sourceLabelForPath(String path) {
     String? bestMatch;
-    for (final String source in _sources) {
+    for (final String source in <String>{..._autoSources, ..._sources}) {
       if (path.startsWith(source) &&
           (bestMatch == null || source.length > bestMatch.length)) {
         bestMatch = source;
@@ -3735,8 +4119,25 @@ class OuterTuneController extends ChangeNotifier {
 
   Future<void> enqueueSong(LibrarySong song) async {
     final LibrarySong prepared = await _preparePlayableSong(song);
+    final Set<String> dislikedKeys = dislikedSongs
+        .map(_songIdentityKey)
+        .toSet();
+    if (prepared.isDisliked ||
+        dislikedKeys.contains(_songIdentityKey(prepared))) {
+      return;
+    }
     if (_queueSongIds.isEmpty) {
       await playSong(prepared, label: 'Queue');
+      return;
+    }
+    final String preparedKey = _songIdentityKey(prepared);
+    final bool alreadyQueued =
+        _queueSongIds.contains(prepared.id) ||
+        queueSongs.any(
+          (LibrarySong queuedSong) =>
+              _songIdentityKey(queuedSong) == preparedKey,
+        );
+    if (alreadyQueued) {
       return;
     }
     _smartQueueSongIds.remove(prepared.id);
@@ -3834,7 +4235,12 @@ class OuterTuneController extends ChangeNotifier {
     if (index < 0 || index >= _queueSongIds.length) {
       return;
     }
-    if (_isOffline || offlineMusicMode) {
+    _debugPlayback(
+      'jumpToQueue requested index=$index '
+      'currentIndex=$_queueIndex '
+      'target=${_debugSongLabel(songById(_queueSongIds[index]))}',
+    );
+    if (await _shouldUseOfflineQueueTransition(index)) {
       await _reopenQueueAtIndex(index);
       return;
     }
@@ -3843,7 +4249,10 @@ class OuterTuneController extends ChangeNotifier {
       await _player.jump(index);
       _queueIndex = index;
       notifyListeners();
-    } catch (_) {
+    } catch (error) {
+      if (await _recoverTransitionFromError(index, error)) {
+        return;
+      }
       _clearTrackTransition();
       rethrow;
     }
@@ -3867,6 +4276,56 @@ class OuterTuneController extends ChangeNotifier {
     }
     unawaited(_maybeExtendSmartQueue(force: true));
     notifyListeners();
+  }
+
+  Future<void> _removeQueuedSongInstances(
+    LibrarySong song, {
+    bool keepCurrent = false,
+  }) async {
+    final String identityKey = _songIdentityKey(song);
+    for (int index = _queueSongIds.length - 1; index >= 0; index -= 1) {
+      final LibrarySong? queuedSong = songById(_queueSongIds[index]);
+      if (queuedSong == null || _songIdentityKey(queuedSong) != identityKey) {
+        continue;
+      }
+      if (keepCurrent && index == _queueIndex) {
+        continue;
+      }
+      await removeFromQueue(index);
+    }
+  }
+
+  Future<void> _skipDislikedCurrentSong(LibrarySong song) async {
+    if (currentSong?.id != song.id) {
+      return;
+    }
+
+    final String identityKey = _songIdentityKey(song);
+    final int foundIndex = _queueSongIds.indexWhere((String queuedSongId) {
+      final LibrarySong? queuedSong = songById(queuedSongId);
+      return queuedSong != null && _songIdentityKey(queuedSong) != identityKey;
+    }, _queueIndex + 1);
+    int? targetIndex = foundIndex >= 0 ? foundIndex : null;
+
+    if (targetIndex == null &&
+        !_isOffline &&
+        !offlineMusicMode &&
+        !_settings.smartQueueEnabled) {
+      await _appendSmartQueuePredictions(song, limit: 1);
+      if (_queueIndex < _queueSongIds.length - 1) {
+        targetIndex = _queueIndex + 1;
+      }
+    } else if (targetIndex == null && !_isOffline && !offlineMusicMode) {
+      await _maybeExtendSmartQueue(seed: song, force: true);
+      if (_queueIndex < _queueSongIds.length - 1) {
+        targetIndex = _queueIndex + 1;
+      }
+    }
+
+    if (targetIndex != null) {
+      await jumpToQueue(targetIndex);
+      await play();
+    }
   }
 
   Future<void> reorderQueue(int from, int to) async {
@@ -3917,14 +4376,22 @@ class OuterTuneController extends ChangeNotifier {
     if (targetIndex == null) {
       return;
     }
-    if (_isOffline || offlineMusicMode) {
+    _debugPlayback(
+      'nextTrack requested currentIndex=$_queueIndex targetIndex=$targetIndex '
+      'current=${_debugSongLabel(currentSong)} '
+      'target=${_debugSongLabel(songById(_queueSongIds[targetIndex]))}',
+    );
+    if (await _shouldUseOfflineQueueTransition(targetIndex)) {
       await _reopenQueueAtIndex(targetIndex);
       return;
     }
     _primePendingTrackTransition(targetIndex);
     try {
       await _player.next();
-    } catch (_) {
+    } catch (error) {
+      if (await _recoverTransitionFromError(targetIndex, error)) {
+        return;
+      }
       _clearTrackTransition();
       rethrow;
     }
@@ -3935,14 +4402,22 @@ class OuterTuneController extends ChangeNotifier {
     if (targetIndex == null) {
       return;
     }
-    if (_isOffline || offlineMusicMode) {
+    _debugPlayback(
+      'previousTrack requested currentIndex=$_queueIndex targetIndex=$targetIndex '
+      'current=${_debugSongLabel(currentSong)} '
+      'target=${_debugSongLabel(songById(_queueSongIds[targetIndex]))}',
+    );
+    if (await _shouldUseOfflineQueueTransition(targetIndex)) {
       await _reopenQueueAtIndex(targetIndex);
       return;
     }
     _primePendingTrackTransition(targetIndex);
     try {
       await _player.previous();
-    } catch (_) {
+    } catch (error) {
+      if (await _recoverTransitionFromError(targetIndex, error)) {
+        return;
+      }
       _clearTrackTransition();
       rethrow;
     }
@@ -4084,10 +4559,7 @@ class OuterTuneController extends ChangeNotifier {
     }
   }
 
-  String _offlinePlaybackCacheFileName(
-    LibrarySong song,
-    String resolvedUrl,
-  ) {
+  String _offlinePlaybackCacheFileName(LibrarySong song, String resolvedUrl) {
     final Uri? uri = Uri.tryParse(resolvedUrl);
     final String extension = p.extension(uri?.path ?? '').trim().isEmpty
         ? '.m4a'
@@ -4183,7 +4655,9 @@ class OuterTuneController extends ChangeNotifier {
     for (int i = start; i < end; i += 1) {
       addSong(songById(_queueSongIds[i]));
     }
-    for (final PlaybackEntry entry in _history.take(_offlinePlaybackHistoryKeepCount)) {
+    for (final PlaybackEntry entry in _history.take(
+      _offlinePlaybackHistoryKeepCount,
+    )) {
       addSong(songById(entry.songId));
     }
     return result;
@@ -4258,21 +4732,99 @@ class OuterTuneController extends ChangeNotifier {
     _primePendingTrackTransition(index);
     try {
       final bool shouldResume = _isPlaying;
-      _queueSongIds = preparedQueue.map((LibrarySong song) => song.id).toList();
+      _debugPlayback(
+        'queue.reopen start index=$index '
+        'target=${_debugSongLabel(target)} '
+        'shouldResume=$shouldResume '
+        'currentIndex=$_queueIndex '
+        'playerIndex=${_player.state.playlist.index}',
+      );
+      final List<String> preparedQueueSongIds = preparedQueue
+          .map((LibrarySong song) => song.id)
+          .toList();
+      _primeOfflineQueueActivation(
+        targetSongId: target.id,
+        targetIndex: index,
+        queueSongIds: preparedQueueSongIds,
+      );
+      _queueSongIds = preparedQueueSongIds;
       _queueIndex = index;
+      notifyListeners();
       await _player.open(
         Playlist(preparedQueue.map(_mediaForSong).toList(), index: index),
       );
       if (shouldResume) {
         await _player.play();
       }
+      _clearOfflineQueueActivationState();
+      _resolveTrackTransition(preparedQueue[index]);
       _trackPlayback(preparedQueue[index].id);
       unawaited(_refreshOfflinePlaybackCache(anchor: preparedQueue[index]));
+      _debugPlayback(
+        'queue.reopen complete index=$index '
+        'target=${_debugSongLabel(preparedQueue[index])}',
+      );
       notifyListeners();
     } catch (_) {
+      _debugPlayback('queue.reopen failed index=$index');
+      _clearOfflineQueueActivationState();
       _clearTrackTransition();
       rethrow;
     }
+  }
+
+  Future<bool> _shouldUseOfflineQueueTransition(int targetIndex) async {
+    if (offlineMusicMode || _isOffline) {
+      _debugPlayback(
+        'queue.transition offline shortcut '
+        'targetIndex=$targetIndex offline=$_isOffline offlineMode=$offlineMusicMode',
+      );
+      return true;
+    }
+    if (targetIndex < 0 || targetIndex >= _queueSongIds.length) {
+      return false;
+    }
+    final LibrarySong? targetSong = songById(_queueSongIds[targetIndex]);
+    if (targetSong == null || !targetSong.isRemote) {
+      return false;
+    }
+    if (_offlinePlaybackCachePathForSong(targetSong.id) == null) {
+      return false;
+    }
+    final bool online = await refreshConnectivityStatus(notify: false);
+    _debugPlayback(
+      'queue.transition connectivity check '
+      'targetIndex=$targetIndex target=${_debugSongLabel(targetSong)} online=$online',
+    );
+    return !online;
+  }
+
+  Future<bool> _recoverTransitionFromError(
+    int targetIndex,
+    Object error,
+  ) async {
+    _debugPlayback(
+      'transition.recover check '
+      'targetIndex=$targetIndex error=$error',
+    );
+    if (!_isConnectivityError(error)) {
+      return false;
+    }
+    _setOffline(true, notify: false);
+    if (targetIndex < 0 || targetIndex >= _queueSongIds.length) {
+      return false;
+    }
+    final LibrarySong? targetSong = songById(_queueSongIds[targetIndex]);
+    if (targetSong == null ||
+        _offlinePlaybackCachePathForSong(targetSong.id) == null) {
+      return false;
+    }
+    _debugPlayback(
+      'transition.recover reopening cached target '
+      'targetIndex=$targetIndex target=${_debugSongLabel(targetSong)}',
+    );
+    await _reopenQueueAtIndex(targetIndex);
+    return true;
   }
 
   void _primePendingTrackTransition(int targetIndex) {
@@ -4281,13 +4833,21 @@ class OuterTuneController extends ChangeNotifier {
       return;
     }
     _transitioningSongId = pending.id;
+    _transitioningQueueIndex = targetIndex;
     _pendingSelectionSong = pending;
     _position = Duration.zero;
     _duration = Duration.zero;
+    _debugPlayback(
+      'transition.prime index=$targetIndex song=${_debugSongLabel(pending)} '
+      'queueIndex=$_queueIndex',
+    );
     notifyListeners();
   }
 
   bool _shouldHoldTransitionMetrics() {
+    if (_offlineQueueActivationTargetSongId != null) {
+      return true;
+    }
     final String? transitioningSongId = _transitioningSongId;
     if (transitioningSongId == null) {
       return false;
@@ -4302,17 +4862,62 @@ class OuterTuneController extends ChangeNotifier {
     }
     if (_transitioningSongId == song.id) {
       _transitioningSongId = null;
+      _transitioningQueueIndex = null;
     }
+    _offlineQueueAdvancePending = false;
     final LibrarySong? pending = _pendingSelectionSong;
     if (pending == null || pending.id == song.id) {
       _pendingSelectionSong = null;
     }
+    _debugPlayback(
+      'transition.resolve song=${_debugSongLabel(song)} '
+      'pending=${_debugSongLabel(_pendingSelectionSong)} '
+      'transitionSong=$_transitioningSongId '
+      'transitionIndex=$_transitioningQueueIndex '
+      'queueIndex=$_queueIndex',
+    );
   }
 
   void _clearTrackTransition() {
     _transitioningSongId = null;
+    _transitioningQueueIndex = null;
     _pendingSelectionSong = null;
+    _debugPlayback('transition.clear queueIndex=$_queueIndex');
     notifyListeners();
+  }
+
+  void _primeOfflineQueueActivation({
+    required String targetSongId,
+    required int targetIndex,
+    required List<String> queueSongIds,
+  }) {
+    _offlineQueueActivationTargetSongId = targetSongId;
+    _offlineQueueActivationTargetIndex = targetIndex;
+    _offlineQueueActivationSongIds = List<String>.from(queueSongIds);
+    _transitioningSongId = targetSongId;
+    _transitioningQueueIndex = targetIndex;
+    _pendingSelectionSong = songById(targetSongId) ?? _pendingSelectionSong;
+    _debugPlayback(
+      'offline.activation prime target=$targetSongId '
+      'targetIndex=$targetIndex queueLen=${queueSongIds.length}',
+    );
+  }
+
+  void _clearOfflineQueueActivationState() {
+    _offlineQueueActivationTargetSongId = null;
+    _offlineQueueActivationTargetIndex = null;
+    _offlineQueueActivationSongIds = null;
+  }
+
+  void _debugPlayback(String message) {
+    debugPrint('[PlaybackDebug] $message');
+  }
+
+  String _debugSongLabel(LibrarySong? song) {
+    if (song == null) {
+      return 'null';
+    }
+    return '${song.id}("${song.title}" by "${song.artist}")';
   }
 
   int? _nextQueueIndex() {
@@ -4491,7 +5096,25 @@ class OuterTuneController extends ChangeNotifier {
         isLiked: newLiked,
       );
     }
+    if (newDisliked) {
+      final String dislikedKey = _songIdentityKey(base);
+      _personalizedHomeRecommendations = _personalizedHomeRecommendations
+          .where(
+            (SongRecommendation item) =>
+                _songIdentityKey(item.song) != dislikedKey,
+          )
+          .toList(growable: false);
+    }
     await _saveSnapshot();
+    if (newDisliked) {
+      final bool isCurrentSong = currentSong?.id == songId;
+      await _removeQueuedSongInstances(base, keepCurrent: isCurrentSong);
+      if (isCurrentSong) {
+        await _skipDislikedCurrentSong(
+          songById(songId) ?? base.copyWith(isDisliked: true, isLiked: false),
+        );
+      }
+    }
     notifyListeners();
   }
 
@@ -4689,9 +5312,11 @@ class OuterTuneController extends ChangeNotifier {
     unawaited(AndroidMediaNotificationBridge.stop());
     _ytMusic?.close();
     _yt.close();
+    _isDisposed = true;
+    nowPlayingState.dispose();
+    playbackProgressState.dispose();
     unawaited(_player.stop());
     unawaited(_player.dispose());
-    _isDisposed = true;
     super.dispose();
   }
 }

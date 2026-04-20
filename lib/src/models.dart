@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:media_kit/media_kit.dart';
 
 enum AppDestination {
   home('Home', Icons.home_rounded, Icons.home_outlined),
@@ -529,4 +530,70 @@ class SongRecommendation {
   final LibrarySong song;
   final String reason;
   final bool isExploratory;
+}
+
+class NowPlayingState {
+  const NowPlayingState({
+    this.song,
+    this.isLoading = false,
+    this.isShuffleEnabled = false,
+    this.repeatMode = PlaylistMode.none,
+    this.queueIndex = 0,
+    this.queueLength = 0,
+  });
+
+  final LibrarySong? song;
+  final bool isLoading;
+  final bool isShuffleEnabled;
+  final PlaylistMode repeatMode;
+  final int queueIndex;
+  final int queueLength;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is NowPlayingState &&
+            runtimeType == other.runtimeType &&
+            song == other.song &&
+            isLoading == other.isLoading &&
+            isShuffleEnabled == other.isShuffleEnabled &&
+            repeatMode == other.repeatMode &&
+            queueIndex == other.queueIndex &&
+            queueLength == other.queueLength;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        song,
+        isLoading,
+        isShuffleEnabled,
+        repeatMode,
+        queueIndex,
+        queueLength,
+      );
+}
+
+class PlaybackProgressState {
+  const PlaybackProgressState({
+    this.isPlaying = false,
+    this.position = Duration.zero,
+    this.duration = Duration.zero,
+  });
+
+  final bool isPlaying;
+  final Duration position;
+  final Duration duration;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is PlaybackProgressState &&
+            runtimeType == other.runtimeType &&
+            isPlaying == other.isPlaying &&
+            position == other.position &&
+            duration == other.duration;
+  }
+
+  @override
+  int get hashCode => Object.hash(isPlaying, position, duration);
 }

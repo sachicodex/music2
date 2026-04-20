@@ -110,90 +110,33 @@ class _HomeScreen extends StatefulWidget {
   State<_HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<_HomeScreen> {
+class _HomeScreenState extends State<_HomeScreen>
+    with AutomaticKeepAliveClientMixin<_HomeScreen> {
   final ScrollController _scroll = ScrollController();
-  int _revealStage = 0;
-  Timer? _revealTimer;
-  String _lastContentSignature = '';
 
   @override
   void initState() {
     super.initState();
     _scroll.addListener(_onScroll);
-    widget.controller.addListener(_syncRevealStage);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _syncRevealStage());
   }
 
   @override
   void dispose() {
-    widget.controller.removeListener(_syncRevealStage);
-    _revealTimer?.cancel();
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
     super.dispose();
   }
 
+  @override
+  bool get wantKeepAlive => true;
+
   Future<void> _onScroll() async {
     // Home recommendations are intentionally static for this app session.
   }
 
-  void _syncRevealStage() {
-    if (!mounted) {
-      return;
-    }
-    final OuterTuneController controller = widget.controller;
-    if (controller.isOffline || controller.offlineMusicMode) {
-      _revealTimer?.cancel();
-      if (_revealStage != 0 || _lastContentSignature.isNotEmpty) {
-        setState(() {
-          _revealStage = 0;
-          _lastContentSignature = '';
-        });
-      }
-      return;
-    }
-
-    final String signature = _homeContentSignature(controller);
-    if (signature.isEmpty) {
-      _revealTimer?.cancel();
-      if (_revealStage != 0 || _lastContentSignature.isNotEmpty) {
-        setState(() {
-          _revealStage = 0;
-          _lastContentSignature = '';
-        });
-      }
-      return;
-    }
-
-    if (signature == _lastContentSignature) {
-      return;
-    }
-
-    final bool hadVisibleContent =
-        _lastContentSignature.isNotEmpty && _revealStage >= 1;
-    _lastContentSignature = signature;
-    _revealTimer?.cancel();
-    if (hadVisibleContent) {
-      setState(() => _revealStage = 3);
-      return;
-    }
-
-    setState(() => _revealStage = 0);
-    const int targetStage = 3;
-    void advance() {
-      if (!mounted || _revealStage >= targetStage) {
-        return;
-      }
-      setState(() => _revealStage += 1);
-      if (_revealStage < targetStage) {
-        _revealTimer = Timer(const Duration(milliseconds: 160), advance);
-      }
-    }
-    advance();
-  }
-
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final OuterTuneController controller = widget.controller;
     if (controller.isOffline || controller.offlineMusicMode) {
       return _HomeOfflineState(controller: controller);
@@ -217,12 +160,6 @@ class _HomeScreenState extends State<_HomeScreen> {
     final List<LibrarySong> jumpBackIn = controller.recentlyPlayedSongs
         .take(4)
         .toList(growable: false);
-    final bool homeFeedPending =
-        _revealStage == 0 && (controller.homeLoading || hasRevealableContent);
-    final bool showTopContent = _revealStage >= 1;
-    final bool showMiddleContent = _revealStage >= 2;
-    final bool showBottomContent = _revealStage >= 3;
-
     final _FeaturedHeroData? featured = _pickFeaturedHero(
       context: context,
       controller: controller,
@@ -260,7 +197,7 @@ class _HomeScreenState extends State<_HomeScreen> {
                 children: <Widget>[
                   const _KineticTopBar(),
                   const SizedBox(height: 14),
-                  if (!showTopContent && homeFeedPending)
+                  if (controller.homeLoading && !hasRevealableContent)
                     const _KineticHeroSkeleton()
                   else if (featured != null)
                     _KineticHeroCard(
@@ -292,14 +229,14 @@ class _HomeScreenState extends State<_HomeScreen> {
                     },
                   ),
                   const SizedBox(height: 10),
-                  if (!showMiddleContent && homeFeedPending)
+                  if (controller.homeLoading && !hasRevealableContent)
                     const _KineticListSkeleton(count: 4)
-                  else if (showMiddleContent && mayYouLike.isEmpty)
+                  else if (mayYouLike.isEmpty)
                     const _PersonalizationHintCard(
                       message:
                           'Play, like, and finish songs to train your personalized May You Like section.',
                     )
-                  else if (showMiddleContent)
+                  else
                     Column(
                       children: List<Widget>.generate(mayYouLike.length, (
                         int index,
@@ -318,7 +255,13 @@ class _HomeScreenState extends State<_HomeScreen> {
                         );
                       }),
                     ),
-                  if (showBottomContent && jumpBackIn.isNotEmpty) ...<Widget>[
+                  ..._buildMoreShelves(
+                    context: context,
+                    controller: controller,
+                    skipCount: 1,
+                  ),
+                  if (!controller.homeLoading &&
+                      jumpBackIn.isNotEmpty) ...<Widget>[
                     const SizedBox(height: 18),
                     _KineticSectionHeader(
                       title: 'JUMP BACK IN',
@@ -343,14 +286,8 @@ class _HomeScreenState extends State<_HomeScreen> {
                       },
                     ),
                   ],
-                  if (showBottomContent) ..._buildMoreShelves(
-                    context: context,
-                    controller: controller,
-                    skipCount: 1,
-                  ),
                   if (controller.homeLoading &&
-                      !hasRevealableContent &&
-                      showMiddleContent) ...<Widget>[
+                      !hasRevealableContent) ...<Widget>[
                     const SizedBox(height: 16),
                     const Opacity(opacity: 0.8, child: _HomeFeedSkeleton()),
                   ],
@@ -362,28 +299,6 @@ class _HomeScreenState extends State<_HomeScreen> {
       ),
     );
   }
-}
-
-String _homeContentSignature(OuterTuneController controller) {
-  final StringBuffer buffer = StringBuffer();
-  for (final SongRecommendation item in controller.personalizedHomeRecommendations
-      .take(4)) {
-    buffer
-      ..write(item.song.id)
-      ..write('|');
-  }
-  for (final HomeFeedSection section in controller.homeFeed.take(4)) {
-    buffer
-      ..write(section.title)
-      ..write(':');
-    for (final LibrarySong song in section.songs.take(3)) {
-      buffer
-        ..write(song.id)
-        ..write(',');
-    }
-    buffer.write(';');
-  }
-  return buffer.toString();
 }
 
 class _PersonalizationHintCard extends StatelessWidget {
@@ -455,7 +370,8 @@ class _HomeOfflineState extends StatelessWidget {
                   : 'Home recommendations need internet. Your downloaded and local tracks stay available until the connection comes back.',
               actionLabel: 'Retry',
               onAction: () async {
-                final bool online = await controller.refreshConnectivityStatus();
+                final bool online = await controller
+                    .refreshConnectivityStatus();
                 if (online && !controller.offlineMusicMode) {
                   await controller.refreshHomeFeed(force: true);
                 }
@@ -1076,30 +992,22 @@ class _KineticHeroCard extends StatelessWidget {
               children: <Widget>[
                 if (imageUrl != null && imageUrl!.trim().isNotEmpty)
                   Positioned.fill(
-                    child: Image.network(
-                      imageUrl!,
-                      fit: BoxFit.cover,
-                      filterQuality: FilterQuality.high,
-                      errorBuilder:
-                          (
-                            BuildContext context,
-                            Object error,
-                            StackTrace? stackTrace,
-                          ) {
-                            return const DecoratedBox(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: <Color>[
-                                    Color(0xFF2A160C),
-                                    Color(0xFF0B0A0C),
-                                    Color(0xFF0B0A0C),
-                                  ],
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                ),
-                              ),
-                            );
-                          },
+                    child: _CachedArtworkImage(
+                      imageUrl: imageUrl!,
+                      dimension: constraints.maxWidth,
+                      errorWidget: const DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: <Color>[
+                              Color(0xFF2A160C),
+                              Color(0xFF0B0A0C),
+                              Color(0xFF0B0A0C),
+                            ],
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                          ),
+                        ),
+                      ),
                     ),
                   )
                 else
@@ -1301,64 +1209,66 @@ class _KineticPopularTrackTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final String durationText = _formatClock(song.duration);
     final String subtitle = _songArtistLabel(song);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Row(
-          children: <Widget>[
-            SizedBox(
-              width: 28,
-              child: Text(
-                index.toString().padLeft(2, '0'),
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: Colors.white.withValues(alpha: 0.55),
-                  letterSpacing: 1.2,
+    return RepaintBoundary(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Row(
+            children: <Widget>[
+              SizedBox(
+                width: 28,
+                child: Text(
+                  index.toString().padLeft(2, '0'),
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: Colors.white.withValues(alpha: 0.55),
+                    letterSpacing: 1.2,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 14),
-            _Artwork(
-              seed: song.id,
-              title: song.title,
-              size: 44,
-              imageUrl: song.artworkUrl,
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    song.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: Colors.white.withValues(alpha: 0.92),
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.white.withValues(alpha: 0.55),
-                    ),
-                  ),
-                ],
+              const SizedBox(width: 14),
+              _Artwork(
+                seed: song.id,
+                title: song.title,
+                size: 44,
+                imageUrl: song.artworkUrl,
               ),
-            ),
-            const SizedBox(width: 10),
-            Text(
-              durationText,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: Colors.white.withValues(alpha: 0.45),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      song.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.92),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.55),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+              const SizedBox(width: 10),
+              Text(
+                durationText,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: Colors.white.withValues(alpha: 0.45),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1588,7 +1498,8 @@ class _KineticSubscreenScaffold extends StatelessWidget {
           ),
         ),
       ),
-      bottomNavigationBar: MediaQuery.sizeOf(context).width >= 960 ||
+      bottomNavigationBar:
+          MediaQuery.sizeOf(context).width >= 960 ||
               controller.miniPlayerSong == null
           ? null
           : SafeArea(

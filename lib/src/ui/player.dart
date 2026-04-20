@@ -15,22 +15,18 @@ class _PlayerScreenState extends State<_PlayerScreen>
 
   late final AnimationController _tapFeedbackController;
   late final AnimationController _likeFeedbackController;
-  Offset _artCenter = Offset.zero;
-  Offset _tapPosition = Offset.zero;
-  Offset _likePosition = Offset.zero;
-  bool _showPlayGlyph = false;
-  List<_HeartParticleData> _heartParticles = const <_HeartParticleData>[];
+  bool _showPauseGlyph = false;
 
   @override
   void initState() {
     super.initState();
     _tapFeedbackController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1800),
+      duration: const Duration(milliseconds: 280),
     );
     _likeFeedbackController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2000),
+      duration: const Duration(milliseconds: 420),
     );
   }
 
@@ -87,11 +83,17 @@ class _PlayerScreenState extends State<_PlayerScreen>
     unawaited(widget.controller.togglePlayback());
   }
 
+  Future<void> _handleDislikeAction(LibrarySong song) async {
+    await HapticFeedback.mediumImpact();
+    await widget.controller.dislikeSong(song.id);
+  }
+
   Future<void> _triggerPlaybackFeedback() async {
-    final OuterTuneController controller = widget.controller;
-    _tapPosition = _artCenter;
-    _showPlayGlyph =
-        !(controller.isPlaying && !controller.miniPlayerSelectionLoading);
+    final PlaybackProgressState progress =
+        widget.controller.playbackProgressState.value;
+    final bool isPlayerLoading =
+        widget.controller.nowPlayingState.value.isLoading;
+    _showPauseGlyph = !progress.isPlaying || isPlayerLoading;
     _tapFeedbackController
       ..stop()
       ..reset()
@@ -100,32 +102,11 @@ class _PlayerScreenState extends State<_PlayerScreen>
   }
 
   Future<void> _triggerLikeFeedback() async {
-    _likePosition = _artCenter;
-    _heartParticles = _buildHeartParticles();
     _likeFeedbackController
       ..stop()
       ..reset()
       ..forward();
     unawaited(HapticFeedback.selectionClick());
-  }
-
-  List<_HeartParticleData> _buildHeartParticles() {
-    const List<double> angles = <double>[
-      -1.95,
-      -1.55,
-      -1.15,
-      -0.75,
-      -2.3,
-      -0.35,
-    ];
-    const List<double> distances = <double>[28, 34, 31, 38, 26, 30];
-    return List<_HeartParticleData>.generate(angles.length, (int index) {
-      return _HeartParticleData(
-        angle: angles[index],
-        distance: distances[index],
-        size: index.isEven ? 6 : 4,
-      );
-    });
   }
 
   Future<void> _handlePlayerPanEnd(DragEndDetails details) async {
@@ -163,31 +144,17 @@ class _PlayerScreenState extends State<_PlayerScreen>
   @override
   Widget build(BuildContext context) {
     final OuterTuneController controller = widget.controller;
-    return AnimatedBuilder(
-      animation: controller,
-      builder: (BuildContext context, _) {
-        final LibrarySong? song =
-            controller.miniPlayerSong ?? controller.currentSong;
+    return ValueListenableBuilder<NowPlayingState>(
+      valueListenable: controller.nowPlayingState,
+      builder: (BuildContext context, NowPlayingState nowPlaying, Widget? child) {
+        final LibrarySong? song = nowPlaying.song;
         if (song == null) {
           return const Scaffold(
             body: Center(child: Text('Nothing is playing.')),
           );
         }
 
-        final bool isPlayerLoading = controller.miniPlayerSelectionLoading;
-        final Duration position = isPlayerLoading
-            ? Duration.zero
-            : controller.position;
-        final Duration duration = controller.duration == Duration.zero
-            ? song.duration
-            : controller.duration;
-        final double sliderMax = math.max(
-          duration.inMilliseconds.toDouble(),
-          1,
-        );
-        final double sliderValue = position.inMilliseconds
-            .clamp(0, sliderMax.toInt())
-            .toDouble();
+        final bool isPlayerLoading = nowPlaying.isLoading;
         const Color backgroundTop = Color(0xFF774120);
         const Color backgroundBottom = Color(0xFF200901);
         const Color surface = Color(0xFF120606);
@@ -195,7 +162,6 @@ class _PlayerScreenState extends State<_PlayerScreen>
         const Color textPrimary = Color(0xFFFFDFC9);
         const Color textSecondary = Color(0xFFE9A56F);
         const Color trackInactive = Color(0xFF5A2508);
-        final bool showPauseIcon = controller.isPlaying && !isPlayerLoading;
 
         return Scaffold(
           backgroundColor: Colors.transparent,
@@ -233,7 +199,6 @@ class _PlayerScreenState extends State<_PlayerScreen>
                         constraints.maxHeight * 0.38,
                       ),
                     );
-                    _artCenter = Offset(artSize / 2, artSize / 2);
 
                     return Padding(
                       padding: EdgeInsets.fromLTRB(
@@ -303,71 +268,109 @@ class _PlayerScreenState extends State<_PlayerScreen>
                           ),
                           Spacer(flex: layoutScale < 0.8 ? 1 : 2),
                           Center(
-                            child: SizedBox(
-                              width: artSize,
-                              height: artSize,
-                              child: GestureDetector(
-                                behavior: HitTestBehavior.opaque,
-                                onTap: _handleAlbumArtTap,
-                                onDoubleTap: () =>
-                                    _handleAlbumArtDoubleTap(song),
-                                child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    color: surface,
-                                    borderRadius: BorderRadius.circular(
-                                      scale(34, min: 24, max: 34),
-                                    ),
-                                    boxShadow: <BoxShadow>[
-                                      BoxShadow(
-                                        color: Colors.black.withValues(
-                                          alpha: 0.42,
-                                        ),
-                                        blurRadius: scale(32, min: 18, max: 32),
-                                        offset: Offset(
-                                          scale(14, min: 8, max: 14),
-                                          scale(18, min: 10, max: 18),
-                                        ),
+                            child: RepaintBoundary(
+                              child: SizedBox(
+                                width: artSize,
+                                height: artSize,
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: _handleAlbumArtTap,
+                                  onDoubleTap: () =>
+                                      _handleAlbumArtDoubleTap(song),
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: surface,
+                                      borderRadius: BorderRadius.circular(
+                                        scale(34, min: 24, max: 34),
                                       ),
-                                    ],
-                                  ),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(
-                                      scale(34, min: 24, max: 34),
-                                    ),
-                                    child: Stack(
-                                      fit: StackFit.expand,
-                                      children: <Widget>[
-                                        if (song.artworkUrl != null &&
-                                            song.artworkUrl!.trim().isNotEmpty)
-                                          Image.network(
-                                            song.artworkUrl!,
-                                            fit: BoxFit.cover,
-                                            filterQuality: FilterQuality.high,
-                                            errorBuilder:
-                                                (
-                                                  BuildContext context,
-                                                  Object error,
-                                                  StackTrace? stackTrace,
-                                                ) {
-                                                  return const _PlayerArtFallback();
-                                                },
-                                          )
-                                        else
-                                          const _PlayerArtFallback(),
-                                        IgnorePointer(
-                                          child: _PlayerArtInteractionOverlay(
-                                            tapController:
-                                                _tapFeedbackController,
-                                            likeController:
-                                                _likeFeedbackController,
-                                            tapPosition: _tapPosition,
-                                            likePosition: _likePosition,
-                                            showPlayGlyph: _showPlayGlyph,
-                                            isLiked: song.isLiked,
-                                            particles: _heartParticles,
+                                      boxShadow: <BoxShadow>[
+                                        BoxShadow(
+                                          color: Colors.black.withValues(
+                                            alpha: 0.42,
+                                          ),
+                                          blurRadius: scale(
+                                            32,
+                                            min: 18,
+                                            max: 32,
+                                          ),
+                                          offset: Offset(
+                                            scale(14, min: 8, max: 14),
+                                            scale(18, min: 10, max: 18),
                                           ),
                                         ),
                                       ],
+                                    ),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(
+                                        scale(34, min: 24, max: 34),
+                                      ),
+                                      child: AnimatedSwitcher(
+                                        duration: const Duration(
+                                          milliseconds: 260,
+                                        ),
+                                        switchInCurve: Curves.easeOutCubic,
+                                        switchOutCurve: Curves.easeInCubic,
+                                        layoutBuilder:
+                                            (
+                                              Widget? currentChild,
+                                              List<Widget> previousChildren,
+                                            ) {
+                                              return currentChild ??
+                                                  const SizedBox.expand(
+                                                    child: _PlayerArtFallback(),
+                                                  );
+                                            },
+                                        transitionBuilder:
+                                            (
+                                              Widget child,
+                                              Animation<double> animation,
+                                            ) {
+                                              return FadeTransition(
+                                                opacity: animation,
+                                                child: ScaleTransition(
+                                                  scale: Tween<double>(
+                                                    begin: 0.985,
+                                                    end: 1,
+                                                  ).animate(animation),
+                                                  child: child,
+                                                ),
+                                              );
+                                            },
+                                        child: Stack(
+                                          key: ValueKey<String>(
+                                            '${song.id}|${song.artworkUrl ?? ''}',
+                                          ),
+                                          fit: StackFit.expand,
+                                          children: <Widget>[
+                                            if (song.artworkUrl != null &&
+                                                song.artworkUrl!
+                                                    .trim()
+                                                    .isNotEmpty)
+                                              _CachedArtworkImage(
+                                                imageUrl: song.artworkUrl!,
+                                                dimension: artSize,
+                                                placeholder:
+                                                    const _PlayerArtFallback(),
+                                                errorWidget:
+                                                    const _PlayerArtFallback(),
+                                              )
+                                            else
+                                              const _PlayerArtFallback(),
+                                            IgnorePointer(
+                                              child:
+                                                  _PlayerArtInteractionOverlay(
+                                                    tapController:
+                                                        _tapFeedbackController,
+                                                    likeController:
+                                                        _likeFeedbackController,
+                                                    showPauseGlyph:
+                                                        _showPauseGlyph,
+                                                    isLiked: song.isLiked,
+                                                  ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -438,7 +441,7 @@ class _PlayerScreenState extends State<_PlayerScreen>
                                     SizedBox(width: scale(4, min: 0, max: 4)),
                                     IconButton(
                                       onPressed: () =>
-                                          controller.dislikeSong(song.id),
+                                          _handleDislikeAction(song),
                                       icon: Icon(
                                         song.isDisliked
                                             ? Icons.thumb_down_rounded
@@ -455,139 +458,59 @@ class _PlayerScreenState extends State<_PlayerScreen>
                             ],
                           ),
                           SizedBox(height: scale(14, min: 10, max: 20)),
-                          SliderTheme(
-                            data: SliderTheme.of(context).copyWith(
-                              trackHeight: scale(6, min: 4, max: 6),
-                              activeTrackColor: accent,
-                              inactiveTrackColor: trackInactive,
-                              thumbColor: accent,
-                              overlayShape: SliderComponentShape.noOverlay,
-                              thumbShape: const RoundSliderThumbShape(
-                                enabledThumbRadius: 0,
-                              ),
-                            ),
-                            child: Slider(
-                              value: sliderValue,
-                              min: 0,
-                              max: sliderMax,
-                              onChanged: isPlayerLoading
-                                  ? null
-                                  : (double value) {
-                                      controller.seek(
-                                        Duration(milliseconds: value.round()),
-                                      );
+                          ValueListenableBuilder<PlaybackProgressState>(
+                            valueListenable: controller.playbackProgressState,
+                            builder:
+                                (
+                                  BuildContext context,
+                                  PlaybackProgressState progress,
+                                  Widget? child,
+                                ) {
+                                  final Duration position = isPlayerLoading
+                                      ? Duration.zero
+                                      : progress.position;
+                                  final Duration duration =
+                                      progress.duration == Duration.zero
+                                      ? song.duration
+                                      : progress.duration;
+                                  final double sliderMax = math.max(
+                                    duration.inMilliseconds.toDouble(),
+                                    1,
+                                  );
+                                  final double sliderValue = position
+                                      .inMilliseconds
+                                      .clamp(0, sliderMax.toInt())
+                                      .toDouble();
+                                  final bool showPauseIcon =
+                                      progress.isPlaying && !isPlayerLoading;
+
+                                  return _PlayerProgressAndControls(
+                                    layoutScale: layoutScale,
+                                    accent: accent,
+                                    textPrimary: textPrimary,
+                                    trackInactive: trackInactive,
+                                    sliderValue: sliderValue,
+                                    sliderMax: sliderMax,
+                                    position: position,
+                                    duration: duration,
+                                    isPlayerLoading: isPlayerLoading,
+                                    isShuffleEnabled:
+                                        nowPlaying.isShuffleEnabled,
+                                    repeatMode: nowPlaying.repeatMode,
+                                    onSeek: controller.seek,
+                                    onToggleShuffle: controller.toggleShuffle,
+                                    onPrevious: controller.previousTrack,
+                                    onNext: controller.nextTrack,
+                                    onCycleRepeatMode:
+                                        controller.cycleRepeatMode,
+                                    onTogglePlayback: () async {
+                                      await _triggerPlaybackFeedback();
+                                      unawaited(controller.togglePlayback());
                                     },
-                            ),
-                          ),
-                          SizedBox(height: scale(10, min: 6, max: 15)),
-                          Row(
-                            children: <Widget>[
-                              Text(
-                                _formatClock(position),
-                                style: GoogleFonts.splineSans(
-                                  color: textPrimary.withValues(alpha: 0.86),
-                                  fontSize: scale(14, min: 12, max: 14),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              const Spacer(),
-                              Text(
-                                _formatClock(duration),
-                                style: GoogleFonts.splineSans(
-                                  color: textPrimary.withValues(alpha: 0.86),
-                                  fontSize: scale(14, min: 12, max: 14),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                          Spacer(flex: layoutScale < 0.8 ? 1 : 2),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: <Widget>[
-                              _PlayerIconButton(
-                                icon: Icons.shuffle_rounded,
-                                onPressed: controller.toggleShuffle,
-                                color: controller.isShuffleEnabled
-                                    ? accent
-                                    : textPrimary.withValues(alpha: 0.6),
-                                size: scale(28, min: 24, max: 28),
-                              ),
-                              _PlayerIconButton(
-                                icon: Icons.skip_previous_rounded,
-                                onPressed: controller.previousTrack,
-                                color: textPrimary,
-                                size: scale(34, min: 28, max: 34),
-                              ),
-                              GestureDetector(
-                                onTap: () async {
-                                  await _triggerPlaybackFeedback();
-                                  unawaited(controller.togglePlayback());
+                                    onShowQueue: _showQueueSheet,
+                                    showPauseIcon: showPauseIcon,
+                                  );
                                 },
-                                child: Container(
-                                  width: scale(70, min: 58, max: 70),
-                                  height: scale(70, min: 58, max: 70),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(
-                                      scale(24, min: 18, max: 24),
-                                    ),
-                                    color: accent,
-                                    boxShadow: <BoxShadow>[
-                                      BoxShadow(
-                                        color: accent.withValues(alpha: 0.38),
-                                        blurRadius: scale(28, min: 18, max: 28),
-                                        spreadRadius: 1,
-                                      ),
-                                    ],
-                                  ),
-                                  child: isPlayerLoading
-                                      ? Center(
-                                          child: SizedBox(
-                                            width: scale(25, min: 20, max: 25),
-                                            height: scale(25, min: 20, max: 25),
-                                            child:
-                                                const CircularProgressIndicator(
-                                                  strokeWidth: 3.2,
-                                                  valueColor:
-                                                      AlwaysStoppedAnimation<
-                                                        Color
-                                                      >(Colors.black),
-                                                ),
-                                          ),
-                                        )
-                                      : Icon(
-                                          showPauseIcon
-                                              ? Icons.pause_rounded
-                                              : Icons.play_arrow_rounded,
-                                          size: showPauseIcon
-                                              ? scale(36, min: 30, max: 36)
-                                              : scale(42, min: 34, max: 42),
-                                          color: Colors.black,
-                                        ),
-                                ),
-                              ),
-                              _PlayerIconButton(
-                                icon: Icons.skip_next_rounded,
-                                onPressed: controller.nextTrack,
-                                color: textPrimary,
-                                size: scale(34, min: 28, max: 34),
-                              ),
-                              _PlayerIconButton(
-                                icon: _repeatIcon(controller.repeatMode),
-                                onPressed: controller.cycleRepeatMode,
-                                color: textPrimary.withValues(alpha: 0.6),
-                                size: scale(28, min: 24, max: 28),
-                              ),
-                            ],
-                          ),
-                          SizedBox(height: scale(10, min: 6, max: 20)),
-                          Center(
-                            child: IconButton(
-                              onPressed: _showQueueSheet,
-                              icon: const Icon(Icons.keyboard_arrow_up_rounded),
-                              color: textPrimary.withValues(alpha: 0.3),
-                              iconSize: scale(34, min: 28, max: 34),
-                            ),
                           ),
                         ],
                       ),
@@ -599,6 +522,203 @@ class _PlayerScreenState extends State<_PlayerScreen>
           ),
         );
       },
+    );
+  }
+}
+
+class _PlayerProgressAndControls extends StatelessWidget {
+  const _PlayerProgressAndControls({
+    required this.layoutScale,
+    required this.accent,
+    required this.textPrimary,
+    required this.trackInactive,
+    required this.sliderValue,
+    required this.sliderMax,
+    required this.position,
+    required this.duration,
+    required this.isPlayerLoading,
+    required this.isShuffleEnabled,
+    required this.repeatMode,
+    required this.onSeek,
+    required this.onToggleShuffle,
+    required this.onPrevious,
+    required this.onTogglePlayback,
+    required this.onNext,
+    required this.onCycleRepeatMode,
+    required this.onShowQueue,
+    required this.showPauseIcon,
+  });
+
+  final double layoutScale;
+  final Color accent;
+  final Color textPrimary;
+  final Color trackInactive;
+  final double sliderValue;
+  final double sliderMax;
+  final Duration position;
+  final Duration duration;
+  final bool isPlayerLoading;
+  final bool isShuffleEnabled;
+  final PlaylistMode repeatMode;
+  final ValueChanged<Duration> onSeek;
+  final VoidCallback onToggleShuffle;
+  final VoidCallback onPrevious;
+  final VoidCallback onTogglePlayback;
+  final VoidCallback onNext;
+  final VoidCallback onCycleRepeatMode;
+  final VoidCallback onShowQueue;
+  final bool showPauseIcon;
+
+  double _scale(double value, {double? min, double? max}) {
+    final double scaled = value * layoutScale;
+    return scaled.clamp(min ?? double.negativeInfinity, max ?? double.infinity);
+  }
+
+  Widget _buildTransportIcon() {
+    if (isPlayerLoading) {
+      return SizedBox(
+        width: _scale(25, min: 20, max: 25),
+        height: _scale(25, min: 20, max: 25),
+        child: const CircularProgressIndicator(
+          strokeWidth: 3.2,
+          valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
+        ),
+      );
+    }
+
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 220),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (Widget child, Animation<double> animation) {
+        return FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(scale: animation, child: child),
+        );
+      },
+      child: Icon(
+        showPauseIcon ? Icons.pause_rounded : Icons.play_arrow_rounded,
+        key: ValueKey<bool>(showPauseIcon),
+        size: showPauseIcon
+            ? _scale(36, min: 30, max: 36)
+            : _scale(42, min: 34, max: 42),
+        color: Colors.black,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            trackHeight: _scale(6, min: 4, max: 6),
+            activeTrackColor: accent,
+            inactiveTrackColor: trackInactive,
+            thumbColor: accent,
+            overlayShape: SliderComponentShape.noOverlay,
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 0),
+          ),
+          child: Slider(
+            value: sliderValue,
+            min: 0,
+            max: sliderMax,
+            onChanged: isPlayerLoading
+                ? null
+                : (double value) {
+                    onSeek(Duration(milliseconds: value.round()));
+                  },
+          ),
+        ),
+        SizedBox(height: _scale(10, min: 6, max: 15)),
+        Row(
+          children: <Widget>[
+            Text(
+              _formatClock(position),
+              style: GoogleFonts.splineSans(
+                color: textPrimary.withValues(alpha: 0.86),
+                fontSize: _scale(14, min: 12, max: 14),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              _formatClock(duration),
+              style: GoogleFonts.splineSans(
+                color: textPrimary.withValues(alpha: 0.86),
+                fontSize: _scale(14, min: 12, max: 14),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: _scale(22, min: 14, max: 22)),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: <Widget>[
+            _PlayerIconButton(
+              icon: Icons.shuffle_rounded,
+              onPressed: onToggleShuffle,
+              color: isShuffleEnabled
+                  ? accent
+                  : textPrimary.withValues(alpha: 0.6),
+              size: _scale(28, min: 24, max: 28),
+            ),
+            _PlayerIconButton(
+              icon: Icons.skip_previous_rounded,
+              onPressed: onPrevious,
+              color: textPrimary,
+              size: _scale(34, min: 28, max: 34),
+            ),
+            GestureDetector(
+              onTap: onTogglePlayback,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                width: _scale(70, min: 58, max: 70),
+                height: _scale(70, min: 58, max: 70),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(
+                    _scale(24, min: 18, max: 24),
+                  ),
+                  color: accent,
+                  boxShadow: <BoxShadow>[
+                    BoxShadow(
+                      color: accent.withValues(alpha: 0.38),
+                      blurRadius: _scale(28, min: 18, max: 28),
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: Center(child: _buildTransportIcon()),
+              ),
+            ),
+            _PlayerIconButton(
+              icon: Icons.skip_next_rounded,
+              onPressed: onNext,
+              color: textPrimary,
+              size: _scale(34, min: 28, max: 34),
+            ),
+            _PlayerIconButton(
+              icon: _repeatIcon(repeatMode),
+              onPressed: onCycleRepeatMode,
+              color: textPrimary.withValues(alpha: 0.6),
+              size: _scale(28, min: 24, max: 28),
+            ),
+          ],
+        ),
+        SizedBox(height: _scale(10, min: 6, max: 20)),
+        Center(
+          child: IconButton(
+            onPressed: onShowQueue,
+            icon: const Icon(Icons.keyboard_arrow_up_rounded),
+            color: textPrimary.withValues(alpha: 0.3),
+            iconSize: _scale(34, min: 28, max: 34),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -618,20 +738,14 @@ class _PlayerArtInteractionOverlay extends StatelessWidget {
   const _PlayerArtInteractionOverlay({
     required this.tapController,
     required this.likeController,
-    required this.tapPosition,
-    required this.likePosition,
-    required this.showPlayGlyph,
+    required this.showPauseGlyph,
     required this.isLiked,
-    required this.particles,
   });
 
   final AnimationController tapController;
   final AnimationController likeController;
-  final Offset tapPosition;
-  final Offset likePosition;
-  final bool showPlayGlyph;
+  final bool showPauseGlyph;
   final bool isLiked;
-  final List<_HeartParticleData> particles;
 
   @override
   Widget build(BuildContext context) {
@@ -640,18 +754,24 @@ class _PlayerArtInteractionOverlay extends StatelessWidget {
       builder: (BuildContext context, _) {
         final double tapValue = tapController.value;
         final double likeValue = likeController.value;
-        final double tapOpacity = tapValue <= 0.6
-            ? Curves.easeOutCubic.transform(tapValue / 0.6)
-            : 1 - Curves.easeOutCubic.transform((tapValue - 0.6) / 0.4);
-        final double iconScale =
-            0.86 + (0.14 * Curves.easeOutCubic.transform(tapValue));
-        final double rippleScale =
-            0.35 + (1.55 * Curves.easeOutQuart.transform(tapValue));
-        final double likeFade = 1 - Curves.easeOutCubic.transform(likeValue);
-        final double veilOpacity = math.max(
-          tapValue > 0 ? 0.28 * tapOpacity.clamp(0.0, 1.0) : 0,
-          likeValue > 0 ? 0.32 * likeFade.clamp(0.0, 1.0) : 0,
+        final double tapIn = Curves.easeOutCubic.transform(
+          (tapValue / 0.55).clamp(0.0, 1.0),
         );
+        final double tapOut =
+            1 -
+            Curves.easeInCubic.transform(
+              ((tapValue - 0.45) / 0.55).clamp(0.0, 1.0),
+            );
+        final double tapOpacity = tapIn * tapOut;
+        final double badgeScale =
+            0.94 + (0.06 * Curves.easeOutCubic.transform(tapValue));
+        final double likeFade =
+            1 - Curves.easeInCubic.transform(likeValue.clamp(0.0, 1.0));
+        final double veilOpacity = tapValue > 0
+            ? 0.14 * tapOpacity.clamp(0.0, 1.0)
+            : likeValue > 0
+            ? 0.12 * likeFade.clamp(0.0, 1.0)
+            : 0;
         final double heartScale =
             TweenSequence<double>(<TweenSequenceItem<double>>[
               TweenSequenceItem<double>(
@@ -677,82 +797,26 @@ class _PlayerArtInteractionOverlay extends StatelessWidget {
               Opacity(
                 opacity: veilOpacity,
                 child: const DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: RadialGradient(
-                      colors: <Color>[Color(0xDD110907), Color(0xF0120806)],
-                      radius: 0.95,
-                    ),
-                  ),
-                ),
-              ),
-            if (tapValue > 0)
-              Positioned(
-                left: tapPosition.dx - 26,
-                top: tapPosition.dy - 26,
-                child: Opacity(
-                  opacity: 0.14 * tapOpacity.clamp(0.0, 1.0),
-                  child: Transform.scale(
-                    scale: rippleScale,
-                    child: Container(
-                      width: 52,
-                      height: 52,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: const Color(0xFFFFF1E6),
-                        boxShadow: <BoxShadow>[
-                          BoxShadow(
-                            color: const Color(
-                              0xFFFFB071,
-                            ).withValues(alpha: 0.34),
-                            blurRadius: 26,
-                            spreadRadius: 4,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                  decoration: BoxDecoration(color: Color(0xFF120907)),
                 ),
               ),
             if (tapValue > 0)
               Center(
                 child: Opacity(
-                  opacity: 0.92 * tapOpacity.clamp(0.0, 1.0),
+                  opacity: 0.94 * tapOpacity.clamp(0.0, 1.0),
                   child: Transform.scale(
-                    scale: iconScale,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: <Widget>[
-                        Container(
-                          width: 128,
-                          height: 128,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: RadialGradient(
-                              colors: <Color>[
-                                const Color(0xFFFF9E5C).withValues(alpha: 0.42),
-                                Colors.transparent,
-                              ],
-                            ),
-                          ),
-                        ),
-                        DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.9),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.12),
-                            ),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Icon(
-                              showPlayGlyph
-                                  ? Icons.pause_rounded
-                                  : Icons.play_arrow_rounded,
-                              color: Colors.white,
-                              size: 54,
-                            ),
-                          ),
+                    scale: badgeScale,
+                    child: Icon(
+                      showPauseGlyph
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
+                      color: const Color(0xFFFFF2E8),
+                      size: showPauseGlyph ? 58 : 68,
+                      shadows: const <Shadow>[
+                        Shadow(
+                          color: Color(0xAA000000),
+                          blurRadius: 18,
+                          offset: Offset(0, 4),
                         ),
                       ],
                     ),
@@ -760,80 +824,28 @@ class _PlayerArtInteractionOverlay extends StatelessWidget {
                 ),
               ),
             if (likeValue > 0)
-              ...particles.map((_HeartParticleData particle) {
-                final double distance =
-                    particle.distance *
-                    Curves.easeOutQuart.transform(likeValue);
-                return Positioned(
-                  left:
-                      likePosition.dx +
-                      (math.cos(particle.angle) * distance) -
-                      (particle.size / 2),
-                  top:
-                      likePosition.dy +
-                      (math.sin(particle.angle) * distance) -
-                      (particle.size / 2),
-                  child: Opacity(
-                    opacity: (1 - Curves.easeIn.transform(likeValue)).clamp(
-                      0.0,
-                      1.0,
-                    ),
-                    child: Container(
-                      width: particle.size,
-                      height: particle.size,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFC19A).withValues(alpha: 0.88),
-                        shape: BoxShape.circle,
-                        boxShadow: <BoxShadow>[
-                          BoxShadow(
-                            color: const Color(
-                              0xFFFF9C74,
-                            ).withValues(alpha: 0.34),
-                            blurRadius: 12,
-                            spreadRadius: 1,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              }),
-            if (likeValue > 0)
-              Positioned(
-                left: likePosition.dx - 62,
-                top: likePosition.dy - 34,
+              Center(
                 child: Opacity(
                   opacity: likeFade.clamp(0.0, 1.0),
                   child: Transform.scale(
                     scale: heartScale,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: <Widget>[
-                        Container(
-                          width: 132,
-                          height: 132,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: RadialGradient(
-                              colors: <Color>[
-                                const Color(0xFFFF7F8C).withValues(alpha: 0.30),
-                                Colors.transparent,
-                              ],
-                            ),
-                          ),
+                    child: Icon(
+                      isLiked || likeValue >= 0.16
+                          ? Icons.favorite_rounded
+                          : Icons.favorite_border,
+                      color: Color.lerp(
+                        const Color(0xFFFFF4F1),
+                        const Color(0xFFFF786A),
+                        Curves.easeOutCubic.transform(
+                          (likeValue / 0.35).clamp(0.0, 1.0),
                         ),
-                        Icon(
-                          isLiked || likeValue >= 0.16
-                              ? Icons.favorite_rounded
-                              : Icons.favorite_border,
-                          color: Color.lerp(
-                            Colors.white,
-                            const Color(0xFFFF7F8C),
-                            Curves.easeOutCubic.transform(
-                              (likeValue / 0.35).clamp(0.0, 1.0),
-                            ),
-                          ),
-                          size: 68,
+                      ),
+                      size: 70,
+                      shadows: const <Shadow>[
+                        Shadow(
+                          color: Color(0xAA000000),
+                          blurRadius: 18,
+                          offset: Offset(0, 4),
                         ),
                       ],
                     ),
@@ -881,9 +893,11 @@ class _PlayerQueueSheet extends StatefulWidget {
 
 class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
   static const int _queueBatchSize = 10;
+  static const double _queueItemExtentEstimate = 88;
 
   final ScrollController _scroll = ScrollController();
   bool _loadingMore = false;
+  bool _initialPositioned = false;
 
   OuterTuneController get controller => widget.controller;
 
@@ -901,6 +915,36 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
     super.dispose();
+  }
+
+  void _centerCurrentQueueSong({bool animated = true}) {
+    if (!mounted || !_scroll.hasClients || controller.queueSongs.isEmpty) {
+      return;
+    }
+    final int activeIndex = controller.queueIndex.clamp(
+      0,
+      controller.queueSongs.length - 1,
+    );
+    final ScrollPosition position = _scroll.position;
+    final double viewport = position.viewportDimension;
+    final double rawOffset =
+        (activeIndex * _queueItemExtentEstimate) -
+        ((viewport - _queueItemExtentEstimate) / 2);
+    final double targetOffset = rawOffset.clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    if (animated) {
+      unawaited(
+        _scroll.animateTo(
+          targetOffset,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+        ),
+      );
+      return;
+    }
+    _scroll.jumpTo(targetOffset);
   }
 
   Future<void> _onScroll() async {
@@ -926,6 +970,16 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
         break;
       }
     }
+    if (!mounted) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _initialPositioned) {
+        return;
+      }
+      _centerCurrentQueueSong(animated: false);
+      _initialPositioned = true;
+    });
   }
 
   Future<void> _loadMoreQueue({int batchSize = _queueBatchSize}) async {
@@ -1109,19 +1163,13 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
                                                 song.artworkUrl!
                                                     .trim()
                                                     .isNotEmpty
-                                            ? Image.network(
-                                                song.artworkUrl!,
-                                                fit: BoxFit.cover,
-                                                filterQuality:
-                                                    FilterQuality.high,
-                                                errorBuilder:
-                                                    (
-                                                      BuildContext context,
-                                                      Object error,
-                                                      StackTrace? stackTrace,
-                                                    ) {
-                                                      return const _PlayerArtFallback();
-                                                    },
+                                            ? _CachedArtworkImage(
+                                                imageUrl: song.artworkUrl!,
+                                                dimension: 56,
+                                                errorWidget:
+                                                    const _PlayerArtFallback(),
+                                                placeholder:
+                                                    const _PlayerArtFallback(),
                                               )
                                             : const _PlayerArtFallback(),
                                       ),
@@ -1210,40 +1258,45 @@ class _AlbumScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: ListView(
+      body: ListView.builder(
         padding: _kScreenContentPadding,
-        children: <Widget>[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              _Artwork(seed: album.id, title: album.title, size: 120),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      album.title,
-                      style: Theme.of(context).textTheme.headlineSmall,
+        itemCount: album.songs.length + 1,
+        itemBuilder: (BuildContext context, int index) {
+          if (index == 0) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 20),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  _Artwork(seed: album.id, title: album.title, size: 120),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          album.title,
+                          style: Theme.of(context).textTheme.headlineSmall,
+                        ),
+                        const SizedBox(height: 8),
+                        Text('${album.artist} • ${album.songCount} tracks'),
+                        const SizedBox(height: 8),
+                        Text(_formatDuration(album.totalDuration)),
+                      ],
                     ),
-                    const SizedBox(height: 8),
-                    Text('${album.artist} • ${album.songCount} tracks'),
-                    const SizedBox(height: 8),
-                    Text(_formatDuration(album.totalDuration)),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          ...album.songs.asMap().entries.map(
-            (MapEntry<int, LibrarySong> entry) => _SongTile(
-              song: entry.value,
-              controller: controller,
-              onTap: () => controller.playAlbum(album, startIndex: entry.key),
-            ),
-          ),
-        ],
+            );
+          }
+
+          final int songIndex = index - 1;
+          return _SongTile(
+            song: album.songs[songIndex],
+            controller: controller,
+            onTap: () => controller.playAlbum(album, startIndex: songIndex),
+          );
+        },
       ),
     );
   }
@@ -1268,31 +1321,38 @@ class _ArtistScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: ListView(
+      body: ListView.builder(
         padding: _kScreenContentPadding,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              _ResolvedArtistAvatar(
-                controller: controller,
-                artistName: artist.name,
-                seed: artist.id,
-                size: 120,
+        itemCount: artist.songs.length + 1,
+        itemBuilder: (BuildContext context, int index) {
+          if (index == 0) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 20),
+              child: Row(
+                children: <Widget>[
+                  _ResolvedArtistAvatar(
+                    controller: controller,
+                    artistName: artist.name,
+                    seed: artist.id,
+                    size: 120,
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Text(
+                      '${artist.songs.length} tracks • ${artist.albumCount} albums',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Text(
-                  '${artist.songs.length} tracks • ${artist.albumCount} albums',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          ...artist.songs.map(
-            (LibrarySong song) => _SongTile(song: song, controller: controller),
-          ),
-        ],
+            );
+          }
+
+          return _SongTile(
+            song: artist.songs[index - 1],
+            controller: controller,
+          );
+        },
       ),
     );
   }
@@ -1317,15 +1377,25 @@ class _FolderScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: ListView(
+      body: ListView.builder(
         padding: _kScreenContentPadding,
-        children: <Widget>[
-          Text(folder.path, style: Theme.of(context).textTheme.bodyMedium),
-          const SizedBox(height: 20),
-          ...folder.songs.map(
-            (LibrarySong song) => _SongTile(song: song, controller: controller),
-          ),
-        ],
+        itemCount: folder.songs.length + 1,
+        itemBuilder: (BuildContext context, int index) {
+          if (index == 0) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 20),
+              child: Text(
+                folder.path,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            );
+          }
+
+          return _SongTile(
+            song: folder.songs[index - 1],
+            controller: controller,
+          );
+        },
       ),
     );
   }
@@ -1351,10 +1421,6 @@ class _PlaylistScreen extends StatelessWidget {
       appBar: AppBar(
         title: Text(title),
         actions: <Widget>[
-          IconButton(
-            onPressed: () => controller.playSongs(songs, label: title),
-            icon: const Icon(Icons.play_arrow_rounded),
-          ),
           if (playlist != null)
             IconButton(
               onPressed: () async {
@@ -1368,17 +1434,16 @@ class _PlaylistScreen extends StatelessWidget {
             ),
         ],
       ),
-      body: ListView(
+      body: ListView.builder(
         padding: _kScreenContentPadding,
-        children: songs
-            .map(
-              (LibrarySong song) => _SongTile(
-                song: song,
-                controller: controller,
-                extraPlaylistId: playlist?.id,
-              ),
-            )
-            .toList(),
+        itemCount: songs.length,
+        itemBuilder: (BuildContext context, int index) {
+          return _SongTile(
+            song: songs[index],
+            controller: controller,
+            extraPlaylistId: playlist?.id,
+          );
+        },
       ),
     );
   }
@@ -1685,17 +1750,6 @@ class _KineticPlaylistScreenState extends State<_KineticPlaylistScreen> {
                 icon: const Icon(Icons.close_rounded, color: _kTextSecondary),
               ),
             ] else ...<Widget>[
-              IconButton(
-                onPressed: () => widget.controller.playSongs(
-                  widget.localPlaybackOnly
-                      ? songs
-                            .where((LibrarySong song) => !song.isRemote)
-                            .toList(growable: false)
-                      : songs,
-                  label: title,
-                ),
-                icon: const Icon(Icons.play_arrow_rounded, color: _kAccent),
-              ),
               if (playlist != null)
                 IconButton(
                   onPressed: () async {
@@ -2309,8 +2363,6 @@ class _SongTile extends StatelessWidget {
         ),
       _kineticPopupMenuItem('enqueue', 'Add to queue'),
       if (!song.isRemote) _kineticPopupMenuItem('playlist', 'Add to playlist'),
-      if (song.externalUrl != null)
-        _kineticPopupMenuItem('copy_link', 'Show link'),
       if (extraPlaylistId != null)
         _kineticPopupMenuItem('remove_playlist', 'Remove from playlist'),
     ];
@@ -2324,104 +2376,106 @@ class _SongTile extends StatelessWidget {
           }
         };
 
-    final Widget tile = Material(
-      color: selected
-          ? _kAccent.withValues(alpha: 0.22)
-          : active
-          ? _kAccent.withValues(alpha: 0.12)
-          : Colors.transparent,
-      borderRadius: BorderRadius.circular(18),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        dense: controller.settings.denseLibrary,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        leading: Stack(
-          alignment: Alignment.center,
-          children: <Widget>[
-            _Artwork(
-              seed: song.id,
-              title: song.title,
-              size: 52,
-              imageUrl: song.artworkUrl,
-            ),
-            if (selectionMode)
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(
-                      alpha: selected ? 0.16 : 0.28,
+    final Widget tile = RepaintBoundary(
+      child: Material(
+        color: selected
+            ? _kAccent.withValues(alpha: 0.22)
+            : active
+            ? _kAccent.withValues(alpha: 0.12)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(18),
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 6,
+          ),
+          dense: controller.settings.denseLibrary,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          leading: Stack(
+            alignment: Alignment.center,
+            children: <Widget>[
+              _Artwork(
+                seed: song.id,
+                title: song.title,
+                size: 52,
+                imageUrl: song.artworkUrl,
+              ),
+              if (selectionMode)
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(
+                        alpha: selected ? 0.16 : 0.28,
+                      ),
+                      borderRadius: BorderRadius.circular(14),
                     ),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(
-                    selected
-                        ? Icons.check_circle_rounded
-                        : Icons.radio_button_unchecked_rounded,
-                    color: selected ? _kAccent : Colors.white70,
-                    size: 24,
+                    child: Icon(
+                      selected
+                          ? Icons.check_circle_rounded
+                          : Icons.radio_button_unchecked_rounded,
+                      color: selected ? _kAccent : Colors.white70,
+                      size: 24,
+                    ),
                   ),
                 ),
-              ),
-          ],
-        ),
-        title: Text(
-          song.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            color: _kTextPrimary,
-            fontWeight: FontWeight.w700,
+            ],
           ),
-        ),
-        subtitle: Text(
-          _songArtistLabel(song),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: _kTextSecondary.withValues(alpha: 0.88),
+          title: Text(
+            song.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: _kTextPrimary,
+              fontWeight: FontWeight.w700,
+            ),
           ),
-        ),
-        selected: active || selected,
-        onTap: resolvedTap,
-        onLongPress: onLongPress,
-        trailing: selectionMode
-            ? Icon(
-                selected
-                    ? Icons.check_circle_rounded
-                    : Icons.radio_button_unchecked_rounded,
-                color: selected ? _kAccent : _kTextSecondary,
-              )
-            : PopupMenuButton<String>(
-                color: _kSurface,
-                iconColor: _kTextSecondary,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  side: const BorderSide(color: _kSurfaceEdge),
+          subtitle: Text(
+            _songArtistLabel(song),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: _kTextSecondary.withValues(alpha: 0.88),
+            ),
+          ),
+          selected: active || selected,
+          onTap: resolvedTap,
+          onLongPress: onLongPress,
+          trailing: selectionMode
+              ? Icon(
+                  selected
+                      ? Icons.check_circle_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                  color: selected ? _kAccent : _kTextSecondary,
+                )
+              : PopupMenuButton<String>(
+                  color: _kSurface,
+                  iconColor: _kTextSecondary,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: const BorderSide(color: _kSurfaceEdge),
+                  ),
+                  onSelected: (String value) {
+                    switch (value) {
+                      case 'favorite':
+                        controller.toggleFavorite(song.id);
+                      case 'enqueue':
+                        controller.enqueueSong(song);
+                      case 'playlist':
+                        _showAddToPlaylistDialog(context, controller, song);
+                      case 'remove_playlist':
+                        if (extraPlaylistId != null) {
+                          controller.removeSongFromPlaylist(
+                            extraPlaylistId!,
+                            song.id,
+                          );
+                        }
+                    }
+                  },
+                  itemBuilder: (BuildContext context) => menuItems,
                 ),
-                onSelected: (String value) {
-                  switch (value) {
-                    case 'favorite':
-                      controller.toggleFavorite(song.id);
-                    case 'enqueue':
-                      controller.enqueueSong(song);
-                    case 'playlist':
-                      _showAddToPlaylistDialog(context, controller, song);
-                    case 'copy_link':
-                      _showKineticSnackBar(
-                        context,
-                        song.externalUrl ?? song.path,
-                      );
-                    case 'remove_playlist':
-                      if (extraPlaylistId != null) {
-                        controller.removeSongFromPlaylist(
-                          extraPlaylistId!,
-                          song.id,
-                        );
-                      }
-                  }
-                },
-                itemBuilder: (BuildContext context) => menuItems,
-              ),
+        ),
       ),
     );
 
@@ -2694,218 +2748,305 @@ class _MiniPlayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final LibrarySong? song = controller.miniPlayerSong;
-    if (song == null) {
-      return const SizedBox.shrink();
-    }
+    return ValueListenableBuilder<NowPlayingState>(
+      valueListenable: controller.nowPlayingState,
+      builder: (BuildContext context, NowPlayingState nowPlaying, Widget? child) {
+        final LibrarySong? song = nowPlaying.song;
+        if (song == null) {
+          return const SizedBox.shrink();
+        }
 
-    final bool isMiniLoading = controller.miniPlayerSelectionLoading;
-    final Duration position = isMiniLoading
-        ? Duration.zero
-        : controller.position;
-    final Duration duration = controller.duration == Duration.zero
-        ? song.duration
-        : controller.duration;
-    final double progress = duration.inMilliseconds <= 0
-        ? 0
-        : position.inMilliseconds / duration.inMilliseconds;
-    final double safeProgress = progress.isFinite
-        ? progress.clamp(0.0, 1.0)
-        : 0.0;
-    final bool showPauseIcon = controller.isPlaying && !isMiniLoading;
+        const Color shell = Color(0xFF100502);
+        const Color card = Color(0xFF2A1209);
+        const Color cardEdge = Color(0xFF402016);
+        const Color accent = Color(0xFFFF7F17);
+        const Color inactive = Color(0xFFEEDDCF);
+        const Color track = Color(0xFF4D2A1D);
 
-    const Color shell = Color(0xFF100502);
-    const Color card = Color(0xFF2A1209);
-    const Color cardEdge = Color(0xFF402016);
-    const Color accent = Color(0xFFFF7F17);
-    const Color inactive = Color(0xFFEEDDCF);
-    const Color track = Color(0xFF4D2A1D);
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () async {
-          await HapticFeedback.selectionClick();
-          onOpenPlayer();
-        },
-        onVerticalDragEnd: (DragEndDetails details) async {
-          if (details.velocity.pixelsPerSecond.dy <
-              -_kMiniPlayerExpandVelocity) {
-            await HapticFeedback.selectionClick();
-            onOpenPlayer();
-          }
-        },
-        child: Material(
-          color: Colors.transparent,
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-            constraints: const BoxConstraints(minHeight: 78),
-            decoration: BoxDecoration(
-              color: card,
-              borderRadius: BorderRadius.circular(32),
-              border: Border.all(color: cardEdge, width: 1),
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color: shell.withValues(alpha: 0.42),
-                  blurRadius: 14,
-                  offset: const Offset(0, 7),
-                ),
-              ],
-            ),
-            child: Row(
-              children: <Widget>[
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: SizedBox(
-                    width: 50,
-                    height: 50,
-                    child:
-                        song.artworkUrl != null &&
-                            song.artworkUrl!.trim().isNotEmpty
-                        ? Image.network(
-                            song.artworkUrl!,
-                            fit: BoxFit.cover,
-                            filterQuality: FilterQuality.high,
-                            loadingBuilder:
-                                (
-                                  BuildContext context,
-                                  Widget child,
-                                  ImageChunkEvent? loadingProgress,
-                                ) {
-                                  if (loadingProgress == null) {
-                                    return child;
-                                  }
-                                  return const _MiniArtworkFallback();
-                                },
-                            errorBuilder:
-                                (
-                                  BuildContext context,
-                                  Object error,
-                                  StackTrace? stackTrace,
-                                ) {
-                                  return const _MiniArtworkFallback();
-                                },
-                          )
-                        : const _MiniArtworkFallback(),
+        return RepaintBoundary(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () async {
+                await HapticFeedback.selectionClick();
+                onOpenPlayer();
+              },
+              onVerticalDragEnd: (DragEndDetails details) async {
+                if (details.velocity.pixelsPerSecond.dy <
+                    -_kMiniPlayerExpandVelocity) {
+                  await HapticFeedback.selectionClick();
+                  onOpenPlayer();
+                }
+              },
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                  constraints: const BoxConstraints(minHeight: 78),
+                  decoration: BoxDecoration(
+                    color: card,
+                    borderRadius: BorderRadius.circular(32),
+                    border: Border.all(color: cardEdge, width: 1),
+                    boxShadow: <BoxShadow>[
+                      BoxShadow(
+                        color: shell.withValues(alpha: 0.42),
+                        blurRadius: 14,
+                        offset: const Offset(0, 7),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (BuildContext context, BoxConstraints constraints) {
-                      final bool compact = constraints.maxWidth < 250;
-                      final double playButtonSize = compact ? 42 : 48;
+                  child: Row(
+                    children: <Widget>[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: SizedBox(
+                          width: 50,
+                          height: 50,
+                          child:
+                              song.artworkUrl != null &&
+                                  song.artworkUrl!.trim().isNotEmpty
+                              ? _CachedArtworkImage(
+                                  imageUrl: song.artworkUrl!,
+                                  dimension: 50,
+                                  placeholder: const _MiniArtworkFallback(),
+                                  errorWidget: const _MiniArtworkFallback(),
+                                )
+                              : const _MiniArtworkFallback(),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: LayoutBuilder(
+                          builder: (BuildContext context, BoxConstraints constraints) {
+                            final bool compact = constraints.maxWidth < 250;
+                            final double playButtonSize = compact ? 42 : 48;
 
-                      return Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Row(
-                            children: <Widget>[
-                              Expanded(
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: <Widget>[
-                                    _MiniPlayerIcon(
-                                      icon: Icons.shuffle_rounded,
-                                      color: controller.isShuffleEnabled
-                                          ? accent
-                                          : inactive.withValues(alpha: 0.6),
-                                      onPressed: controller.toggleShuffle,
-                                      compact: compact,
-                                    ),
-                                    _MiniPlayerIcon(
-                                      icon: Icons.skip_previous_rounded,
-                                      color: inactive,
-                                      onPressed: controller.previousTrack,
-                                      compact: compact,
-                                    ),
-                                    GestureDetector(
-                                      onTap: controller.togglePlayback,
-                                      child: Container(
-                                        width: playButtonSize,
-                                        height: playButtonSize,
-                                        decoration: const BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          color: accent,
+                            return ValueListenableBuilder<
+                              PlaybackProgressState
+                            >(
+                              valueListenable: controller.playbackProgressState,
+                              builder:
+                                  (
+                                    BuildContext context,
+                                    PlaybackProgressState progressState,
+                                    Widget? child,
+                                  ) {
+                                    final bool isMiniLoading =
+                                        nowPlaying.isLoading;
+                                    final Duration position = isMiniLoading
+                                        ? Duration.zero
+                                        : progressState.position;
+                                    final Duration duration =
+                                        progressState.duration == Duration.zero
+                                        ? song.duration
+                                        : progressState.duration;
+                                    final double progress =
+                                        duration.inMilliseconds <= 0
+                                        ? 0
+                                        : position.inMilliseconds /
+                                              duration.inMilliseconds;
+                                    final double safeProgress =
+                                        progress.isFinite
+                                        ? progress.clamp(0.0, 1.0)
+                                        : 0.0;
+                                    final bool showPauseIcon =
+                                        progressState.isPlaying &&
+                                        !isMiniLoading;
+
+                                    return Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        Row(
+                                          children: <Widget>[
+                                            Expanded(
+                                              child: Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment
+                                                        .spaceBetween,
+                                                children: <Widget>[
+                                                  _MiniPlayerIcon(
+                                                    icon: Icons.shuffle_rounded,
+                                                    color:
+                                                        nowPlaying
+                                                            .isShuffleEnabled
+                                                        ? accent
+                                                        : inactive.withValues(
+                                                            alpha: 0.6,
+                                                          ),
+                                                    onPressed: controller
+                                                        .toggleShuffle,
+                                                    compact: compact,
+                                                  ),
+                                                  _MiniPlayerIcon(
+                                                    icon: Icons
+                                                        .skip_previous_rounded,
+                                                    color: inactive,
+                                                    onPressed: controller
+                                                        .previousTrack,
+                                                    compact: compact,
+                                                  ),
+                                                  GestureDetector(
+                                                    onTap: controller
+                                                        .togglePlayback,
+                                                    child: AnimatedContainer(
+                                                      duration: const Duration(
+                                                        milliseconds: 180,
+                                                      ),
+                                                      curve:
+                                                          Curves.easeOutCubic,
+                                                      width: playButtonSize,
+                                                      height: playButtonSize,
+                                                      decoration:
+                                                          const BoxDecoration(
+                                                            shape:
+                                                                BoxShape.circle,
+                                                            color: accent,
+                                                          ),
+                                                      child: Center(
+                                                        child: isMiniLoading
+                                                            ? SizedBox(
+                                                                width: compact
+                                                                    ? 18
+                                                                    : 20,
+                                                                height: compact
+                                                                    ? 18
+                                                                    : 20,
+                                                                child: const CircularProgressIndicator(
+                                                                  strokeWidth:
+                                                                      2.5,
+                                                                  valueColor:
+                                                                      AlwaysStoppedAnimation<
+                                                                        Color
+                                                                      >(
+                                                                        Colors
+                                                                            .black,
+                                                                      ),
+                                                                ),
+                                                              )
+                                                            : AnimatedSwitcher(
+                                                                duration:
+                                                                    const Duration(
+                                                                      milliseconds:
+                                                                          180,
+                                                                    ),
+                                                                switchInCurve:
+                                                                    Curves
+                                                                        .easeOutCubic,
+                                                                switchOutCurve:
+                                                                    Curves
+                                                                        .easeInCubic,
+                                                                transitionBuilder:
+                                                                    (
+                                                                      Widget
+                                                                      child,
+                                                                      Animation<
+                                                                        double
+                                                                      >
+                                                                      animation,
+                                                                    ) {
+                                                                      return FadeTransition(
+                                                                        opacity:
+                                                                            animation,
+                                                                        child: ScaleTransition(
+                                                                          scale:
+                                                                              animation,
+                                                                          child:
+                                                                              child,
+                                                                        ),
+                                                                      );
+                                                                    },
+                                                                child: Icon(
+                                                                  showPauseIcon
+                                                                      ? Icons
+                                                                            .pause_rounded
+                                                                      : Icons
+                                                                            .play_arrow_rounded,
+                                                                  key:
+                                                                      ValueKey<
+                                                                        bool
+                                                                      >(
+                                                                        showPauseIcon,
+                                                                      ),
+                                                                  color: Colors
+                                                                      .black,
+                                                                  size: compact
+                                                                      ? 22
+                                                                      : showPauseIcon
+                                                                      ? 24
+                                                                      : 28,
+                                                                ),
+                                                              ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  _MiniPlayerIcon(
+                                                    icon:
+                                                        Icons.skip_next_rounded,
+                                                    color: inactive,
+                                                    onPressed:
+                                                        controller.nextTrack,
+                                                    compact: compact,
+                                                  ),
+                                                  _MiniPlayerIcon(
+                                                    icon: _repeatIcon(
+                                                      nowPlaying.repeatMode,
+                                                    ),
+                                                    color: inactive.withValues(
+                                                      alpha: 0.6,
+                                                    ),
+                                                    onPressed: controller
+                                                        .cycleRepeatMode,
+                                                    compact: compact,
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                        child: isMiniLoading
-                                            ? Center(
-                                                child: SizedBox(
-                                                  width: compact ? 18 : 20,
-                                                  height: compact ? 18 : 20,
-                                                  child: const CircularProgressIndicator(
-                                                    strokeWidth: 2.5,
-                                                    valueColor:
-                                                        AlwaysStoppedAnimation<
-                                                          Color
-                                                        >(Colors.black),
+                                        const SizedBox(height: 8),
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                          child: SizedBox(
+                                            height: 5,
+                                            width: double.infinity,
+                                            child: ColoredBox(
+                                              color: track,
+                                              child: Align(
+                                                alignment: Alignment.centerLeft,
+                                                child: FractionallySizedBox(
+                                                  widthFactor: safeProgress,
+                                                  alignment:
+                                                      Alignment.centerLeft,
+                                                  child: const SizedBox.expand(
+                                                    child: ColoredBox(
+                                                      color: accent,
+                                                    ),
                                                   ),
                                                 ),
-                                              )
-                                            : Icon(
-                                                showPauseIcon
-                                                    ? Icons.pause_rounded
-                                                    : Icons.play_arrow_rounded,
-                                                color: Colors.black,
-                                                size: compact
-                                                    ? 22
-                                                    : showPauseIcon
-                                                    ? 24
-                                                    : 28,
                                               ),
-                                      ),
-                                    ),
-                                    _MiniPlayerIcon(
-                                      icon: Icons.skip_next_rounded,
-                                      color: inactive,
-                                      onPressed: controller.nextTrack,
-                                      compact: compact,
-                                    ),
-                                    _MiniPlayerIcon(
-                                      icon: _repeatIcon(controller.repeatMode),
-                                      color: inactive.withValues(alpha: 0.6),
-                                      onPressed: controller.cycleRepeatMode,
-                                      compact: compact,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(999),
-                            child: SizedBox(
-                              height: 5,
-                              width: double.infinity,
-                              child: ColoredBox(
-                                color: track,
-                                child: Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: FractionallySizedBox(
-                                    widthFactor: safeProgress,
-                                    alignment: Alignment.centerLeft,
-                                    child: const SizedBox.expand(
-                                      child: ColoredBox(color: accent),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      );
-                    },
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -3008,16 +3149,39 @@ class _ArtworkFallbackSurface extends StatelessWidget {
   }
 }
 
-class _HeartParticleData {
-  const _HeartParticleData({
-    required this.angle,
-    required this.distance,
-    required this.size,
+class _CachedArtworkImage extends StatelessWidget {
+  const _CachedArtworkImage({
+    required this.imageUrl,
+    this.dimension,
+    this.placeholder,
+    this.errorWidget,
   });
 
-  final double angle;
-  final double distance;
-  final double size;
+  final String imageUrl;
+  final double? dimension;
+  final Widget? placeholder;
+  final Widget? errorWidget;
+
+  @override
+  Widget build(BuildContext context) {
+    final double devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
+    final int? cacheDimension = dimension == null
+        ? null
+        : (dimension! * devicePixelRatio).round();
+
+    return CachedNetworkImage(
+      imageUrl: imageUrl,
+      fit: BoxFit.cover,
+      memCacheWidth: cacheDimension,
+      memCacheHeight: cacheDimension,
+      filterQuality: FilterQuality.medium,
+      fadeInDuration: const Duration(milliseconds: 120),
+      placeholder: (BuildContext context, String url) =>
+          placeholder ?? const SizedBox.shrink(),
+      errorWidget: (BuildContext context, String url, Object error) =>
+          errorWidget ?? placeholder ?? const SizedBox.shrink(),
+    );
+  }
 }
 
 class _Artwork extends StatelessWidget {
@@ -3057,17 +3221,7 @@ class _Artwork extends StatelessWidget {
         children: <Widget>[
           if (hasArtwork)
             Positioned.fill(
-              child: Image.network(
-                imageUrl!,
-                fit: BoxFit.cover,
-                filterQuality: FilterQuality.high,
-                errorBuilder:
-                    (
-                      BuildContext context,
-                      Object error,
-                      StackTrace? stackTrace,
-                    ) => const SizedBox.shrink(),
-              ),
+              child: _CachedArtworkImage(imageUrl: imageUrl!, dimension: size),
             ),
           if (!hasArtwork) _ArtworkFallbackSurface(colors: colors),
           if (!hasArtwork && icon != null)
@@ -3119,17 +3273,7 @@ class _ArtistAvatar extends StatelessWidget {
         fit: StackFit.expand,
         children: <Widget>[
           if (imageUrl != null && imageUrl!.trim().isNotEmpty)
-            Image.network(
-              imageUrl!,
-              fit: BoxFit.cover,
-              filterQuality: FilterQuality.high,
-              errorBuilder:
-                  (
-                    BuildContext context,
-                    Object error,
-                    StackTrace? stackTrace,
-                  ) => const SizedBox.shrink(),
-            ),
+            _CachedArtworkImage(imageUrl: imageUrl!, dimension: size),
           if (imageUrl == null || imageUrl!.trim().isEmpty)
             Center(
               child: Text(
