@@ -92,6 +92,7 @@ class AppSettings {
     this.playbackRate = 1.0,
     this.smartQueueEnabled = true,
     this.gaplessPlayback = true,
+    this.offlinePlaybackCacheEnabled = false,
     this.offlineMusicMode = false,
     this.preferredCountryCode = 'LK',
     this.ytMusicAuthJson,
@@ -103,6 +104,7 @@ class AppSettings {
   final double playbackRate;
   final bool smartQueueEnabled;
   final bool gaplessPlayback;
+  final bool offlinePlaybackCacheEnabled;
   final bool offlineMusicMode;
   final String preferredCountryCode;
   final String? ytMusicAuthJson;
@@ -121,6 +123,7 @@ class AppSettings {
     double? playbackRate,
     bool? smartQueueEnabled,
     bool? gaplessPlayback,
+    bool? offlinePlaybackCacheEnabled,
     bool? offlineMusicMode,
     String? preferredCountryCode,
     String? ytMusicAuthJson,
@@ -132,6 +135,8 @@ class AppSettings {
       playbackRate: playbackRate ?? this.playbackRate,
       smartQueueEnabled: smartQueueEnabled ?? this.smartQueueEnabled,
       gaplessPlayback: gaplessPlayback ?? this.gaplessPlayback,
+      offlinePlaybackCacheEnabled:
+          offlinePlaybackCacheEnabled ?? this.offlinePlaybackCacheEnabled,
       offlineMusicMode: offlineMusicMode ?? this.offlineMusicMode,
       preferredCountryCode: preferredCountryCode ?? this.preferredCountryCode,
       ytMusicAuthJson: ytMusicAuthJson ?? this.ytMusicAuthJson,
@@ -146,6 +151,7 @@ class AppSettings {
       'playbackRate': playbackRate,
       'smartQueueEnabled': smartQueueEnabled,
       'gaplessPlayback': gaplessPlayback,
+      'offlinePlaybackCacheEnabled': offlinePlaybackCacheEnabled,
       'offlineMusicMode': offlineMusicMode,
       'preferredCountryCode': preferredCountryCode,
       'ytMusicAuthJson': ytMusicAuthJson,
@@ -167,6 +173,8 @@ class AppSettings {
       playbackRate: (json['playbackRate'] as num?)?.toDouble() ?? 1.0,
       smartQueueEnabled: json['smartQueueEnabled'] as bool? ?? true,
       gaplessPlayback: json['gaplessPlayback'] as bool? ?? true,
+      offlinePlaybackCacheEnabled:
+          json['offlinePlaybackCacheEnabled'] as bool? ?? false,
       offlineMusicMode: json['offlineMusicMode'] as bool? ?? false,
       preferredCountryCode: preferredCountryCode.isEmpty
           ? 'LK'

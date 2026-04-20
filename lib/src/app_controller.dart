@@ -24,6 +24,9 @@ import 'models.dart';
 class OuterTuneController extends ChangeNotifier {
   OuterTuneController() : _player = Player(), _yt = YoutubeExplode();
   static const int _smartQueueBatchSize = 10;
+  static const int _offlineQueueWarmCount = 5;
+  static const int _offlinePlaybackHistoryKeepCount = 10;
+  static const int _offlineQueueBacktrackKeepCount = 10;
 
   static const List<String> supportedExtensions = <String>[
     'mp3',
@@ -91,11 +94,15 @@ class OuterTuneController extends ChangeNotifier {
   final Map<String, String?> _ytMusicVideoIdCache = <String, String?>{};
   final Map<String, String?> _ytMusicArtistImageCache = <String, String?>{};
   final Set<String> _smartQueueSongIds = <String>{};
+  final Map<String, String> _offlinePlaybackCachePaths =
+      <String, String>{};
+  final Set<String> _offlinePlaybackPrefetchInFlight = <String>{};
   String? _activePlaybackSongId;
   double _activePlaybackCompletionRatio = 0;
   DateTime? _lastAutoHomeRefreshAt;
+  bool _refreshingOfflinePlaybackCache = false;
 
-  List<String> _queueSongIds = <String>[];
+  List<String> _queueSongIds = <String>[]; 
   String _queueLabel = 'Now Playing';
   int _queueIndex = 0;
   bool _isPlaying = false;
@@ -117,6 +124,8 @@ class OuterTuneController extends ChangeNotifier {
   bool get smartQueueLoading => _smartQueueLoading;
   bool get isOffline => _isOffline;
   bool get offlineMusicMode => _settings.offlineMusicMode;
+  bool get offlinePlaybackCacheEnabled =>
+      _settings.offlinePlaybackCacheEnabled;
   String? get statusMessage => _statusMessage;
   String? get errorMessage => _errorMessage;
   String? get onlineError => _onlineError;
@@ -223,6 +232,28 @@ class OuterTuneController extends ChangeNotifier {
     }
 
     await _appendSmartQueuePredictions(anchor, limit: batchSize);
+  }
+
+  bool _hasOfflinePlaybackCache(String songId) {
+    if (!offlinePlaybackCacheEnabled) {
+      return false;
+    }
+    final String? path = _offlinePlaybackCachePaths[songId];
+    if (path == null || path.isEmpty) {
+      return false;
+    }
+    return File(path).existsSync();
+  }
+
+  String? _offlinePlaybackCachePathForSong(String songId) {
+    if (!offlinePlaybackCacheEnabled) {
+      return null;
+    }
+    final String? path = _offlinePlaybackCachePaths[songId];
+    if (path == null || path.isEmpty) {
+      return null;
+    }
+    return File(path).existsSync() ? path : null;
   }
 
   List<LibrarySong> get recentlyAddedSongs {
@@ -3245,6 +3276,7 @@ class OuterTuneController extends ChangeNotifier {
           _trackPlayback(song.id);
         }
         unawaited(_maybeExtendSmartQueue(seed: song, force: true));
+        unawaited(_refreshOfflinePlaybackCache(anchor: song));
         _publishNotificationState();
         notifyListeners();
       }),
@@ -3319,6 +3351,7 @@ class OuterTuneController extends ChangeNotifier {
       _trackPlayback(song.id);
     }
     unawaited(_maybeExtendSmartQueue(seed: song, force: true));
+    unawaited(_refreshOfflinePlaybackCache(anchor: song));
   }
 
   LibrarySong? songById(String id) {
@@ -3709,29 +3742,28 @@ class OuterTuneController extends ChangeNotifier {
     _smartQueueSongIds.remove(prepared.id);
     _queueSongIds = <String>[..._queueSongIds, prepared.id];
     await _player.add(_mediaForSong(prepared));
+    unawaited(_refreshOfflinePlaybackCache(anchor: currentSong ?? prepared));
     notifyListeners();
   }
 
   Future<LibrarySong> _preparePlayableSong(LibrarySong song) async {
     _rememberTransientSong(song);
-    if (!song.isRemote || !_looksLikeYouTube(song.path)) {
+    final String? cachedPath = _offlinePlaybackCachePathForSong(song.id);
+    if (cachedPath != null) {
+      final LibrarySong cached = song.copyWith(path: cachedPath);
+      _rememberTransientSong(cached);
+      return cached;
+    }
+
+    if (!song.isRemote) {
       return song;
     }
 
-    final StreamManifest manifest = await _yt.videos.streams.getManifest(
-      song.path,
-    );
-    String resolvedUrl;
-    if (manifest.hls.isNotEmpty) {
-      resolvedUrl = manifest.hls.first.url.toString();
-    } else if (manifest.muxed.isNotEmpty) {
-      resolvedUrl = manifest.muxed.withHighestBitrate().url.toString();
-    } else if (manifest.audioOnly.isNotEmpty) {
-      resolvedUrl = manifest.audioOnly.withHighestBitrate().url.toString();
-    } else {
-      throw const FormatException('No playable YouTube stream found.');
+    if (_isOffline || offlineMusicMode) {
+      throw const SocketException('Song is not cached for offline playback.');
     }
 
+    final String resolvedUrl = await _resolvePlayableRemoteUrl(song);
     final LibrarySong prepared = song.copyWith(path: resolvedUrl);
     _rememberTransientSong(prepared);
     return prepared;
@@ -3752,6 +3784,7 @@ class OuterTuneController extends ChangeNotifier {
       await _player.open(Playlist(<Media>[_mediaForSong(song)]));
       _trackPlayback(song.id);
       unawaited(_maybeExtendSmartQueue(seed: song, force: true));
+      unawaited(_refreshOfflinePlaybackCache(anchor: song));
       notifyListeners();
     } catch (_) {
       _pendingSelectionSong = null;
@@ -3799,6 +3832,10 @@ class OuterTuneController extends ChangeNotifier {
 
   Future<void> jumpToQueue(int index) async {
     if (index < 0 || index >= _queueSongIds.length) {
+      return;
+    }
+    if (_isOffline || offlineMusicMode) {
+      await _reopenQueueAtIndex(index);
       return;
     }
     _primePendingTrackTransition(index);
@@ -3880,6 +3917,10 @@ class OuterTuneController extends ChangeNotifier {
     if (targetIndex == null) {
       return;
     }
+    if (_isOffline || offlineMusicMode) {
+      await _reopenQueueAtIndex(targetIndex);
+      return;
+    }
     _primePendingTrackTransition(targetIndex);
     try {
       await _player.next();
@@ -3892,6 +3933,10 @@ class OuterTuneController extends ChangeNotifier {
   Future<void> previousTrack() async {
     final int? targetIndex = _previousQueueIndex();
     if (targetIndex == null) {
+      return;
+    }
+    if (_isOffline || offlineMusicMode) {
+      await _reopenQueueAtIndex(targetIndex);
       return;
     }
     _primePendingTrackTransition(targetIndex);
@@ -3960,6 +4005,20 @@ class OuterTuneController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setOfflinePlaybackCacheEnabled(bool value) async {
+    if (_settings.offlinePlaybackCacheEnabled == value) {
+      return;
+    }
+    _settings = _settings.copyWith(offlinePlaybackCacheEnabled: value);
+    await _saveSnapshot();
+    if (!value) {
+      await _clearOfflinePlaybackCache();
+    } else {
+      unawaited(_refreshOfflinePlaybackCache(anchor: currentSong));
+    }
+    notifyListeners();
+  }
+
   Future<void> setOfflineMusicMode(bool value) async {
     if (_settings.offlineMusicMode == value) {
       return;
@@ -3978,6 +4037,242 @@ class OuterTuneController extends ChangeNotifier {
     }
     await _saveSnapshot();
     notifyListeners();
+  }
+
+  Future<String> _resolvePlayableRemoteUrl(LibrarySong song) async {
+    if (!_looksLikeYouTube(song.path)) {
+      return song.path;
+    }
+
+    final StreamManifest manifest = await _yt.videos.streams.getManifest(
+      song.path,
+    );
+    if (manifest.hls.isNotEmpty) {
+      return manifest.hls.first.url.toString();
+    }
+    if (manifest.muxed.isNotEmpty) {
+      return manifest.muxed.withHighestBitrate().url.toString();
+    }
+    if (manifest.audioOnly.isNotEmpty) {
+      return manifest.audioOnly.withHighestBitrate().url.toString();
+    }
+    throw const FormatException('No playable YouTube stream found.');
+  }
+
+  Future<Directory> _offlinePlaybackCacheDirectory() async {
+    final Directory root = await getApplicationSupportDirectory();
+    final Directory dir = Directory(
+      p.join(root.path, 'offline_playback_cache'),
+    );
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    return dir;
+  }
+
+  Future<void> _clearOfflinePlaybackCache() async {
+    _offlinePlaybackPrefetchInFlight.clear();
+    final List<String> paths = _offlinePlaybackCachePaths.values.toList();
+    _offlinePlaybackCachePaths.clear();
+    for (final String path in paths) {
+      try {
+        final File file = File(path);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      } catch (_) {}
+    }
+  }
+
+  String _offlinePlaybackCacheFileName(
+    LibrarySong song,
+    String resolvedUrl,
+  ) {
+    final Uri? uri = Uri.tryParse(resolvedUrl);
+    final String extension = p.extension(uri?.path ?? '').trim().isEmpty
+        ? '.m4a'
+        : p.extension(uri!.path);
+    final String safeId = song.id.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+    return '$safeId$extension';
+  }
+
+  Future<void> _cacheSongForOfflinePlayback(LibrarySong song) async {
+    if (!offlinePlaybackCacheEnabled ||
+        !song.isRemote ||
+        _offlinePlaybackPrefetchInFlight.contains(song.id) ||
+        _hasOfflinePlaybackCache(song.id) ||
+        _isDisposing ||
+        _isDisposed) {
+      return;
+    }
+
+    _offlinePlaybackPrefetchInFlight.add(song.id);
+    try {
+      final String resolvedUrl = await _resolvePlayableRemoteUrl(song);
+      if (_isDisposing || _isDisposed) {
+        return;
+      }
+      final Directory dir = await _offlinePlaybackCacheDirectory();
+      final String fileName = _offlinePlaybackCacheFileName(song, resolvedUrl);
+      final File target = File(p.join(dir.path, fileName));
+      final File temp = File('${target.path}.part');
+
+      final HttpClient client = HttpClient();
+      try {
+        final LibrarySong requestSong = song.copyWith(path: resolvedUrl);
+        final HttpClientRequest request = await client.getUrl(
+          Uri.parse(resolvedUrl),
+        );
+        final Map<String, String>? headers = _httpHeadersForSong(requestSong);
+        headers?.forEach(request.headers.set);
+        final HttpClientResponse response = await request.close();
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          throw HttpException(
+            'Cache download failed: ${response.statusCode}',
+            uri: Uri.parse(resolvedUrl),
+          );
+        }
+        await temp.parent.create(recursive: true);
+        final IOSink sink = temp.openWrite();
+        await response.forEach(sink.add);
+        await sink.close();
+      } finally {
+        client.close(force: true);
+      }
+
+      if (await target.exists()) {
+        await target.delete();
+      }
+      await temp.rename(target.path);
+      _offlinePlaybackCachePaths[song.id] = target.path;
+      final LibrarySong cached = song.copyWith(path: target.path);
+      _rememberTransientSong(cached);
+    } catch (_) {
+      final String? path = _offlinePlaybackCachePaths[song.id];
+      if (path != null && !File(path).existsSync()) {
+        _offlinePlaybackCachePaths.remove(song.id);
+      }
+    } finally {
+      _offlinePlaybackPrefetchInFlight.remove(song.id);
+    }
+  }
+
+  List<LibrarySong> _offlinePlaybackCacheCandidates({LibrarySong? anchor}) {
+    if (!offlinePlaybackCacheEnabled) {
+      return <LibrarySong>[];
+    }
+    final List<LibrarySong> result = <LibrarySong>[];
+    final Set<String> seen = <String>{};
+
+    void addSong(LibrarySong? song) {
+      if (song == null || !song.isRemote || !seen.add(song.id)) {
+        return;
+      }
+      result.add(song);
+    }
+
+    addSong(anchor ?? currentSong);
+    final int start = math.max(
+      0,
+      _queueIndex - _offlineQueueBacktrackKeepCount,
+    );
+    final int end = math.min(
+      _queueSongIds.length,
+      _queueIndex + _offlineQueueWarmCount + 1,
+    );
+    for (int i = start; i < end; i += 1) {
+      addSong(songById(_queueSongIds[i]));
+    }
+    for (final PlaybackEntry entry in _history.take(_offlinePlaybackHistoryKeepCount)) {
+      addSong(songById(entry.songId));
+    }
+    return result;
+  }
+
+  Future<void> _pruneOfflinePlaybackCache(Set<String> keepIds) async {
+    final List<String> cachedIds = _offlinePlaybackCachePaths.keys.toList();
+    for (final String songId in cachedIds) {
+      if (keepIds.contains(songId)) {
+        continue;
+      }
+      final String? path = _offlinePlaybackCachePaths.remove(songId);
+      if (path == null) {
+        continue;
+      }
+      try {
+        final File file = File(path);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _refreshOfflinePlaybackCache({LibrarySong? anchor}) async {
+    if (!offlinePlaybackCacheEnabled) {
+      await _clearOfflinePlaybackCache();
+      return;
+    }
+    if (_refreshingOfflinePlaybackCache || _isDisposing || _isDisposed) {
+      return;
+    }
+    _refreshingOfflinePlaybackCache = true;
+    try {
+      final List<LibrarySong> candidates = _offlinePlaybackCacheCandidates(
+        anchor: anchor,
+      );
+      final Set<String> keepIds = candidates
+          .map((LibrarySong song) => song.id)
+          .toSet();
+      for (final LibrarySong song in candidates) {
+        await _cacheSongForOfflinePlayback(song);
+      }
+      await _pruneOfflinePlaybackCache(keepIds);
+    } finally {
+      _refreshingOfflinePlaybackCache = false;
+    }
+  }
+
+  Future<void> _reopenQueueAtIndex(int index) async {
+    if (index < 0 || index >= _queueSongIds.length) {
+      return;
+    }
+    final List<LibrarySong> queue = queueSongs;
+    if (queue.isEmpty || index >= queue.length) {
+      return;
+    }
+    final LibrarySong target = await _preparePlayableSong(queue[index]);
+    final List<LibrarySong> preparedQueue = <LibrarySong>[];
+    for (int i = 0; i < queue.length; i += 1) {
+      final LibrarySong song = queue[i];
+      if (i == index) {
+        preparedQueue.add(target);
+        continue;
+      }
+      final String? cachedPath = _offlinePlaybackCachePathForSong(song.id);
+      preparedQueue.add(
+        cachedPath == null ? song : song.copyWith(path: cachedPath),
+      );
+    }
+
+    _primePendingTrackTransition(index);
+    try {
+      final bool shouldResume = _isPlaying;
+      _queueSongIds = preparedQueue.map((LibrarySong song) => song.id).toList();
+      _queueIndex = index;
+      await _player.open(
+        Playlist(preparedQueue.map(_mediaForSong).toList(), index: index),
+      );
+      if (shouldResume) {
+        await _player.play();
+      }
+      _trackPlayback(preparedQueue[index].id);
+      unawaited(_refreshOfflinePlaybackCache(anchor: preparedQueue[index]));
+      notifyListeners();
+    } catch (_) {
+      _clearTrackTransition();
+      rethrow;
+    }
   }
 
   void _primePendingTrackTransition(int targetIndex) {

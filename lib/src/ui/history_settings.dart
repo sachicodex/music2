@@ -66,6 +66,8 @@ class _SettingsScreen extends StatelessWidget {
     const Color accent = Color(0xFFFF8A2A);
 
     final bool gapless = controller.settings.gaplessPlayback;
+    final bool offlinePlaybackCache =
+        controller.settings.offlinePlaybackCacheEnabled;
     final String preferredRegion = controller.preferredRegionLabel;
 
     Future<void> pickRegion() async {
@@ -319,6 +321,31 @@ class _SettingsScreen extends StatelessWidget {
                       inactiveThumbColor: const Color(0xFFD8A98A),
                       inactiveTrackColor: const Color(0xFF5C2A17),
                       onChanged: controller.setGaplessPlayback,
+                    ),
+                  ),
+                  const Divider(color: cardEdge, height: 20),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      'Offline Playback Cache',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: titleColor,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    subtitle: Text(
+                      'Keep the previous 10 and next 5 streamed songs ready for internet dropouts',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: subtitleColor),
+                    ),
+                    trailing: Switch(
+                      value: offlinePlaybackCache,
+                      activeThumbColor: accent,
+                      activeTrackColor: const Color(0xFF9D4D18),
+                      inactiveThumbColor: const Color(0xFFD8A98A),
+                      inactiveTrackColor: const Color(0xFF5C2A17),
+                      onChanged: controller.setOfflinePlaybackCacheEnabled,
                     ),
                   ),
                 ],
