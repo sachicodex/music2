@@ -25,7 +25,7 @@ import 'models.dart';
 class OuterTuneController extends ChangeNotifier {
   OuterTuneController() : _player = Player(), _yt = YoutubeExplode();
   static const int _smartQueueBatchSize = 7;
-  static const int _offlineQueueWarmCount = 5;
+  static const int _offlinePlaybackHistoryKeepCount = 10;
 
   static const List<String> supportedExtensions = <String>[
     'mp3',
@@ -99,15 +99,23 @@ class OuterTuneController extends ChangeNotifier {
   final Map<String, String?> _ytMusicArtistImageCache = <String, String?>{};
   final Set<String> _smartQueueSongIds = <String>{};
   final Map<String, String> _offlinePlaybackCachePaths = <String, String>{};
+  final List<String> _offlinePlaybackCacheQueue = <String>[];
+  final Set<String> _offlinePlaybackCacheQueuedSongIds = <String>{};
   final Set<String> _offlinePlaybackPrefetchInFlight = <String>{};
   String? _activePlaybackSongId;
   double _activePlaybackCompletionRatio = 0;
   DateTime? _lastAutoHomeRefreshAt;
   bool _refreshingOfflinePlaybackCache = false;
+  bool _offlinePlaybackCacheRefreshQueued = false;
+  LibrarySong? _pendingOfflinePlaybackCacheAnchor;
   bool _offlineQueueAdvancePending = false;
   String? _offlineQueueActivationTargetSongId;
   int? _offlineQueueActivationTargetIndex;
   List<String>? _offlineQueueActivationSongIds;
+  String? _offlineQueueWaitingSongId;
+  int? _offlineQueueWaitingIndex;
+  Future<void>? _offlinePlaybackCacheWorker;
+  bool _offlineDetachedQueueMode = false;
 
   List<String> _queueSongIds = <String>[];
   String _queueLabel = 'Now Playing';
@@ -132,7 +140,8 @@ class OuterTuneController extends ChangeNotifier {
   bool get smartQueueLoading => _smartQueueLoading;
   bool get isOffline => _isOffline;
   bool get offlineMusicMode => _settings.offlineMusicMode;
-  bool get offlinePlaybackCacheEnabled => _settings.offlinePlaybackCacheEnabled;
+  bool get offlinePlaybackCacheEnabled => true;
+  int get nextChanceSongCount => _settings.nextChanceSongCount;
   String? get statusMessage => _statusMessage;
   String? get errorMessage => _errorMessage;
   String? get onlineError => _onlineError;
@@ -194,6 +203,10 @@ class OuterTuneController extends ChangeNotifier {
   }
 
   LibrarySong? get miniPlayerSong {
+    final String? waitingSongId = _offlineQueueWaitingSongId;
+    if (waitingSongId != null) {
+      return songById(waitingSongId) ?? _pendingSelectionSong ?? currentSong;
+    }
     final String? transitioningSongId = _transitioningSongId;
     if (transitioningSongId != null) {
       return songById(transitioningSongId) ??
@@ -204,6 +217,9 @@ class OuterTuneController extends ChangeNotifier {
   }
 
   bool get miniPlayerSelectionLoading {
+    if (_offlineQueueWaitingSongId != null) {
+      return true;
+    }
     if (_transitioningSongId != null) {
       return true;
     }
@@ -567,6 +583,10 @@ class OuterTuneController extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    if (_offlineQueueWaitingSongId != null) {
+      unawaited(_resumeOfflineWaitingQueue());
+    }
+    unawaited(_refreshOfflinePlaybackCache(anchor: currentSong));
     notifyListeners();
     if (_initialized &&
         wasOffline &&
@@ -589,7 +609,7 @@ class OuterTuneController extends ChangeNotifier {
       return;
     }
     final Duration remaining = _duration - _position;
-    if (remaining > const Duration(milliseconds: 450)) {
+    if (remaining > const Duration(milliseconds: 1200)) {
       return;
     }
     final int? targetIndex = _nextQueueIndex();
@@ -599,8 +619,19 @@ class OuterTuneController extends ChangeNotifier {
     _offlineQueueAdvancePending = true;
     unawaited(() async {
       try {
-        await _reopenQueueAtIndex(targetIndex);
-        await play();
+        final LibrarySong? targetSong = songById(_queueSongIds[targetIndex]);
+        if (targetSong == null) {
+          return;
+        }
+        final bool canOpenNow =
+            !targetSong.isRemote ||
+            _offlinePlaybackCachePathForSong(targetSong.id) != null;
+        if (canOpenNow) {
+          await _reopenQueueAtIndex(targetIndex);
+          await play();
+          return;
+        }
+        await _enterOfflineQueueWait(targetIndex);
       } finally {
         _offlineQueueAdvancePending = false;
       }
@@ -3470,6 +3501,34 @@ class OuterTuneController extends ChangeNotifier {
             'song=$activeSongId index=$nextQueueIndex',
           );
         }
+        if (_offlineDetachedQueueMode) {
+          final LibrarySong? song = currentSong;
+          _resolveTrackTransition(song);
+          if (song != null && song.id != _lastTrackedSongId) {
+            _trackPlayback(song.id);
+          }
+          _publishNotificationState();
+          notifyListeners();
+          return;
+        }
+        if (_offlineQueueWaitingSongId != null) {
+          final String? activeSongId = nextQueueSongIds.isEmpty
+              ? null
+              : nextQueueSongIds[nextQueueIndex];
+          if (activeSongId != _offlineQueueWaitingSongId ||
+              nextQueueIndex != _offlineQueueWaitingIndex) {
+            _debugPlayback(
+              'player.playlist ignored during offline wait '
+              'active=$activeSongId waiting=$_offlineQueueWaitingSongId '
+              'waitingIndex=$_offlineQueueWaitingIndex',
+            );
+            return;
+          }
+          _debugPlayback(
+            'player.playlist offline wait resolved '
+            'song=$activeSongId index=$nextQueueIndex',
+          );
+        }
         _queueSongIds = nextQueueSongIds;
         _queueIndex = nextQueueIndex;
         final LibrarySong? song = currentSong;
@@ -3540,10 +3599,14 @@ class OuterTuneController extends ChangeNotifier {
       return;
     }
     if (_offlineQueueActivationTargetSongId != null ||
+        _offlineDetachedQueueMode ||
+        _offlineQueueWaitingSongId != null ||
         _transitioningSongId != null) {
       _debugPlayback(
         'player.position queue sync skipped '
         'activation=$_offlineQueueActivationTargetSongId '
+        'detached=$_offlineDetachedQueueMode '
+        'waiting=$_offlineQueueWaitingSongId '
         'transitionSong=$_transitioningSongId '
         'transitionIndex=$_transitioningQueueIndex '
         'queueIndex=$_queueIndex '
@@ -3940,6 +4003,8 @@ class OuterTuneController extends ChangeNotifier {
     }
 
     final int safeIndex = startIndex.clamp(0, songs.length - 1);
+    _clearOfflineQueueWait(notify: false);
+    _offlineDetachedQueueMode = false;
     _pendingSelectionSong = songs[safeIndex];
     notifyListeners();
     try {
@@ -4088,6 +4153,8 @@ class OuterTuneController extends ChangeNotifier {
     LibrarySong song, {
     required String label,
   }) async {
+    _clearOfflineQueueWait(notify: false);
+    _offlineDetachedQueueMode = false;
     _pendingSelectionSong = song;
     notifyListeners();
     _rememberTransientSong(song);
@@ -4155,6 +4222,9 @@ class OuterTuneController extends ChangeNotifier {
       'currentIndex=$_queueIndex '
       'target=${_debugSongLabel(songById(_queueSongIds[index]))}',
     );
+    if (await _tryHandleOfflineTargetTransition(index)) {
+      return;
+    }
     if (await _shouldUseOfflineQueueTransition(index)) {
       await _reopenQueueAtIndex(index);
       return;
@@ -4296,6 +4366,9 @@ class OuterTuneController extends ChangeNotifier {
       'current=${_debugSongLabel(currentSong)} '
       'target=${_debugSongLabel(songById(_queueSongIds[targetIndex]))}',
     );
+    if (await _tryHandleOfflineTargetTransition(targetIndex)) {
+      return;
+    }
     if (await _shouldUseOfflineQueueTransition(targetIndex)) {
       await _reopenQueueAtIndex(targetIndex);
       return;
@@ -4322,6 +4395,9 @@ class OuterTuneController extends ChangeNotifier {
       'current=${_debugSongLabel(currentSong)} '
       'target=${_debugSongLabel(songById(_queueSongIds[targetIndex]))}',
     );
+    if (await _tryHandleOfflineTargetTransition(targetIndex)) {
+      return;
+    }
     if (await _shouldUseOfflineQueueTransition(targetIndex)) {
       await _reopenQueueAtIndex(targetIndex);
       return;
@@ -4402,17 +4478,11 @@ class OuterTuneController extends ChangeNotifier {
   }
 
   Future<void> setOfflinePlaybackCacheEnabled(bool value) async {
-    if (_settings.offlinePlaybackCacheEnabled == value) {
-      return;
+    if (!_settings.offlinePlaybackCacheEnabled) {
+      _settings = _settings.copyWith(offlinePlaybackCacheEnabled: true);
+      await _saveSnapshot();
+      notifyListeners();
     }
-    _settings = _settings.copyWith(offlinePlaybackCacheEnabled: value);
-    await _saveSnapshot();
-    if (!value) {
-      await _clearOfflinePlaybackCache();
-    } else {
-      unawaited(_refreshOfflinePlaybackCache(anchor: currentSong));
-    }
-    notifyListeners();
   }
 
   Future<void> setOfflineMusicMode(bool value) async {
@@ -4432,6 +4502,19 @@ class OuterTuneController extends ChangeNotifier {
       _requestAutoHomeRefresh(force: true);
     }
     await _saveSnapshot();
+    notifyListeners();
+  }
+
+  Future<void> setNextChanceSongCount(int value) async {
+    final int normalized = value.clamp(0, 5);
+    if (_settings.nextChanceSongCount == normalized) {
+      return;
+    }
+    _settings = _settings.copyWith(nextChanceSongCount: normalized);
+    await _saveSnapshot();
+    if (normalized > 0) {
+      unawaited(_maybeExtendSmartQueue(force: true));
+    }
     notifyListeners();
   }
 
@@ -4467,6 +4550,8 @@ class OuterTuneController extends ChangeNotifier {
   }
 
   Future<void> _clearOfflinePlaybackCache() async {
+    _offlinePlaybackCacheQueue.clear();
+    _offlinePlaybackCacheQueuedSongIds.clear();
     _offlinePlaybackPrefetchInFlight.clear();
     final List<String> paths = _offlinePlaybackCachePaths.values.toList();
     _offlinePlaybackCachePaths.clear();
@@ -4573,11 +4658,19 @@ class OuterTuneController extends ChangeNotifier {
     }
 
     addSong(anchor ?? currentSong);
+    final int historyStart = math.max(
+      0,
+      _queueIndex - _offlinePlaybackHistoryKeepCount,
+    );
+    for (int i = _queueIndex - 1; i >= historyStart; i -= 1) {
+      addSong(songById(_queueSongIds[i]));
+    }
+    final int nextWarmCount = _settings.nextChanceSongCount.clamp(0, 5);
     final int end = math.min(
       _queueSongIds.length,
-      _queueIndex + _offlineQueueWarmCount + 1,
+      _queueIndex + nextWarmCount + 1,
     );
-    for (int i = _queueIndex; i < end; i += 1) {
+    for (int i = _queueIndex + 1; i < end; i += 1) {
       addSong(songById(_queueSongIds[i]));
     }
     _debugPlayback(
@@ -4608,26 +4701,75 @@ class OuterTuneController extends ChangeNotifier {
     }
   }
 
+  void _enqueueOfflinePlaybackCacheSongs(List<LibrarySong> songs) {
+    for (final LibrarySong song in songs) {
+      if (!song.isRemote ||
+          _offlinePlaybackCachePaths.containsKey(song.id) ||
+          _offlinePlaybackPrefetchInFlight.contains(song.id) ||
+          !_offlinePlaybackCacheQueuedSongIds.add(song.id)) {
+        continue;
+      }
+      _offlinePlaybackCacheQueue.add(song.id);
+    }
+  }
+
+  Future<void> _ensureOfflinePlaybackCacheWorkerRunning() {
+    final Future<void>? activeWorker = _offlinePlaybackCacheWorker;
+    if (activeWorker != null) {
+      return activeWorker;
+    }
+    final Future<void> worker = () async {
+      while (_offlinePlaybackCacheQueue.isNotEmpty &&
+          !_isDisposed &&
+          !_isDisposing &&
+          offlinePlaybackCacheEnabled) {
+        final String songId = _offlinePlaybackCacheQueue.removeAt(0);
+        _offlinePlaybackCacheQueuedSongIds.remove(songId);
+        final LibrarySong? song = songById(songId);
+        if (song == null) {
+          continue;
+        }
+        await _cacheSongForOfflinePlayback(song);
+      }
+    }();
+    _offlinePlaybackCacheWorker = worker;
+    return worker.whenComplete(() {
+      if (identical(_offlinePlaybackCacheWorker, worker)) {
+        _offlinePlaybackCacheWorker = null;
+      }
+    });
+  }
+
   Future<void> _refreshOfflinePlaybackCache({LibrarySong? anchor}) async {
     if (!offlinePlaybackCacheEnabled) {
       await _clearOfflinePlaybackCache();
       return;
     }
-    if (_refreshingOfflinePlaybackCache || _isDisposing || _isDisposed) {
+    if (_isDisposing || _isDisposed) {
+      return;
+    }
+    if (_refreshingOfflinePlaybackCache) {
+      _offlinePlaybackCacheRefreshQueued = true;
+      _pendingOfflinePlaybackCacheAnchor = anchor;
       return;
     }
     _refreshingOfflinePlaybackCache = true;
     try {
-      final List<LibrarySong> candidates = _offlinePlaybackCacheCandidates(
-        anchor: anchor,
-      );
-      final Set<String> keepIds = candidates
-          .map((LibrarySong song) => song.id)
-          .toSet();
-      for (final LibrarySong song in candidates) {
-        await _cacheSongForOfflinePlayback(song);
-      }
-      await _pruneOfflinePlaybackCache(keepIds);
+      LibrarySong? nextAnchor = anchor;
+      do {
+        _offlinePlaybackCacheRefreshQueued = false;
+        _pendingOfflinePlaybackCacheAnchor = null;
+        final List<LibrarySong> candidates = _offlinePlaybackCacheCandidates(
+          anchor: nextAnchor,
+        );
+        final Set<String> keepIds = candidates
+            .map((LibrarySong song) => song.id)
+            .toSet();
+        _enqueueOfflinePlaybackCacheSongs(candidates);
+        await _ensureOfflinePlaybackCacheWorkerRunning();
+        await _pruneOfflinePlaybackCache(keepIds);
+        nextAnchor = _pendingOfflinePlaybackCacheAnchor;
+      } while (_offlinePlaybackCacheRefreshQueued);
     } finally {
       _refreshingOfflinePlaybackCache = false;
     }
@@ -4658,28 +4800,39 @@ class OuterTuneController extends ChangeNotifier {
     _primePendingTrackTransition(index);
     try {
       final bool shouldResume = _isPlaying;
+      final bool openDetachedQueue = _isOffline || offlineMusicMode;
       _debugPlayback(
         'queue.reopen start index=$index '
         'target=${_debugSongLabel(target)} '
         'shouldResume=$shouldResume '
         'currentIndex=$_queueIndex '
-        'playerIndex=${_player.state.playlist.index}',
+        'playerIndex=${_player.state.playlist.index} '
+        'detached=$openDetachedQueue',
       );
       final List<String> preparedQueueSongIds = preparedQueue
           .map((LibrarySong song) => song.id)
           .toList();
-      _primeOfflineQueueActivation(
-        targetSongId: target.id,
-        targetIndex: index,
-        queueSongIds: preparedQueueSongIds,
-      );
-      _queueSongIds = preparedQueueSongIds;
+      if (!openDetachedQueue) {
+        _offlineDetachedQueueMode = false;
+        _primeOfflineQueueActivation(
+          targetSongId: target.id,
+          targetIndex: index,
+          queueSongIds: preparedQueueSongIds,
+        );
+        _queueSongIds = preparedQueueSongIds;
+      } else {
+        _offlineDetachedQueueMode = true;
+      }
       _queueIndex = index;
       notifyListeners();
       await _ensureSequentialPlayback();
-      await _player.open(
-        Playlist(preparedQueue.map(_mediaForSong).toList(), index: index),
-      );
+      if (openDetachedQueue) {
+        await _player.open(Playlist(<Media>[_mediaForSong(target)]));
+      } else {
+        await _player.open(
+          Playlist(preparedQueue.map(_mediaForSong).toList(), index: index),
+        );
+      }
       if (shouldResume) {
         await _player.play();
       }
@@ -4695,9 +4848,32 @@ class OuterTuneController extends ChangeNotifier {
     } catch (_) {
       _debugPlayback('queue.reopen failed index=$index');
       _clearOfflineQueueActivationState();
+      _offlineDetachedQueueMode = false;
       _clearTrackTransition();
       rethrow;
     }
+  }
+
+  Future<bool> _tryHandleOfflineTargetTransition(int targetIndex) async {
+    if (!offlineMusicMode && !_isOffline) {
+      return false;
+    }
+    if (targetIndex < 0 || targetIndex >= _queueSongIds.length) {
+      return false;
+    }
+    final LibrarySong? targetSong = songById(_queueSongIds[targetIndex]);
+    if (targetSong == null) {
+      return false;
+    }
+    final bool canOpenNow =
+        !targetSong.isRemote ||
+        _offlinePlaybackCachePathForSong(targetSong.id) != null;
+    if (canOpenNow) {
+      await _reopenQueueAtIndex(targetIndex);
+      return true;
+    }
+    await _enterOfflineQueueWait(targetIndex);
+    return true;
   }
 
   Future<bool> _shouldUseOfflineQueueTransition(int targetIndex) async {
@@ -4759,6 +4935,7 @@ class OuterTuneController extends ChangeNotifier {
     if (pending == null) {
       return;
     }
+    _clearOfflineQueueWait(notify: false);
     _transitioningSongId = pending.id;
     _transitioningQueueIndex = targetIndex;
     _pendingSelectionSong = pending;
@@ -4775,6 +4952,9 @@ class OuterTuneController extends ChangeNotifier {
     if (_offlineQueueActivationTargetSongId != null) {
       return true;
     }
+    if (_offlineQueueWaitingSongId != null) {
+      return true;
+    }
     final String? transitioningSongId = _transitioningSongId;
     if (transitioningSongId == null) {
       return false;
@@ -4786,6 +4966,9 @@ class OuterTuneController extends ChangeNotifier {
   void _resolveTrackTransition(LibrarySong? song) {
     if (song == null) {
       return;
+    }
+    if (_offlineQueueWaitingSongId == song.id) {
+      _clearOfflineQueueWait(notify: false);
     }
     if (_transitioningSongId == song.id) {
       _transitioningSongId = null;
@@ -4811,6 +4994,65 @@ class OuterTuneController extends ChangeNotifier {
     _pendingSelectionSong = null;
     _debugPlayback('transition.clear queueIndex=$_queueIndex');
     notifyListeners();
+  }
+
+  Future<void> _enterOfflineQueueWait(int targetIndex) async {
+    if (targetIndex < 0 || targetIndex >= _queueSongIds.length) {
+      return;
+    }
+    final LibrarySong? targetSong = songById(_queueSongIds[targetIndex]);
+    if (targetSong == null) {
+      return;
+    }
+    _offlineQueueWaitingSongId = targetSong.id;
+    _offlineQueueWaitingIndex = targetIndex;
+    _queueIndex = targetIndex;
+    _transitioningSongId = targetSong.id;
+    _transitioningQueueIndex = targetIndex;
+    _pendingSelectionSong = targetSong;
+    _position = Duration.zero;
+    _duration = Duration.zero;
+    _statusMessage = 'Waiting for internet to continue queue';
+    _debugPlayback(
+      'offline.wait enter '
+      'targetIndex=$targetIndex song=${_debugSongLabel(targetSong)}',
+    );
+    try {
+      await _player.pause();
+    } catch (_) {}
+    notifyListeners();
+  }
+
+  void _clearOfflineQueueWait({bool notify = true}) {
+    if (_offlineQueueWaitingSongId == null &&
+        _offlineQueueWaitingIndex == null) {
+      return;
+    }
+    _offlineQueueWaitingSongId = null;
+    _offlineQueueWaitingIndex = null;
+    _statusMessage = null;
+    if (notify) {
+      notifyListeners();
+    }
+  }
+
+  Future<void> _resumeOfflineWaitingQueue() async {
+    final int? targetIndex = _offlineQueueWaitingIndex;
+    if (targetIndex == null || _isOffline || offlineMusicMode) {
+      return;
+    }
+    if (targetIndex < 0 || targetIndex >= _queueSongIds.length) {
+      _clearOfflineQueueWait();
+      return;
+    }
+    final LibrarySong? targetSong = songById(_queueSongIds[targetIndex]);
+    _debugPlayback(
+      'offline.wait resume '
+      'targetIndex=$targetIndex target=${_debugSongLabel(targetSong)}',
+    );
+    _clearOfflineQueueWait(notify: false);
+    await _reopenQueueAtIndex(targetIndex);
+    await play();
   }
 
   void _primeOfflineQueueActivation({

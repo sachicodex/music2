@@ -66,9 +66,84 @@ class _SettingsScreen extends StatelessWidget {
     const Color accent = Color(0xFFFF8A2A);
 
     final bool gapless = controller.settings.gaplessPlayback;
-    final bool offlinePlaybackCache =
-        controller.settings.offlinePlaybackCacheEnabled;
+    final int nextChanceSongCount = controller.settings.nextChanceSongCount;
     final String preferredRegion = controller.preferredRegionLabel;
+
+    Future<void> pickNextChanceSongCount() async {
+      const List<int> options = <int>[0, 1, 2, 3, 4, 5];
+      final int? selected = await showModalBottomSheet<int>(
+        context: context,
+        backgroundColor: const Color(0xFF1C0904),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        builder: (BuildContext context) {
+          return SafeArea(
+            top: false,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.72,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'Choose next cache song count',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        color: titleColor,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Previous 10 songs always stay cached. Off means don\'t cache next songs.',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: subtitleColor),
+                    ),
+                    const SizedBox(height: 12),
+                    Flexible(
+                      child: ListView(
+                        shrinkWrap: true,
+                        children: options.map((int option) {
+                          final bool active = option == nextChanceSongCount;
+                          final String label = option == 0 ? 'Off' : '$option';
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            onTap: () => Navigator.of(context).pop(option),
+                            title: Text(
+                              label,
+                              style: TextStyle(
+                                color: active ? accent : titleColor,
+                                fontWeight: active
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                              ),
+                            ),
+                            trailing: active
+                                ? const Icon(Icons.check_rounded, color: accent)
+                                : null,
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      );
+      if (selected != null) {
+        await controller.setNextChanceSongCount(selected);
+      }
+    }
 
     Future<void> pickRegion() async {
       final String? selected = await showModalBottomSheet<String>(
@@ -324,28 +399,50 @@ class _SettingsScreen extends StatelessWidget {
                     ),
                   ),
                   const Divider(color: cardEdge, height: 20),
+                  _ProfileRow(
+                    title: 'Offline Playback Cache',
+                    subtitle:
+                        'Previous 10 songs are always kept cached for offline playback',
+                    trailing: 'Always On',
+                  ),
+                  const Divider(color: cardEdge, height: 20),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
+                    onTap: pickNextChanceSongCount,
                     title: Text(
-                      'Offline Playback Cache',
+                      'Next Cache Song Count',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         color: titleColor,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                     subtitle: Text(
-                      'Keep the previous 10 and next 5 streamed songs ready for internet dropouts',
+                      nextChanceSongCount == 0
+                          ? 'Don\'t cache next songs'
+                          : 'Load $nextChanceSongCount next songs one by one',
                       style: Theme.of(
                         context,
                       ).textTheme.bodySmall?.copyWith(color: subtitleColor),
                     ),
-                    trailing: Switch(
-                      value: offlinePlaybackCache,
-                      activeThumbColor: accent,
-                      activeTrackColor: const Color(0xFF9D4D18),
-                      inactiveThumbColor: const Color(0xFFD8A98A),
-                      inactiveTrackColor: const Color(0xFF5C2A17),
-                      onChanged: controller.setOfflinePlaybackCacheEnabled,
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Text(
+                          nextChanceSongCount == 0
+                              ? 'Off'
+                              : '$nextChanceSongCount',
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(
+                                color: accent,
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Icon(
+                          Icons.chevron_right_rounded,
+                          color: subtitleColor,
+                        ),
+                      ],
                     ),
                   ),
                 ],

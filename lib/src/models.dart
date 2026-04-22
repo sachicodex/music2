@@ -93,8 +93,9 @@ class AppSettings {
     this.playbackRate = 1.0,
     this.smartQueueEnabled = true,
     this.gaplessPlayback = true,
-    this.offlinePlaybackCacheEnabled = false,
+    this.offlinePlaybackCacheEnabled = true,
     this.offlineMusicMode = false,
+    this.nextChanceSongCount = 5,
     this.preferredCountryCode = 'LK',
     this.ytMusicAuthJson,
   });
@@ -107,6 +108,7 @@ class AppSettings {
   final bool gaplessPlayback;
   final bool offlinePlaybackCacheEnabled;
   final bool offlineMusicMode;
+  final int nextChanceSongCount;
   final String preferredCountryCode;
   final String? ytMusicAuthJson;
 
@@ -126,6 +128,7 @@ class AppSettings {
     bool? gaplessPlayback,
     bool? offlinePlaybackCacheEnabled,
     bool? offlineMusicMode,
+    int? nextChanceSongCount,
     String? preferredCountryCode,
     String? ytMusicAuthJson,
   }) {
@@ -139,6 +142,7 @@ class AppSettings {
       offlinePlaybackCacheEnabled:
           offlinePlaybackCacheEnabled ?? this.offlinePlaybackCacheEnabled,
       offlineMusicMode: offlineMusicMode ?? this.offlineMusicMode,
+      nextChanceSongCount: nextChanceSongCount ?? this.nextChanceSongCount,
       preferredCountryCode: preferredCountryCode ?? this.preferredCountryCode,
       ytMusicAuthJson: ytMusicAuthJson ?? this.ytMusicAuthJson,
     );
@@ -154,6 +158,7 @@ class AppSettings {
       'gaplessPlayback': gaplessPlayback,
       'offlinePlaybackCacheEnabled': offlinePlaybackCacheEnabled,
       'offlineMusicMode': offlineMusicMode,
+      'nextChanceSongCount': nextChanceSongCount,
       'preferredCountryCode': preferredCountryCode,
       'ytMusicAuthJson': ytMusicAuthJson,
     };
@@ -166,6 +171,8 @@ class AppSettings {
 
     final String preferredCountryCode =
         (json['preferredCountryCode'] as String? ?? 'LK').trim().toUpperCase();
+    final int nextChanceSongCount =
+        (json['nextChanceSongCount'] as num?)?.toInt().clamp(0, 5) ?? 5;
 
     return AppSettings(
       themeModeIndex: (json['themeModeIndex'] as num?)?.toInt() ?? 0,
@@ -175,8 +182,9 @@ class AppSettings {
       smartQueueEnabled: json['smartQueueEnabled'] as bool? ?? true,
       gaplessPlayback: json['gaplessPlayback'] as bool? ?? true,
       offlinePlaybackCacheEnabled:
-          json['offlinePlaybackCacheEnabled'] as bool? ?? false,
+          json['offlinePlaybackCacheEnabled'] as bool? ?? true,
       offlineMusicMode: json['offlineMusicMode'] as bool? ?? false,
+      nextChanceSongCount: nextChanceSongCount,
       preferredCountryCode: preferredCountryCode.isEmpty
           ? 'LK'
           : preferredCountryCode,
@@ -564,13 +572,13 @@ class NowPlayingState {
 
   @override
   int get hashCode => Object.hash(
-        song,
-        isLoading,
-        isShuffleEnabled,
-        repeatMode,
-        queueIndex,
-        queueLength,
-      );
+    song,
+    isLoading,
+    isShuffleEnabled,
+    repeatMode,
+    queueIndex,
+    queueLength,
+  );
 }
 
 class PlaybackProgressState {
