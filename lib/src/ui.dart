@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:collection/collection.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -19,5 +20,6 @@ part 'ui/search.dart';
 part 'ui/navigation.dart';
 part 'ui/library.dart';
 part 'ui/history_settings.dart';
+part 'ui/desktop.dart';
 part 'ui/player.dart';
 part 'ui/dialogs_and_utils.dart';

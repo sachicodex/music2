@@ -12,14 +12,18 @@ class OuterTuneApp extends StatelessWidget {
       title: 'OuterTune Flutter',
       themeMode: controller.settings.themeMode,
       builder: (BuildContext context, Widget? child) {
-        return CallbackShortcuts(
-          bindings: <ShortcutActivator, VoidCallback>{
-            const SingleActivator(LogicalKeyboardKey.space): () {
-              if (_focusedWidgetAcceptsTextInput()) {
-                return;
-              }
-              unawaited(context.read<OuterTuneController>().togglePlayback());
-            },
+        return Focus(
+          canRequestFocus: false,
+          onKeyEvent: (FocusNode node, KeyEvent event) {
+            if (event.logicalKey != LogicalKeyboardKey.space ||
+                event is! KeyDownEvent) {
+              return KeyEventResult.ignored;
+            }
+            if (_focusedWidgetAcceptsTextInput()) {
+              return KeyEventResult.ignored;
+            }
+            unawaited(context.read<OuterTuneController>().togglePlayback());
+            return KeyEventResult.handled;
           },
           child: child ?? const SizedBox.shrink(),
         );
@@ -40,7 +44,19 @@ bool _focusedWidgetAcceptsTextInput() {
   if (focusedContext == null) {
     return false;
   }
-  return focusedContext.widget is EditableText;
+  if (focusedContext.widget is EditableText) {
+    return true;
+  }
+
+  bool foundEditableText = false;
+  focusedContext.visitAncestorElements((Element element) {
+    if (element.widget is EditableText) {
+      foundEditableText = true;
+      return false;
+    }
+    return true;
+  });
+  return foundEditableText;
 }
 
 ThemeData _buildTheme(Brightness brightness) {
@@ -129,7 +145,28 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
   @override
   Widget build(BuildContext context) {
     final OuterTuneController controller = context.watch<OuterTuneController>();
+    final bool desktop = _isDesktopPlatform();
     final bool wide = MediaQuery.sizeOf(context).width >= 960;
+    final List<Widget> pages = _mainDestinations
+        .map(
+          (AppDestination destination) => KeyedSubtree(
+            key: ValueKey<AppDestination>(destination),
+            child: _buildPageForDestination(context, controller, destination),
+          ),
+        )
+        .toList(growable: false);
+
+    if (desktop) {
+      return _DesktopShellScaffold(
+        controller: controller,
+        destination: _destination,
+        destinations: _mainDestinations,
+        pageIndex: _destinationPageIndex,
+        onDestinationChanged: _setDestination,
+        onOpenPlayer: () => _openPlayer(context, controller),
+        children: pages,
+      );
+    }
 
     final Widget content = Column(
       children: <Widget>[
@@ -148,18 +185,7 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
                 setState(() => _destination = destination);
               }
             },
-            children: _mainDestinations
-                .map(
-                  (AppDestination destination) => KeyedSubtree(
-                    key: ValueKey<AppDestination>(destination),
-                    child: _buildPageForDestination(
-                      context,
-                      controller,
-                      destination,
-                    ),
-                  ),
-                )
-                .toList(growable: false),
+            children: pages,
           ),
         ),
         if (wide && controller.miniPlayerSong != null)

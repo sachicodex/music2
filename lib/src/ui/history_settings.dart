@@ -229,6 +229,14 @@ class _SettingsScreen extends StatelessWidget {
       }
     }
 
+    if (_isDesktopPlatform()) {
+      return _DesktopSettingsScreen(
+        controller: controller,
+        onPickNextChanceSongCount: pickNextChanceSongCount,
+        onPickRegion: pickRegion,
+      );
+    }
+
     return DecoratedBox(
       decoration: const BoxDecoration(
         gradient: LinearGradient(

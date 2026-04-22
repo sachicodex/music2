@@ -163,6 +163,31 @@ class _PlayerScreenState extends State<_PlayerScreen>
         const Color textSecondary = Color(0xFFE9A56F);
         const Color trackInactive = Color(0xFF5A2508);
 
+        if (_isDesktopPlatform()) {
+          return _DesktopPlayerScreen(
+            controller: controller,
+            song: song,
+            nowPlaying: nowPlaying,
+            tapFeedbackController: _tapFeedbackController,
+            likeFeedbackController: _likeFeedbackController,
+            showPauseGlyph: _showPauseGlyph,
+            onHandlePlayerMenuSelection: _handlePlayerMenuSelection,
+            onAlbumArtDoubleTap: _handleAlbumArtDoubleTap,
+            onAlbumArtTap: _handleAlbumArtTap,
+            onDislikeAction: _handleDislikeAction,
+            onTriggerPlaybackFeedback: _triggerPlaybackFeedback,
+            onTriggerLikeFeedback: _triggerLikeFeedback,
+            onShowQueueSheet: _showQueueSheet,
+            backgroundTop: backgroundTop,
+            backgroundBottom: backgroundBottom,
+            surface: surface,
+            accent: accent,
+            textPrimary: textPrimary,
+            textSecondary: textSecondary,
+            trackInactive: trackInactive,
+          );
+        }
+
         return Scaffold(
           backgroundColor: Colors.transparent,
           body: GestureDetector(
@@ -526,6 +551,596 @@ class _PlayerScreenState extends State<_PlayerScreen>
   }
 }
 
+class _DesktopPlayerScreen extends StatelessWidget {
+  const _DesktopPlayerScreen({
+    required this.controller,
+    required this.song,
+    required this.nowPlaying,
+    required this.tapFeedbackController,
+    required this.likeFeedbackController,
+    required this.showPauseGlyph,
+    required this.onHandlePlayerMenuSelection,
+    required this.onAlbumArtDoubleTap,
+    required this.onAlbumArtTap,
+    required this.onDislikeAction,
+    required this.onTriggerPlaybackFeedback,
+    required this.onTriggerLikeFeedback,
+    required this.onShowQueueSheet,
+    required this.backgroundTop,
+    required this.backgroundBottom,
+    required this.surface,
+    required this.accent,
+    required this.textPrimary,
+    required this.textSecondary,
+    required this.trackInactive,
+  });
+
+  final OuterTuneController controller;
+  final LibrarySong song;
+  final NowPlayingState nowPlaying;
+  final AnimationController tapFeedbackController;
+  final AnimationController likeFeedbackController;
+  final bool showPauseGlyph;
+  final Future<void> Function(String value, LibrarySong song)
+  onHandlePlayerMenuSelection;
+  final Future<void> Function(LibrarySong song) onAlbumArtDoubleTap;
+  final Future<void> Function() onAlbumArtTap;
+  final Future<void> Function(LibrarySong song) onDislikeAction;
+  final Future<void> Function() onTriggerPlaybackFeedback;
+  final Future<void> Function() onTriggerLikeFeedback;
+  final Future<void> Function() onShowQueueSheet;
+  final Color backgroundTop;
+  final Color backgroundBottom;
+  final Color surface;
+  final Color accent;
+  final Color textPrimary;
+  final Color textSecondary;
+  final Color trackInactive;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: CallbackShortcuts(
+        bindings: <ShortcutActivator, VoidCallback>{
+          const SingleActivator(LogicalKeyboardKey.arrowLeft): () {
+            unawaited(controller.previousTrack());
+          },
+          const SingleActivator(LogicalKeyboardKey.arrowRight): () {
+            unawaited(controller.nextTrack());
+          },
+          const SingleActivator(LogicalKeyboardKey.keyQ): () {
+            unawaited(onShowQueueSheet());
+          },
+        },
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: <Color>[backgroundTop, backgroundBottom],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  final bool stacked = constraints.maxWidth < 1320;
+                  final Widget mainPanel = _DesktopPlayerArtworkPanel(
+                    controller: controller,
+                    song: song,
+                    nowPlaying: nowPlaying,
+                    tapFeedbackController: tapFeedbackController,
+                    likeFeedbackController: likeFeedbackController,
+                    showPauseGlyph: showPauseGlyph,
+                    accent: accent,
+                    textPrimary: textPrimary,
+                    textSecondary: textSecondary,
+                    surface: surface,
+                    onAlbumArtTap: onAlbumArtTap,
+                    onAlbumArtDoubleTap: onAlbumArtDoubleTap,
+                    onHandlePlayerMenuSelection: onHandlePlayerMenuSelection,
+                    onDislikeAction: onDislikeAction,
+                    onTriggerLikeFeedback: onTriggerLikeFeedback,
+                    onShowQueueSheet: onShowQueueSheet,
+                    onTriggerPlaybackFeedback: onTriggerPlaybackFeedback,
+                    trackInactive: trackInactive,
+                  );
+
+                  final Widget queuePanel = _DesktopPlayerQueuePanel(
+                    controller: controller,
+                    accent: accent,
+                    textPrimary: textPrimary,
+                    textSecondary: textSecondary,
+                    onShowQueueSheet: onShowQueueSheet,
+                  );
+
+                  if (stacked) {
+                    return ListView(
+                      children: <Widget>[
+                        mainPanel,
+                        const SizedBox(height: 18),
+                        SizedBox(height: 440, child: queuePanel),
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Expanded(flex: 7, child: mainPanel),
+                      const SizedBox(width: 18),
+                      Expanded(flex: 4, child: queuePanel),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DesktopPlayerArtworkPanel extends StatelessWidget {
+  const _DesktopPlayerArtworkPanel({
+    required this.controller,
+    required this.song,
+    required this.nowPlaying,
+    required this.tapFeedbackController,
+    required this.likeFeedbackController,
+    required this.showPauseGlyph,
+    required this.accent,
+    required this.textPrimary,
+    required this.textSecondary,
+    required this.surface,
+    required this.onAlbumArtTap,
+    required this.onAlbumArtDoubleTap,
+    required this.onHandlePlayerMenuSelection,
+    required this.onDislikeAction,
+    required this.onTriggerLikeFeedback,
+    required this.onShowQueueSheet,
+    required this.onTriggerPlaybackFeedback,
+    required this.trackInactive,
+  });
+
+  final OuterTuneController controller;
+  final LibrarySong song;
+  final NowPlayingState nowPlaying;
+  final AnimationController tapFeedbackController;
+  final AnimationController likeFeedbackController;
+  final bool showPauseGlyph;
+  final Color accent;
+  final Color textPrimary;
+  final Color textSecondary;
+  final Color surface;
+  final Future<void> Function() onAlbumArtTap;
+  final Future<void> Function(LibrarySong song) onAlbumArtDoubleTap;
+  final Future<void> Function(String value, LibrarySong song)
+  onHandlePlayerMenuSelection;
+  final Future<void> Function(LibrarySong song) onDislikeAction;
+  final Future<void> Function() onTriggerLikeFeedback;
+  final Future<void> Function() onShowQueueSheet;
+  final Future<void> Function() onTriggerPlaybackFeedback;
+  final Color trackInactive;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A0D09).withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(32),
+        border: Border.all(color: const Color(0xFF342018)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              IconButton(
+                onPressed: () => Navigator.of(context).maybePop(),
+                icon: const Icon(Icons.arrow_back_rounded),
+                color: accent,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'NOW PLAYING',
+                  style: GoogleFonts.ibmPlexSans(
+                    color: accent,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.8,
+                  ),
+                ),
+              ),
+              PopupMenuButton<String>(
+                color: _kSurface,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: const BorderSide(color: _kSurfaceEdge),
+                ),
+                icon: const Icon(Icons.more_horiz_rounded),
+                iconColor: accent,
+                onSelected: (String value) async {
+                  await onHandlePlayerMenuSelection(value, song);
+                },
+                itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                  _kineticPopupMenuItem('save', 'Save'),
+                  _kineticPopupMenuItem(
+                    'like',
+                    song.isLiked ? 'Unlike song' : 'Like song',
+                  ),
+                  _kineticPopupMenuItem(
+                    'dislike',
+                    song.isDisliked ? 'Remove dislike' : 'Dislike song',
+                  ),
+                  _kineticPopupMenuItem('queue', 'Add to queue'),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Expanded(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: 520,
+                  maxHeight: 520,
+                ),
+                child: AspectRatio(
+                  aspectRatio: 1,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onAlbumArtTap,
+                    onDoubleTap: () => onAlbumArtDoubleTap(song),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: surface,
+                        borderRadius: BorderRadius.circular(38),
+                        boxShadow: <BoxShadow>[
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.38),
+                            blurRadius: 34,
+                            offset: const Offset(0, 24),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(38),
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 260),
+                          switchInCurve: Curves.easeOutCubic,
+                          switchOutCurve: Curves.easeInCubic,
+                          child: Stack(
+                            key: ValueKey<String>(
+                              '${song.id}|${song.artworkUrl ?? ''}',
+                            ),
+                            fit: StackFit.expand,
+                            children: <Widget>[
+                              if (song.artworkUrl != null &&
+                                  song.artworkUrl!.trim().isNotEmpty)
+                                _CachedArtworkImage(
+                                  imageUrl: song.artworkUrl!,
+                                  dimension: 520,
+                                  placeholder: const _PlayerArtFallback(),
+                                  errorWidget: const _PlayerArtFallback(),
+                                )
+                              else
+                                const _PlayerArtFallback(),
+                              IgnorePointer(
+                                child: _PlayerArtInteractionOverlay(
+                                  tapController: tapFeedbackController,
+                                  likeController: likeFeedbackController,
+                                  showPauseGlyph: showPauseGlyph,
+                                  isLiked: song.isLiked,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      song.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.spaceGrotesk(
+                        color: textPrimary,
+                        fontSize: 40,
+                        fontWeight: FontWeight.w700,
+                        height: 0.94,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      song.artist,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.ibmPlexSans(
+                        color: textSecondary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    IconButton(
+                      onPressed: () async {
+                        if (!song.isLiked) {
+                          await onTriggerLikeFeedback();
+                        }
+                        await controller.likeSong(song.id);
+                      },
+                      icon: Icon(
+                        song.isLiked
+                            ? Icons.thumb_up_rounded
+                            : Icons.thumb_up_outlined,
+                        color: accent,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      onPressed: () => onDislikeAction(song),
+                      icon: Icon(
+                        song.isDisliked
+                            ? Icons.thumb_down_rounded
+                            : Icons.thumb_down_outlined,
+                        color: song.isDisliked ? Colors.redAccent : accent,
+                        size: 28,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          ValueListenableBuilder<PlaybackProgressState>(
+            valueListenable: controller.playbackProgressState,
+            builder:
+                (
+                  BuildContext context,
+                  PlaybackProgressState progress,
+                  Widget? child,
+                ) {
+                  final Duration position = nowPlaying.isLoading
+                      ? Duration.zero
+                      : progress.position;
+                  final Duration duration = progress.duration == Duration.zero
+                      ? song.duration
+                      : progress.duration;
+                  final double sliderMax = math.max(
+                    duration.inMilliseconds.toDouble(),
+                    1,
+                  );
+                  final double sliderValue = position.inMilliseconds
+                      .clamp(0, sliderMax.toInt())
+                      .toDouble();
+                  final bool showPauseIcon =
+                      progress.isPlaying && !nowPlaying.isLoading;
+
+                  return _PlayerProgressAndControls(
+                    layoutScale: 1.0,
+                    accent: accent,
+                    textPrimary: textPrimary,
+                    trackInactive: trackInactive,
+                    sliderValue: sliderValue,
+                    sliderMax: sliderMax,
+                    position: position,
+                    duration: duration,
+                    isPlayerLoading: nowPlaying.isLoading,
+                    isShuffleEnabled: nowPlaying.isShuffleEnabled,
+                    repeatMode: nowPlaying.repeatMode,
+                    onSeek: controller.seek,
+                    onToggleShuffle: controller.toggleShuffle,
+                    onPrevious: controller.previousTrack,
+                    onTogglePlayback: () async {
+                      await onTriggerPlaybackFeedback();
+                      unawaited(controller.togglePlayback());
+                    },
+                    onNext: controller.nextTrack,
+                    onCycleRepeatMode: controller.cycleRepeatMode,
+                    showQueueHandle: false,
+                    showPauseIcon: showPauseIcon,
+                  );
+                },
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+}
+
+class _DesktopPlayerQueuePanel extends StatelessWidget {
+  const _DesktopPlayerQueuePanel({
+    required this.controller,
+    required this.accent,
+    required this.textPrimary,
+    required this.textSecondary,
+    required this.onShowQueueSheet,
+  });
+
+  final OuterTuneController controller;
+  final Color accent;
+  final Color textPrimary;
+  final Color textSecondary;
+  final Future<void> Function() onShowQueueSheet;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (BuildContext context, Widget? child) {
+        final List<LibrarySong> songs = controller.queueSongs;
+        final bool loading = controller.smartQueueLoading;
+        return Container(
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1A0D09).withValues(alpha: 0.96),
+            borderRadius: BorderRadius.circular(32),
+            border: Border.all(color: const Color(0xFF342018)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              _DesktopPanelTitle(
+                eyebrow: 'QUEUE',
+                title: 'Up next',
+              ),
+              const SizedBox(height: 14),
+              if (loading)
+                Row(
+                  children: <Widget>[
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        valueColor: AlwaysStoppedAnimation<Color>(accent),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Loading related songs...',
+                      style: GoogleFonts.ibmPlexSans(
+                        color: textSecondary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              if (songs.isEmpty) ...<Widget>[
+                const SizedBox(height: 10),
+                Text(
+                  'Queue is empty. Start playback to generate smart suggestions.',
+                  style: GoogleFonts.ibmPlexSans(
+                    color: textSecondary,
+                    fontSize: 14,
+                    height: 1.45,
+                  ),
+                ),
+              ] else
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: songs.length,
+                    separatorBuilder: (BuildContext context, int index) =>
+                        const SizedBox(height: 10),
+                    itemBuilder: (BuildContext context, int index) {
+                      final LibrarySong queuedSong = songs[index];
+                      final bool active = controller.queueIndex == index;
+                      return Material(
+                        color: active
+                            ? accent.withValues(alpha: 0.14)
+                            : const Color(0xFF23100C),
+                        borderRadius: BorderRadius.circular(22),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(22),
+                          onTap: () => controller.jumpToQueue(index),
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                            child: Row(
+                              children: <Widget>[
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: SizedBox(
+                                    width: 56,
+                                    height: 56,
+                                    child:
+                                        queuedSong.artworkUrl != null &&
+                                            queuedSong.artworkUrl!
+                                                .trim()
+                                                .isNotEmpty
+                                        ? _CachedArtworkImage(
+                                            imageUrl: queuedSong.artworkUrl!,
+                                            dimension: 56,
+                                            placeholder:
+                                                const _PlayerArtFallback(),
+                                            errorWidget:
+                                                const _PlayerArtFallback(),
+                                          )
+                                        : const _PlayerArtFallback(),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: <Widget>[
+                                      Text(
+                                        queuedSong.title,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: GoogleFonts.splineSans(
+                                          color: textPrimary,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        _songArtistLabel(queuedSong),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: GoogleFonts.ibmPlexSans(
+                                          color: active
+                                              ? accent
+                                              : textSecondary,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                IconButton(
+                                  onPressed: () =>
+                                      controller.removeFromQueue(index),
+                                  icon: const Icon(
+                                    Icons.close_rounded,
+                                    size: 18,
+                                  ),
+                                  color: textSecondary.withValues(alpha: 0.82),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _PlayerProgressAndControls extends StatelessWidget {
   const _PlayerProgressAndControls({
     required this.layoutScale,
@@ -545,7 +1160,8 @@ class _PlayerProgressAndControls extends StatelessWidget {
     required this.onTogglePlayback,
     required this.onNext,
     required this.onCycleRepeatMode,
-    required this.onShowQueue,
+    this.onShowQueue,
+    this.showQueueHandle = true,
     required this.showPauseIcon,
   });
 
@@ -566,7 +1182,8 @@ class _PlayerProgressAndControls extends StatelessWidget {
   final VoidCallback onTogglePlayback;
   final VoidCallback onNext;
   final VoidCallback onCycleRepeatMode;
-  final VoidCallback onShowQueue;
+  final VoidCallback? onShowQueue;
+  final bool showQueueHandle;
   final bool showPauseIcon;
 
   double _scale(double value, {double? min, double? max}) {
@@ -709,15 +1326,17 @@ class _PlayerProgressAndControls extends StatelessWidget {
             ),
           ],
         ),
-        SizedBox(height: _scale(10, min: 6, max: 20)),
-        Center(
-          child: IconButton(
-            onPressed: onShowQueue,
-            icon: const Icon(Icons.keyboard_arrow_up_rounded),
-            color: textPrimary.withValues(alpha: 0.3),
-            iconSize: _scale(34, min: 28, max: 34),
+        if (showQueueHandle && onShowQueue != null) ...<Widget>[
+          SizedBox(height: _scale(10, min: 6, max: 20)),
+          Center(
+            child: IconButton(
+              onPressed: onShowQueue,
+              icon: const Icon(Icons.keyboard_arrow_up_rounded),
+              color: textPrimary.withValues(alpha: 0.3),
+              iconSize: _scale(34, min: 28, max: 34),
+            ),
           ),
-        ),
+        ],
       ],
     );
   }

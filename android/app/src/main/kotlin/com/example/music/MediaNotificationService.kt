@@ -22,6 +22,7 @@ import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
+import androidx.media.app.NotificationCompat.MediaStyle
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.atomic.AtomicInteger
@@ -139,7 +140,6 @@ class MediaNotificationService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(currentTitle)
             .setContentText(currentArtist)
-            .setSubText(currentAlbum)
             .setLargeIcon(currentLargeIcon)
             .setSmallIcon(R.drawable.ic_stat_music)
             .setOngoing(isPlaying)
@@ -157,6 +157,11 @@ class MediaNotificationService : Service() {
                 playPauseIntent
             )
             .addAction(R.drawable.ic_media_next, "Next", nextIntent)
+            .setStyle(
+                MediaStyle()
+                    .setMediaSession(mediaSession.sessionToken)
+                    .setShowActionsInCompactView(0, 1, 2)
+            )
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }

@@ -14,6 +14,9 @@ class _LibraryScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (_isDesktopPlatform()) {
+      return _DesktopLibraryScreen(controller: controller);
+    }
     final List<UserPlaylist> playlists = controller.playlists;
     final bool offline = controller.isOffline;
 

@@ -138,6 +138,12 @@ class _HomeScreenState extends State<_HomeScreen>
   Widget build(BuildContext context) {
     super.build(context);
     final OuterTuneController controller = widget.controller;
+    if (_isDesktopPlatform()) {
+      return _DesktopHomeScreen(
+        controller: controller,
+        onOpenSearch: widget.onOpenSearch,
+      );
+    }
     if (controller.isOffline || controller.offlineMusicMode) {
       return _HomeOfflineState(controller: controller);
     }
@@ -1382,6 +1388,65 @@ class _KineticJumpBackCard extends StatelessWidget {
   }
 }
 
+class _SimplePlaybackTile extends StatelessWidget {
+  const _SimplePlaybackTile({
+    required this.song,
+    required this.onTap,
+  });
+
+  final LibrarySong song;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Row(
+            children: <Widget>[
+              _Artwork(
+                seed: song.id,
+                title: song.title,
+                size: 48,
+                imageUrl: song.artworkUrl,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      song.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.92),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _songArtistLabel(song),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.55),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _PopularTracksScreen extends StatelessWidget {
   const _PopularTracksScreen({
     required this.controller,
@@ -1444,8 +1509,7 @@ class _RecentPlaysScreen extends StatelessWidget {
               itemCount: songs.length,
               itemBuilder: (BuildContext context, int index) {
                 final LibrarySong song = songs[index];
-                return _KineticPopularTrackTile(
-                  index: index + 1,
+                return _SimplePlaybackTile(
                   song: song,
                   onTap: () {
                     if (song.isRemote) {
