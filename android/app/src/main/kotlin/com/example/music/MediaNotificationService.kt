@@ -18,12 +18,10 @@ import android.os.IBinder
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import android.widget.RemoteViews
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
-import androidx.media.app.NotificationCompat.DecoratedMediaCustomViewStyle
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.atomic.AtomicInteger
@@ -137,27 +135,6 @@ class MediaNotificationService : Service() {
         val playPauseIntent =
             servicePendingIntent(if (isPlaying) ACTION_PAUSE else ACTION_PLAY, REQUEST_PLAY_PAUSE)
         val nextIntent = servicePendingIntent(ACTION_NEXT, REQUEST_NEXT)
-        val expandedView =
-            RemoteViews(packageName, R.layout.notification_player_expanded).apply {
-                setInt(R.id.notification_card, "setBackgroundResource", R.drawable.bg_notification_card)
-                setTextViewText(R.id.title, currentTitle)
-                setTextViewText(R.id.artist, currentArtist)
-                setTextViewText(R.id.album, currentAlbum)
-                if (currentLargeIcon != null) {
-                    setImageViewBitmap(R.id.artwork, currentLargeIcon)
-                } else {
-                    setImageViewResource(R.id.artwork, R.drawable.ic_notification_art_placeholder)
-                }
-                setImageViewResource(
-                    R.id.play_pause,
-                    if (isPlaying) R.drawable.ic_media_pause else R.drawable.ic_media_play
-                )
-                setImageViewResource(R.id.brand_icon, R.drawable.ic_notification_brand)
-                setOnClickPendingIntent(R.id.previous, previousIntent)
-                setOnClickPendingIntent(R.id.play_pause, playPauseIntent)
-                setOnClickPendingIntent(R.id.next, nextIntent)
-                setOnClickPendingIntent(R.id.notification_root, buildContentIntent())
-            }
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(currentTitle)
@@ -180,12 +157,6 @@ class MediaNotificationService : Service() {
                 playPauseIntent
             )
             .addAction(R.drawable.ic_media_next, "Next", nextIntent)
-            .setCustomBigContentView(expandedView)
-            .setStyle(
-                DecoratedMediaCustomViewStyle()
-                    .setShowActionsInCompactView(0, 1, 2)
-                    .setMediaSession(mediaSession.sessionToken)
-            )
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }

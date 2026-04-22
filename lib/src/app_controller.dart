@@ -21,6 +21,7 @@ import 'package:ytmusicapi_dart/enums.dart' as ytm;
 
 import 'android_media_notification_bridge.dart';
 import 'models.dart';
+import 'windows_media_controls_bridge.dart';
 
 class OuterTuneController extends ChangeNotifier {
   OuterTuneController() : _player = Player(), _yt = YoutubeExplode();
@@ -48,6 +49,7 @@ class OuterTuneController extends ChangeNotifier {
   final ValueNotifier<PlaybackProgressState> playbackProgressState =
       ValueNotifier<PlaybackProgressState>(const PlaybackProgressState());
   StreamSubscription<String>? _notificationActionSubscription;
+  StreamSubscription<String>? _windowsMediaActionSubscription;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   YTMusic? _ytMusic;
   final Uuid _uuid = const Uuid();
@@ -532,6 +534,7 @@ class OuterTuneController extends ChangeNotifier {
     _syncPlaybackNotifiers();
     _initialized = true;
     unawaited(AndroidMediaNotificationBridge.stop());
+    unawaited(WindowsMediaControlsBridge.stop());
     notifyListeners();
     unawaited(rescanLibrary());
     _requestAutoHomeRefresh();
@@ -3547,24 +3550,45 @@ class OuterTuneController extends ChangeNotifier {
   }
 
   void _bindNotificationActions() {
-    if (!AndroidMediaNotificationBridge.isSupported) {
-      return;
-    }
     _notificationActionSubscription?.cancel();
-    _notificationActionSubscription =
-        AndroidMediaNotificationBridge.actionStream().listen((String action) {
-          if (AndroidMediaNotificationBridge.isToggleAction(action)) {
-            unawaited(togglePlayback());
-          } else if (AndroidMediaNotificationBridge.isPlayAction(action)) {
-            unawaited(play());
-          } else if (AndroidMediaNotificationBridge.isPauseAction(action)) {
-            unawaited(pause());
-          } else if (AndroidMediaNotificationBridge.isNextAction(action)) {
-            unawaited(nextTrack());
-          } else if (AndroidMediaNotificationBridge.isPreviousAction(action)) {
-            unawaited(previousTrack());
-          }
-        });
+    _notificationActionSubscription = null;
+    if (AndroidMediaNotificationBridge.isSupported) {
+      _notificationActionSubscription =
+          AndroidMediaNotificationBridge.actionStream().listen((String action) {
+            if (AndroidMediaNotificationBridge.isToggleAction(action)) {
+              unawaited(togglePlayback());
+            } else if (AndroidMediaNotificationBridge.isPlayAction(action)) {
+              unawaited(play());
+            } else if (AndroidMediaNotificationBridge.isPauseAction(action)) {
+              unawaited(pause());
+            } else if (AndroidMediaNotificationBridge.isNextAction(action)) {
+              unawaited(nextTrack());
+            } else if (AndroidMediaNotificationBridge.isPreviousAction(
+              action,
+            )) {
+              unawaited(previousTrack());
+            }
+          });
+    }
+
+    _windowsMediaActionSubscription?.cancel();
+    _windowsMediaActionSubscription = null;
+    if (WindowsMediaControlsBridge.isSupported) {
+      _windowsMediaActionSubscription =
+          WindowsMediaControlsBridge.actionStream().listen((String action) {
+            if (WindowsMediaControlsBridge.isToggleAction(action)) {
+              unawaited(togglePlayback());
+            } else if (WindowsMediaControlsBridge.isPlayAction(action)) {
+              unawaited(play());
+            } else if (WindowsMediaControlsBridge.isPauseAction(action)) {
+              unawaited(pause());
+            } else if (WindowsMediaControlsBridge.isNextAction(action)) {
+              unawaited(nextTrack());
+            } else if (WindowsMediaControlsBridge.isPreviousAction(action)) {
+              unawaited(previousTrack());
+            }
+          });
+    }
   }
 
   void _publishNotificationState() {
@@ -3572,6 +3596,7 @@ class OuterTuneController extends ChangeNotifier {
     if (song == null) {
       _hasPublishedPlaybackNotification = false;
       unawaited(AndroidMediaNotificationBridge.stop());
+      unawaited(WindowsMediaControlsBridge.stop());
       return;
     }
 
@@ -3581,6 +3606,7 @@ class OuterTuneController extends ChangeNotifier {
 
     if (!_hasPublishedPlaybackNotification) {
       unawaited(AndroidMediaNotificationBridge.stop());
+      unawaited(WindowsMediaControlsBridge.stop());
       return;
     }
 
@@ -3590,6 +3616,16 @@ class OuterTuneController extends ChangeNotifier {
         isPlaying: _isPlaying,
         position: _position,
         duration: _duration,
+      ),
+    );
+    unawaited(
+      WindowsMediaControlsBridge.updatePlayback(
+        song: song,
+        isPlaying: _isPlaying,
+        position: _position,
+        duration: _duration,
+        queueIndex: _queueIndex,
+        queueLength: _queueSongIds.length,
       ),
     );
   }
@@ -5476,9 +5512,12 @@ class OuterTuneController extends ChangeNotifier {
     _subscriptions.clear();
     unawaited(_notificationActionSubscription?.cancel());
     _notificationActionSubscription = null;
+    unawaited(_windowsMediaActionSubscription?.cancel());
+    _windowsMediaActionSubscription = null;
     unawaited(_connectivitySubscription?.cancel());
     _connectivitySubscription = null;
     unawaited(AndroidMediaNotificationBridge.stop());
+    unawaited(WindowsMediaControlsBridge.stop());
     _ytMusic?.close();
     _yt.close();
     _isDisposed = true;

@@ -95,7 +95,7 @@ class AppSettings {
     this.gaplessPlayback = true,
     this.offlinePlaybackCacheEnabled = true,
     this.offlineMusicMode = false,
-    this.nextChanceSongCount = 5,
+    this.nextChanceSongCount = 0,
     this.preferredCountryCode = 'LK',
     this.ytMusicAuthJson,
   });
@@ -172,7 +172,7 @@ class AppSettings {
     final String preferredCountryCode =
         (json['preferredCountryCode'] as String? ?? 'LK').trim().toUpperCase();
     final int nextChanceSongCount =
-        (json['nextChanceSongCount'] as num?)?.toInt().clamp(0, 5) ?? 5;
+        (json['nextChanceSongCount'] as num?)?.toInt().clamp(0, 5) ?? 0;
 
     return AppSettings(
       themeModeIndex: (json['themeModeIndex'] as num?)?.toInt() ?? 0,

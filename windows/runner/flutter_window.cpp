@@ -26,6 +26,8 @@ bool FlutterWindow::OnCreate() {
   }
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+  windows_media_controls_ = std::make_unique<WindowsMediaControls>(
+      GetHandle(), flutter_controller_->engine()->messenger());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
@@ -40,6 +42,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  windows_media_controls_.reset();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

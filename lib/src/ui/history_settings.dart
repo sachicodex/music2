@@ -91,7 +91,7 @@ class _SettingsScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      'Choose next cache song count',
+                      'Choose upcoming offline songs',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         color: titleColor,
                         fontWeight: FontWeight.w800,
@@ -99,7 +99,7 @@ class _SettingsScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Previous 10 songs always stay cached. Off means don\'t cache next songs.',
+                      'The last 10 songs stay available. Pick how many upcoming songs to keep ready offline.',
                       style: Theme.of(
                         context,
                       ).textTheme.bodySmall?.copyWith(color: subtitleColor),
@@ -399,18 +399,11 @@ class _SettingsScreen extends StatelessWidget {
                     ),
                   ),
                   const Divider(color: cardEdge, height: 20),
-                  _ProfileRow(
-                    title: 'Offline Playback Cache',
-                    subtitle:
-                        'Previous 10 songs are always kept cached for offline playback',
-                    trailing: 'Always On',
-                  ),
-                  const Divider(color: cardEdge, height: 20),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     onTap: pickNextChanceSongCount,
                     title: Text(
-                      'Next Cache Song Count',
+                      'Upcoming Offline Songs',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         color: titleColor,
                         fontWeight: FontWeight.w700,
@@ -418,8 +411,8 @@ class _SettingsScreen extends StatelessWidget {
                     ),
                     subtitle: Text(
                       nextChanceSongCount == 0
-                          ? 'Don\'t cache next songs'
-                          : 'Load $nextChanceSongCount next songs one by one',
+                          ? 'Off'
+                          : 'Keep the next $nextChanceSongCount song${nextChanceSongCount == 1 ? '' : 's'} ready offline',
                       style: Theme.of(
                         context,
                       ).textTheme.bodySmall?.copyWith(color: subtitleColor),
@@ -566,12 +559,12 @@ class _SettingsScreen extends StatelessWidget {
 class _ProfileRow extends StatelessWidget {
   const _ProfileRow({
     required this.title,
-    required this.subtitle,
     required this.trailing,
+    this.subtitle,
   });
 
   final String title;
-  final String subtitle;
+  final String? subtitle;
   final String trailing;
 
   @override
@@ -592,13 +585,15 @@ class _ProfileRow extends StatelessWidget {
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: subtitleColor),
-              ),
+              if (subtitle != null) ...<Widget>[
+                const SizedBox(height: 2),
+                Text(
+                  subtitle!,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: subtitleColor),
+                ),
+              ],
             ],
           ),
         ),

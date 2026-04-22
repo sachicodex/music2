@@ -11,6 +11,19 @@ class OuterTuneApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'OuterTune Flutter',
       themeMode: controller.settings.themeMode,
+      builder: (BuildContext context, Widget? child) {
+        return CallbackShortcuts(
+          bindings: <ShortcutActivator, VoidCallback>{
+            const SingleActivator(LogicalKeyboardKey.space): () {
+              if (_focusedWidgetAcceptsTextInput()) {
+                return;
+              }
+              unawaited(context.read<OuterTuneController>().togglePlayback());
+            },
+          },
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       scrollBehavior: const MaterialScrollBehavior().copyWith(
         scrollbars: false,
       ),
@@ -19,6 +32,15 @@ class OuterTuneApp extends StatelessWidget {
       home: const OuterTuneShell(),
     );
   }
+}
+
+bool _focusedWidgetAcceptsTextInput() {
+  final BuildContext? focusedContext =
+      FocusManager.instance.primaryFocus?.context;
+  if (focusedContext == null) {
+    return false;
+  }
+  return focusedContext.widget is EditableText;
 }
 
 ThemeData _buildTheme(Brightness brightness) {
@@ -127,14 +149,16 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
               }
             },
             children: _mainDestinations
-                .map((AppDestination destination) => KeyedSubtree(
-                      key: ValueKey<AppDestination>(destination),
-                      child: _buildPageForDestination(
-                        context,
-                        controller,
-                        destination,
-                      ),
-                    ))
+                .map(
+                  (AppDestination destination) => KeyedSubtree(
+                    key: ValueKey<AppDestination>(destination),
+                    child: _buildPageForDestination(
+                      context,
+                      controller,
+                      destination,
+                    ),
+                  ),
+                )
                 .toList(growable: false),
           ),
         ),
@@ -353,12 +377,7 @@ class _NetworkUnavailablePanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.fromLTRB(
-        24,
-        22,
-        24,
-        22,
-      ),
+      padding: EdgeInsets.fromLTRB(24, 22, 24, 22),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(30),
         gradient: const LinearGradient(
@@ -413,11 +432,7 @@ class _NetworkUnavailablePanel extends StatelessWidget {
                   color: const Color(0xFFFF8A2A).withValues(alpha: 0.18),
                   border: Border.all(color: const Color(0x55FFC39B)),
                 ),
-                child: Icon(
-                  icon,
-                  color: const Color(0xFFFFB784),
-                  size: 28,
-                ),
+                child: Icon(icon, color: const Color(0xFFFFB784), size: 28),
               ),
               const SizedBox(height: 18),
               Text(
@@ -463,8 +478,8 @@ class _NetworkUnavailablePanel extends StatelessWidget {
                         style: GoogleFonts.splineSans(
                           fontWeight: FontWeight.w700,
                         ),
-                        ),
                       ),
+                    ),
                 ],
               ),
             ],
