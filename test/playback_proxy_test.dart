@@ -11,6 +11,11 @@ void main() {
     'PlaybackProxyServer forwards bytes and reports transferred totals',
     () async {
       final List<int> payload = utf8.encode('outer-tune-low-bitrate-audio');
+      final Directory tempDir = await Directory.systemTemp.createTemp(
+        'playback-proxy-test-',
+      );
+      final String cachePath =
+          '${tempDir.path}${Platform.pathSeparator}song.m4a';
       final HttpServer upstream = await HttpServer.bind(
         InternetAddress.loopbackIPv4,
         0,
@@ -27,8 +32,12 @@ void main() {
       });
 
       final List<PlaybackProxyTransfer> transfers = <PlaybackProxyTransfer>[];
+      PlaybackProxyCacheResult? cacheResult;
       final PlaybackProxyServer proxy = PlaybackProxyServer(
         onBytesTransferred: transfers.add,
+        onCacheCompleted: (PlaybackProxyCacheResult result) {
+          cacheResult = result;
+        },
       );
 
       try {
@@ -38,6 +47,8 @@ void main() {
           upstreamUri: Uri.parse(
             'http://${upstream.address.address}:${upstream.port}/audio',
           ),
+          cacheFilePath: cachePath,
+          cacheEpoch: 7,
         );
 
         final HttpClient client = HttpClient();
@@ -66,9 +77,22 @@ void main() {
           ),
           isTrue,
         );
+        for (
+          int attempt = 0;
+          attempt < 20 && cacheResult == null;
+          attempt += 1
+        ) {
+          await Future<void>.delayed(const Duration(milliseconds: 25));
+        }
+        expect(cacheResult, isNotNull);
+        expect(cacheResult!.songId, 'song-1');
+        expect(cacheResult!.cacheEpoch, 7);
+        expect(cacheResult!.cachedFilePath, cachePath);
+        expect(await File(cachePath).readAsBytes(), payload);
       } finally {
         await proxy.dispose();
         await upstream.close(force: true);
+        await tempDir.delete(recursive: true);
       }
     },
   );

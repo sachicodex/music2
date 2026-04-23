@@ -16,10 +16,31 @@ class PlaybackProxyTransfer {
 typedef PlaybackProxyTransferCallback =
     void Function(PlaybackProxyTransfer transfer);
 
+class PlaybackProxyCacheResult {
+  const PlaybackProxyCacheResult({
+    required this.sessionId,
+    required this.songId,
+    required this.cacheEpoch,
+    required this.cachedFilePath,
+  });
+
+  final String sessionId;
+  final String songId;
+  final int cacheEpoch;
+  final String cachedFilePath;
+}
+
+typedef PlaybackProxyCacheCompletedCallback =
+    void Function(PlaybackProxyCacheResult result);
+
 class PlaybackProxyServer {
-  PlaybackProxyServer({required this.onBytesTransferred});
+  PlaybackProxyServer({
+    required this.onBytesTransferred,
+    this.onCacheCompleted,
+  });
 
   final PlaybackProxyTransferCallback onBytesTransferred;
+  final PlaybackProxyCacheCompletedCallback? onCacheCompleted;
   final HttpClient _client = HttpClient();
   final Map<String, _PlaybackProxySession> _sessions =
       <String, _PlaybackProxySession>{};
@@ -31,6 +52,8 @@ class PlaybackProxyServer {
     required String songId,
     required Uri upstreamUri,
     Map<String, String>? upstreamHeaders,
+    String? cacheFilePath,
+    int cacheEpoch = 0,
   }) async {
     await _ensureStarted();
     _sessions[sessionId] = _PlaybackProxySession(
@@ -38,6 +61,8 @@ class PlaybackProxyServer {
       songId: songId,
       upstreamUri: upstreamUri,
       upstreamHeaders: upstreamHeaders,
+      cacheFilePath: cacheFilePath,
+      cacheEpoch: cacheEpoch,
     );
     final HttpServer server = _server!;
     return 'http://${server.address.address}:${server.port}/$sessionId';
@@ -112,24 +137,55 @@ class PlaybackProxyServer {
         to: incoming.response.headers,
       );
 
+      final _PlaybackProxyCachePlan? cachePlan = _createCachePlan(
+        session: session,
+        incoming: incoming,
+        upstreamResponse: upstreamResponse,
+      );
+      IOSink? cacheSink;
+      int cachedBytes = 0;
+      if (cachePlan != null) {
+        session.cacheWriteInProgress = true;
+        await cachePlan.tempFile.parent.create(recursive: true);
+        if (await cachePlan.tempFile.exists()) {
+          await cachePlan.tempFile.delete();
+        }
+        cacheSink = cachePlan.tempFile.openWrite();
+      }
+
       if (incoming.method.toUpperCase() == 'HEAD') {
         await incoming.response.close();
         return;
       }
 
-      await for (final List<int> chunk in upstreamResponse) {
-        incoming.response.add(chunk);
-        if (chunk.isNotEmpty) {
-          onBytesTransferred(
-            PlaybackProxyTransfer(
-              sessionId: session.sessionId,
-              songId: session.songId,
-              bytesTransferred: chunk.length,
-            ),
-          );
+      try {
+        await for (final List<int> chunk in upstreamResponse) {
+          incoming.response.add(chunk);
+          if (cacheSink != null && chunk.isNotEmpty) {
+            cacheSink.add(chunk);
+            cachedBytes += chunk.length;
+          }
+          if (chunk.isNotEmpty) {
+            onBytesTransferred(
+              PlaybackProxyTransfer(
+                sessionId: session.sessionId,
+                songId: session.songId,
+                bytesTransferred: chunk.length,
+              ),
+            );
+          }
         }
+        await incoming.response.close();
+        await _completeCacheWrite(
+          session: session,
+          plan: cachePlan,
+          sink: cacheSink,
+          bytesWritten: cachedBytes,
+        );
+      } catch (_) {
+        await _discardCacheWrite(plan: cachePlan, sink: cacheSink);
+        rethrow;
       }
-      await incoming.response.close();
     } catch (_) {
       try {
         incoming.response.statusCode = HttpStatus.badGateway;
@@ -189,20 +245,182 @@ class PlaybackProxyServer {
       to.chunkedTransferEncoding = false;
     }
   }
+
+  _PlaybackProxyCachePlan? _createCachePlan({
+    required _PlaybackProxySession session,
+    required HttpRequest incoming,
+    required HttpClientResponse upstreamResponse,
+  }) {
+    if ((session.cacheFilePath?.trim().isEmpty ?? true) ||
+        session.cacheCompleted ||
+        session.cacheWriteInProgress ||
+        incoming.method.toUpperCase() != 'GET') {
+      return null;
+    }
+
+    final File targetFile = File(session.cacheFilePath!);
+    final File tempFile = File('${targetFile.path}.part');
+    final int statusCode = upstreamResponse.statusCode;
+
+    if (statusCode == HttpStatus.ok) {
+      return _PlaybackProxyCachePlan(
+        sessionId: session.sessionId,
+        targetFile: targetFile,
+        tempFile: tempFile,
+        expectedBytes: upstreamResponse.contentLength >= 0
+            ? upstreamResponse.contentLength
+            : null,
+      );
+    }
+
+    if (statusCode != HttpStatus.partialContent) {
+      return null;
+    }
+
+    final _ContentRangeHeader? contentRange = _ContentRangeHeader.tryParse(
+      upstreamResponse.headers.value(HttpHeaders.contentRangeHeader),
+    );
+    if (contentRange == null ||
+        contentRange.start != 0 ||
+        contentRange.totalLength == null ||
+        contentRange.end != contentRange.totalLength! - 1) {
+      return null;
+    }
+
+    return _PlaybackProxyCachePlan(
+      sessionId: session.sessionId,
+      targetFile: targetFile,
+      tempFile: tempFile,
+      expectedBytes: upstreamResponse.contentLength >= 0
+          ? upstreamResponse.contentLength
+          : contentRange.totalLength,
+    );
+  }
+
+  Future<void> _completeCacheWrite({
+    required _PlaybackProxySession session,
+    required _PlaybackProxyCachePlan? plan,
+    required IOSink? sink,
+    required int bytesWritten,
+  }) async {
+    if (plan == null) {
+      return;
+    }
+
+    try {
+      await sink?.close();
+      final int? expectedBytes = plan.expectedBytes;
+      final bool complete =
+          bytesWritten > 0 &&
+          (expectedBytes == null || expectedBytes == bytesWritten);
+      if (!complete) {
+        await _deleteIfExists(plan.tempFile);
+        return;
+      }
+      if (await plan.targetFile.exists()) {
+        await plan.targetFile.delete();
+      }
+      await plan.tempFile.rename(plan.targetFile.path);
+      session.cacheCompleted = true;
+      onCacheCompleted?.call(
+        PlaybackProxyCacheResult(
+          sessionId: session.sessionId,
+          songId: session.songId,
+          cacheEpoch: session.cacheEpoch,
+          cachedFilePath: plan.targetFile.path,
+        ),
+      );
+    } finally {
+      session.cacheWriteInProgress = false;
+    }
+  }
+
+  Future<void> _discardCacheWrite({
+    required _PlaybackProxyCachePlan? plan,
+    required IOSink? sink,
+  }) async {
+    if (plan == null) {
+      return;
+    }
+    try {
+      await sink?.close();
+    } catch (_) {}
+    await _deleteIfExists(plan.tempFile);
+    final _PlaybackProxySession? session = _sessions[plan.sessionId];
+    session?.cacheWriteInProgress = false;
+  }
+
+  Future<void> _deleteIfExists(File file) async {
+    if (await file.exists()) {
+      await file.delete();
+    }
+  }
 }
 
 class _PlaybackProxySession {
-  const _PlaybackProxySession({
+  _PlaybackProxySession({
     required this.sessionId,
     required this.songId,
     required this.upstreamUri,
     this.upstreamHeaders,
+    this.cacheFilePath,
+    required this.cacheEpoch,
   });
 
   final String sessionId;
   final String songId;
   final Uri upstreamUri;
   final Map<String, String>? upstreamHeaders;
+  final String? cacheFilePath;
+  final int cacheEpoch;
+  bool cacheCompleted = false;
+  bool cacheWriteInProgress = false;
+}
+
+class _PlaybackProxyCachePlan {
+  const _PlaybackProxyCachePlan({
+    required this.sessionId,
+    required this.targetFile,
+    required this.tempFile,
+    required this.expectedBytes,
+  });
+
+  final String sessionId;
+  final File targetFile;
+  final File tempFile;
+  final int? expectedBytes;
+}
+
+class _ContentRangeHeader {
+  const _ContentRangeHeader({
+    required this.start,
+    required this.end,
+    required this.totalLength,
+  });
+
+  final int start;
+  final int end;
+  final int? totalLength;
+
+  static final RegExp _pattern = RegExp(
+    r'^bytes\s+(\d+)-(\d+)/(\d+|\*)$',
+    caseSensitive: false,
+  );
+
+  static _ContentRangeHeader? tryParse(String? value) {
+    if (value == null) {
+      return null;
+    }
+    final RegExpMatch? match = _pattern.firstMatch(value.trim());
+    if (match == null) {
+      return null;
+    }
+    return _ContentRangeHeader(
+      start: int.parse(match.group(1)!),
+      end: int.parse(match.group(2)!),
+      totalLength: match.group(3) == '*' ? null : int.parse(match.group(3)!),
+    );
+  }
 }
 
 extension on List<String> {

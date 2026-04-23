@@ -1539,32 +1539,62 @@ class _KineticSubscreenScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final OuterTuneController controller = context.watch<OuterTuneController>();
+    final bool desktop = _isDesktopPlatform();
+    final Widget content = ListView(
+      padding: EdgeInsets.fromLTRB(
+        _kScreenHorizontalPadding,
+        _kScreenTopPadding,
+        _kScreenHorizontalPadding,
+        _kScreenBottomPadding +
+            (!desktop && controller.miniPlayerSong != null
+                ? _kMiniPlayerReservedHeight
+                : 0),
+      ),
+      children: <Widget>[
+        _KineticSubscreenHeader(title: title, actions: actions),
+        const SizedBox(height: 10),
+        child,
+      ],
+    );
+
     return Scaffold(
       backgroundColor: const Color(0xFF120503),
       body: DecoratedBox(
         decoration: _kineticPageDecoration(),
         child: SafeArea(
-          child: ListView(
-            padding: EdgeInsets.fromLTRB(
-              _kScreenHorizontalPadding,
-              _kScreenTopPadding,
-              _kScreenHorizontalPadding,
-              _kScreenBottomPadding +
-                  (controller.miniPlayerSong != null
-                      ? _kMiniPlayerReservedHeight
-                      : 0),
-            ),
-            children: <Widget>[
-              _KineticSubscreenHeader(title: title, actions: actions),
-              const SizedBox(height: 10),
-              child,
-            ],
-          ),
+          child: desktop
+              ? Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Expanded(child: content),
+                      if (controller.miniPlayerSong != null) ...<Widget>[
+                        const SizedBox(width: 18),
+                        SizedBox(
+                          width: MediaQuery.sizeOf(context).width >= 1400
+                              ? 360
+                              : 320,
+                          child: _DesktopNowPlayingRail(
+                            controller: controller,
+                            onOpenPlayer: () async {
+                              await Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (BuildContext context) =>
+                                      _PlayerScreen(controller: controller),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                )
+              : content,
         ),
       ),
-      bottomNavigationBar:
-          MediaQuery.sizeOf(context).width >= 960 ||
-              controller.miniPlayerSong == null
+      bottomNavigationBar: desktop || controller.miniPlayerSong == null
           ? null
           : SafeArea(
               top: false,

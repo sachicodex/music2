@@ -38,9 +38,9 @@ class _DesktopShellScaffold extends StatelessWidget {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool showPlayerRail =
-            constraints.maxWidth >= 1500 &&
             controller.nowPlayingState.value.song != null;
         final bool compactSidebar = constraints.maxWidth < 1100;
+        final double playerRailWidth = constraints.maxWidth >= 1400 ? 360 : 320;
 
         return CallbackShortcuts(
           bindings: <ShortcutActivator, VoidCallback>{
@@ -129,7 +129,7 @@ class _DesktopShellScaffold extends StatelessWidget {
                       if (showPlayerRail) ...<Widget>[
                         const SizedBox(width: 18),
                         SizedBox(
-                          width: 360,
+                          width: playerRailWidth,
                           child: _DesktopNowPlayingRail(
                             controller: controller,
                             onOpenPlayer: onOpenPlayer,
@@ -457,62 +457,6 @@ class _DesktopPanelTitle extends StatelessWidget {
         ),
         if (action != null) ...<Widget>[const SizedBox(width: 12), action!],
       ],
-    );
-  }
-}
-
-class _DesktopMetricCard extends StatelessWidget {
-  const _DesktopMetricCard({
-    required this.label,
-    required this.value,
-    required this.icon,
-  });
-
-  final String label;
-  final String value;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return _DesktopPanel(
-      padding: const EdgeInsets.all(18),
-      child: Row(
-        children: <Widget>[
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: const Color(0x22FF8A2A),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Icon(icon, color: _kAccent),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  value,
-                  style: GoogleFonts.spaceGrotesk(
-                    color: _kTextPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  label,
-                  style: GoogleFonts.ibmPlexSans(
-                    color: _kTextSecondary.withValues(alpha: 0.84),
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -1222,7 +1166,6 @@ class _DesktopSearchScreen extends StatelessWidget {
           else
             LayoutBuilder(
               builder: (BuildContext context, BoxConstraints constraints) {
-                final bool stacked = constraints.maxWidth < 1160;
                 final Widget results = _DesktopPanel(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1272,81 +1215,7 @@ class _DesktopSearchScreen extends StatelessWidget {
                   ),
                 );
 
-                final Widget insights = _DesktopPanel(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      const _DesktopPanelTitle(
-                        eyebrow: 'DISCOVERY',
-                        title: 'Search notes',
-                      ),
-                      const SizedBox(height: 16),
-                      _DesktopMetricCard(
-                        label: 'Local matches',
-                        value: '${songs.length}',
-                        icon: Icons.library_music_rounded,
-                      ),
-                      const SizedBox(height: 14),
-                      _DesktopMetricCard(
-                        label: 'Online matches',
-                        value: '${controller.onlineResults.length}',
-                        icon: Icons.cloud_queue_rounded,
-                      ),
-                      if (recentSearches.isNotEmpty) ...<Widget>[
-                        const SizedBox(height: 16),
-                        Text(
-                          'Recent searches',
-                          style: GoogleFonts.splineSans(
-                            color: _kTextPrimary,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        ...recentSearches
-                            .take(5)
-                            .map(
-                              (String item) => ListTile(
-                                contentPadding: EdgeInsets.zero,
-                                dense: true,
-                                title: Text(
-                                  item,
-                                  style: GoogleFonts.ibmPlexSans(
-                                    color: _kTextSecondary,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                trailing: const Icon(
-                                  Icons.north_west_rounded,
-                                  color: _kAccent,
-                                  size: 18,
-                                ),
-                                onTap: () => onApplySearch(item),
-                              ),
-                            ),
-                      ],
-                    ],
-                  ),
-                );
-
-                if (stacked) {
-                  return Column(
-                    children: <Widget>[
-                      results,
-                      const SizedBox(height: 20),
-                      insights,
-                    ],
-                  );
-                }
-
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Expanded(flex: 7, child: results),
-                    const SizedBox(width: 20),
-                    Expanded(flex: 4, child: insights),
-                  ],
-                );
+                return results;
               },
             ),
         ],
@@ -1364,6 +1233,38 @@ class _DesktopLibraryScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool offline = controller.isOffline;
     final List<UserPlaylist> playlists = controller.playlists;
+    final List<LibrarySong> cachedSongs = controller.cachedSongs;
+    final List<LibrarySong> likedSongs = controller.likedSongs;
+    final List<LibrarySong> dislikedSongs = controller.dislikedSongs;
+    final bool hasCachedPlaylist = cachedSongs.isNotEmpty;
+    final bool hasDislikedPlaylist = dislikedSongs.isNotEmpty;
+    final bool hasAnyPlaylistEntries =
+        hasCachedPlaylist || hasDislikedPlaylist || playlists.isNotEmpty;
+    final List<_DesktopLibraryPlaylistEntry> playlistEntries =
+        <_DesktopLibraryPlaylistEntry>[
+          if (hasCachedPlaylist)
+            _DesktopLibraryPlaylistEntry(
+              title: 'Cached Songs',
+              seed: 'cached_songs',
+              songs: cachedSongs,
+              subtitle: '${cachedSongs.length} cached tracks',
+            ),
+          if (hasDislikedPlaylist)
+            _DesktopLibraryPlaylistEntry(
+              title: 'Disliked Songs',
+              seed: 'disliked_songs',
+              songs: dislikedSongs,
+              subtitle: '${dislikedSongs.length} disliked tracks',
+            ),
+          ...playlists.map(
+            (UserPlaylist playlist) => _DesktopLibraryPlaylistEntry(
+              title: playlist.name,
+              seed: playlist.id,
+              songs: controller.songsForPlaylist(playlist),
+              playlist: playlist,
+            ),
+          ),
+        ];
 
     return _DesktopPageScrollView(
       child: Column(
@@ -1375,32 +1276,26 @@ class _DesktopLibraryScreen extends StatelessWidget {
             children: <Widget>[
               SizedBox(
                 width: 300,
-                child: offline
-                    ? const _LibraryBlockedCard(
-                        title: 'Liked Songs',
-                        subtitle: 'Internet required',
-                        icon: Icons.cloud_off_rounded,
-                      )
-                    : _LibraryFeatureCard(
-                        title: 'Liked\nSongs',
-                        subtitle: '${controller.likedSongs.length} tracks',
-                        icon: Icons.favorite_rounded,
-                        accent: const Color(0xFFFF8A3D),
-                        secondary: const Color(0xFFFF7D2F),
-                        watermark: Icons.favorite_rounded,
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (BuildContext context) =>
-                                  _KineticPlaylistScreen(
-                                    controller: controller,
-                                    title: 'Liked Songs',
-                                    songs: controller.likedSongs,
-                                  ),
+                child: _LibraryFeatureCard(
+                  title: 'Liked\nSongs',
+                  subtitle: '${likedSongs.length} tracks',
+                  icon: Icons.favorite_rounded,
+                  accent: const Color(0xFFFF8A3D),
+                  secondary: const Color(0xFFFF7D2F),
+                  watermark: Icons.favorite_rounded,
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (BuildContext context) =>
+                            _KineticPlaylistScreen(
+                              controller: controller,
+                              title: 'Liked Songs',
+                              songs: likedSongs,
                             ),
-                          );
-                        },
                       ),
+                    );
+                  },
+                ),
               ),
               SizedBox(
                 width: 300,
@@ -1468,43 +1363,49 @@ class _DesktopLibraryScreen extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 18),
-                if (!offline && playlists.isEmpty)
+                if (!offline && !hasAnyPlaylistEntries)
                   _LibraryEmptyPlaylistCard(
                     onCreate: () =>
                         _showCreatePlaylistDialog(context, controller),
                   )
-                else if (playlists.isNotEmpty)
+                else if (playlistEntries.isNotEmpty)
                   LayoutBuilder(
                     builder:
                         (BuildContext context, BoxConstraints constraints) {
-                          final int columns = constraints.maxWidth >= 1100
+                          final int columns = constraints.maxWidth >= 1380
                               ? 3
-                              : constraints.maxWidth >= 720
+                              : constraints.maxWidth >= 760
                               ? 2
                               : 1;
                           final double rawItemWidth =
                               (constraints.maxWidth - ((columns - 1) * 18)) /
                               columns;
                           final double itemWidth = rawItemWidth.clamp(
-                            240.0,
-                            340.0,
+                            260.0,
+                            420.0,
                           );
                           return Wrap(
                             spacing: 18,
                             runSpacing: 18,
-                            children: playlists.map((UserPlaylist playlist) {
+                            children: playlistEntries.map((
+                              _DesktopLibraryPlaylistEntry entry,
+                            ) {
                               return SizedBox(
                                 width: itemWidth,
                                 child: _DesktopPlaylistBox(
                                   controller: controller,
-                                  playlist: playlist,
+                                  title: entry.title,
+                                  seed: entry.seed,
+                                  songs: entry.songs,
+                                  playlist: entry.playlist,
+                                  subtitle: entry.subtitle,
                                 ),
                               );
                             }).toList(),
                           );
                         },
                   )
-                else
+                else if (!hasCachedPlaylist && !hasDislikedPlaylist)
                   const _LibraryBlockedCard(
                     title: 'Cloud Playlists',
                     subtitle: 'Reconnect to open playlists from the cloud.',
@@ -1520,14 +1421,24 @@ class _DesktopLibraryScreen extends StatelessWidget {
 }
 
 class _DesktopPlaylistBox extends StatelessWidget {
-  const _DesktopPlaylistBox({required this.controller, required this.playlist});
+  const _DesktopPlaylistBox({
+    required this.controller,
+    required this.title,
+    required this.seed,
+    required this.songs,
+    this.playlist,
+    this.subtitle,
+  });
 
   final OuterTuneController controller;
-  final UserPlaylist playlist;
+  final String title;
+  final String seed;
+  final List<LibrarySong> songs;
+  final UserPlaylist? playlist;
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
-    final List<LibrarySong> songs = controller.songsForPlaylist(playlist);
     final LibrarySong? leadSong = songs.isEmpty ? null : songs.first;
     final Widget artwork = ClipRRect(
       borderRadius: BorderRadius.circular(20),
@@ -1536,8 +1447,8 @@ class _DesktopPlaylistBox extends StatelessWidget {
         height: 104,
         child: leadSong != null
             ? _Artwork(
-                seed: playlist.id,
-                title: playlist.name,
+                seed: seed,
+                title: title,
                 size: 104,
                 imageUrl: leadSong.artworkUrl,
               )
@@ -1565,7 +1476,7 @@ class _DesktopPlaylistBox extends StatelessWidget {
           MaterialPageRoute<void>(
             builder: (BuildContext context) => _KineticPlaylistScreen(
               controller: controller,
-              title: playlist.name,
+              title: title,
               songs: songs,
               playlist: playlist,
             ),
@@ -1596,7 +1507,7 @@ class _DesktopPlaylistBox extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
                           Text(
-                            playlist.name,
+                            title,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.splineSans(
@@ -1608,7 +1519,7 @@ class _DesktopPlaylistBox extends StatelessWidget {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            '${songs.length} tracks',
+                            subtitle ?? '${songs.length} tracks',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.splineSans(
@@ -1638,7 +1549,7 @@ class _DesktopPlaylistBox extends StatelessWidget {
                 artwork,
                 const SizedBox(height: 16),
                 Text(
-                  playlist.name,
+                  title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.splineSans(
@@ -1650,7 +1561,7 @@ class _DesktopPlaylistBox extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '${songs.length} tracks',
+                  subtitle ?? '${songs.length} tracks',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.splineSans(
@@ -1666,6 +1577,22 @@ class _DesktopPlaylistBox extends StatelessWidget {
       ),
     );
   }
+}
+
+class _DesktopLibraryPlaylistEntry {
+  const _DesktopLibraryPlaylistEntry({
+    required this.title,
+    required this.seed,
+    required this.songs,
+    this.playlist,
+    this.subtitle,
+  });
+
+  final String title;
+  final String seed;
+  final List<LibrarySong> songs;
+  final UserPlaylist? playlist;
+  final String? subtitle;
 }
 
 class _DesktopSettingsScreen extends StatelessWidget {

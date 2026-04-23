@@ -21,13 +21,13 @@ import 'package:ytmusicapi_dart/enums.dart' as ytm;
 
 import 'android_media_notification_bridge.dart';
 import 'models.dart';
+import 'playback_proxy.dart';
 import 'streaming.dart';
 import 'windows_media_controls_bridge.dart';
 
 class OuterTuneController extends ChangeNotifier {
   OuterTuneController() : _player = Player(), _yt = YoutubeExplode();
   static const int _smartQueueBatchSize = 7;
-  static const int _offlinePlaybackHistoryKeepCount = 10;
 
   static const List<String> supportedExtensions = <String>[
     'mp3',
@@ -44,6 +44,10 @@ class OuterTuneController extends ChangeNotifier {
 
   final Player _player;
   final YoutubeExplode _yt;
+  late final PlaybackProxyServer _playbackProxy = PlaybackProxyServer(
+    onBytesTransferred: _handlePlaybackProxyTransfer,
+    onCacheCompleted: _handlePlaybackProxyCacheCompleted,
+  );
   final Connectivity _connectivity = Connectivity();
   final ValueNotifier<NowPlayingState> nowPlayingState =
       ValueNotifier<NowPlayingState>(const NowPlayingState());
@@ -68,6 +72,9 @@ class OuterTuneController extends ChangeNotifier {
       <String, PlaybackStreamInfo>{};
   final Map<String, int> _playbackCandidateIndexBySongId = <String, int>{};
   final Map<String, int> _songPlaybackBytes = <String, int>{};
+  final Map<String, _ActivePlaybackProxy> _activePlaybackProxiesBySongId =
+      <String, _ActivePlaybackProxy>{};
+  final Set<String> _proxyTrackedSongIds = <String>{};
   bool _isDisposing = false;
   bool _isDisposed = false;
 
@@ -125,6 +132,7 @@ class OuterTuneController extends ChangeNotifier {
   bool _refreshingOfflinePlaybackCache = false;
   bool _offlinePlaybackCacheRefreshQueued = false;
   LibrarySong? _pendingOfflinePlaybackCacheAnchor;
+  int _offlinePlaybackCacheEpoch = 0;
   bool _offlineQueueAdvancePending = false;
   String? _offlineQueueActivationTargetSongId;
   int? _offlineQueueActivationTargetIndex;
@@ -158,6 +166,7 @@ class OuterTuneController extends ChangeNotifier {
   bool get isOffline => _isOffline;
   bool get offlineMusicMode => _settings.offlineMusicMode;
   bool get offlinePlaybackCacheEnabled => true;
+  int get offlinePlaybackCacheSongCount => _offlinePlaybackCachePaths.length;
   int get nextChanceSongCount => _settings.nextChanceSongCount;
   AppDataUsageStats get dataUsage => dataUsageState.value;
   String? get statusMessage => _statusMessage;
@@ -196,6 +205,19 @@ class OuterTuneController extends ChangeNotifier {
       _personalizedHomeRecommendations
           .map((SongRecommendation item) => item.song)
           .toList(growable: false);
+  List<LibrarySong> get cachedSongs {
+    final List<LibrarySong> result = _offlinePlaybackCachePaths.keys
+        .map(songById)
+        .whereType<LibrarySong>()
+        .toList(growable: false);
+    result.sort((LibrarySong a, LibrarySong b) {
+      final DateTime left = a.lastPlayedAt ?? a.addedAt;
+      final DateTime right = b.lastPlayedAt ?? b.addedAt;
+      return right.compareTo(left);
+    });
+    return result;
+  }
+
   List<UserPlaylist> get playlists =>
       List<UserPlaylist>.unmodifiable(_playlists);
   List<PlaybackEntry> get history => List<PlaybackEntry>.unmodifiable(_history);
@@ -335,6 +357,27 @@ class OuterTuneController extends ChangeNotifier {
     _scheduleSnapshotSave();
   }
 
+  void _handlePlaybackProxyTransfer(PlaybackProxyTransfer transfer) {
+    if (_isDisposed || _isDisposing) {
+      return;
+    }
+    _proxyTrackedSongIds.add(transfer.songId);
+    _recordStreamBytes(transfer.songId, transfer.bytesTransferred);
+  }
+
+  void _handlePlaybackProxyCacheCompleted(PlaybackProxyCacheResult result) {
+    if (_isDisposed || _isDisposing) {
+      return;
+    }
+    if (result.cacheEpoch != _offlinePlaybackCacheEpoch) {
+      unawaited(_deleteFileIfExists(result.cachedFilePath));
+      return;
+    }
+    _offlinePlaybackCachePaths[result.songId] = result.cachedFilePath;
+    unawaited(_saveSnapshot());
+    notifyListeners();
+  }
+
   void _scheduleSnapshotSave() {
     _dataUsageSnapshotTimer?.cancel();
     _dataUsageSnapshotTimer = Timer(const Duration(milliseconds: 700), () {
@@ -346,6 +389,11 @@ class OuterTuneController extends ChangeNotifier {
   }
 
   Future<void> _clearPreparedPlaybackState() async {
+    final List<String> sessionIds = _activePlaybackProxiesBySongId.values
+        .map((_ActivePlaybackProxy item) => item.sessionId)
+        .toList(growable: false);
+    _activePlaybackProxiesBySongId.clear();
+    _proxyTrackedSongIds.clear();
     _preparedMediaUrlsBySongId.clear();
     _preparedMediaHeadersBySongId.clear();
     _rankedPlaybackCandidatesBySongId.clear();
@@ -353,6 +401,9 @@ class OuterTuneController extends ChangeNotifier {
     _playbackStreamInfoBySongId.clear();
     _songPlaybackBytes.clear();
     _playbackFallbackRecoveryInFlight = false;
+    for (final String sessionId in sessionIds) {
+      unawaited(_playbackProxy.unregister(sessionId));
+    }
     _syncDataUsageState();
   }
 
@@ -4361,11 +4412,70 @@ class OuterTuneController extends ChangeNotifier {
     final _ResolvedRemotePlayback resolved = await _resolvePlayableRemoteStream(
       song,
     );
+    final File cacheTarget = await _offlinePlaybackCacheTargetFile(
+      song,
+      resolved.resolvedUrl,
+    );
+    try {
+      final String proxyUrl = await _registerPlaybackProxy(
+        song: song,
+        upstreamUrl: resolved.resolvedUrl,
+        upstreamHeaders: resolved.upstreamHeaders,
+        cacheFilePath: cacheTarget.path,
+      );
+      return _PreparedPlaybackSource(
+        mediaUrl: proxyUrl,
+        mediaHeaders: null,
+        streamInfo: resolved.streamInfo,
+      );
+    } catch (error) {
+      _debugPlayback(
+        'proxy.register failed song=${_debugSongLabel(song)} error=$error',
+      );
+    }
     return _PreparedPlaybackSource(
       mediaUrl: resolved.resolvedUrl,
       mediaHeaders: resolved.upstreamHeaders,
       streamInfo: resolved.streamInfo,
     );
+  }
+
+  Future<String> _registerPlaybackProxy({
+    required LibrarySong song,
+    required String upstreamUrl,
+    required Map<String, String>? upstreamHeaders,
+    required String cacheFilePath,
+  }) async {
+    final _ActivePlaybackProxy? existing =
+        _activePlaybackProxiesBySongId[song.id];
+    if (existing != null &&
+        existing.upstreamUrl == upstreamUrl &&
+        mapEquals(existing.upstreamHeaders, upstreamHeaders)) {
+      _proxyTrackedSongIds.add(song.id);
+      return existing.proxyUrl;
+    }
+
+    final String sessionId = _uuid.v4();
+    final String proxyUrl = await _playbackProxy.register(
+      sessionId: sessionId,
+      songId: song.id,
+      upstreamUri: Uri.parse(upstreamUrl),
+      upstreamHeaders: upstreamHeaders,
+      cacheFilePath: cacheFilePath,
+      cacheEpoch: _offlinePlaybackCacheEpoch,
+    );
+    _activePlaybackProxiesBySongId[song.id] = _ActivePlaybackProxy(
+      sessionId: sessionId,
+      proxyUrl: proxyUrl,
+      upstreamUrl: upstreamUrl,
+      upstreamHeaders: upstreamHeaders == null
+          ? null
+          : Map<String, String>.unmodifiable(
+              Map<String, String>.from(upstreamHeaders),
+            ),
+    );
+    _proxyTrackedSongIds.add(song.id);
+    return proxyUrl;
   }
 
   Future<_ResolvedRemotePlayback> _resolvePlayableRemoteStream(
@@ -4543,8 +4653,9 @@ class OuterTuneController extends ChangeNotifier {
       url: stream.url.toString(),
       bitrateBitsPerSecond: stream.bitrate.bitsPerSecond,
       streamTag: stream.tag,
-      videoHeight:
-          stream is VideoStreamInfo ? stream.videoResolution.height : null,
+      videoHeight: stream is VideoStreamInfo
+          ? stream.videoResolution.height
+          : null,
       qualityLabel: stream.qualityLabel,
       containerName: stream.container.name,
       codecDescription: stream.codec.toString(),
@@ -4893,6 +5004,20 @@ class OuterTuneController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> clearOfflinePlaybackCacheAndNotify() async {
+    await _clearOfflinePlaybackCache();
+    await _saveSnapshot();
+    notifyListeners();
+  }
+
+  Future<void> resetDataUsageStats() async {
+    _songPlaybackBytes.clear();
+    _dataUsage = const AppDataUsageStats();
+    _syncDataUsageState();
+    await _saveSnapshot();
+    notifyListeners();
+  }
+
   Future<Directory> _offlinePlaybackCacheDirectory() async {
     final Directory root = await getApplicationSupportDirectory();
     final Directory dir = Directory(
@@ -4905,17 +5030,34 @@ class OuterTuneController extends ChangeNotifier {
   }
 
   Future<void> _clearOfflinePlaybackCache() async {
+    _offlinePlaybackCacheEpoch += 1;
     _offlinePlaybackCacheQueue.clear();
     _offlinePlaybackCacheQueuedSongIds.clear();
     _offlinePlaybackPrefetchInFlight.clear();
-    final List<String> paths = _offlinePlaybackCachePaths.values.toList();
+    final Map<String, String> cachedPaths = Map<String, String>.from(
+      _offlinePlaybackCachePaths,
+    );
     _offlinePlaybackCachePaths.clear();
+    for (final String songId in cachedPaths.keys) {
+      final String? preparedUrl = _preparedMediaUrlsBySongId[songId];
+      if (preparedUrl == cachedPaths[songId]) {
+        _preparedMediaUrlsBySongId.remove(songId);
+        _preparedMediaHeadersBySongId.remove(songId);
+        _playbackStreamInfoBySongId.remove(songId);
+      }
+    }
+    final Set<String> paths = <String>{...cachedPaths.values};
+    final Directory dir = await _offlinePlaybackCacheDirectory();
+    if (await dir.exists()) {
+      await for (final FileSystemEntity entity in dir.list()) {
+        if (entity is File) {
+          paths.add(entity.path);
+        }
+      }
+    }
     for (final String path in paths) {
       try {
-        final File file = File(path);
-        if (await file.exists()) {
-          await file.delete();
-        }
+        await _deleteFileIfExists(path);
       } catch (_) {}
     }
   }
@@ -4937,6 +5079,22 @@ class OuterTuneController extends ChangeNotifier {
     return '$safeId$extension';
   }
 
+  Future<File> _offlinePlaybackCacheTargetFile(
+    LibrarySong song,
+    String resolvedUrl,
+  ) async {
+    final Directory dir = await _offlinePlaybackCacheDirectory();
+    final String fileName = _offlinePlaybackCacheFileName(song, resolvedUrl);
+    return File(p.join(dir.path, fileName));
+  }
+
+  Future<void> _deleteFileIfExists(String path) async {
+    final File file = File(path);
+    if (await file.exists()) {
+      await file.delete();
+    }
+  }
+
   Future<void> _cacheSongForOfflinePlayback(LibrarySong song) async {
     if (!offlinePlaybackCacheEnabled ||
         !song.isRemote ||
@@ -4949,15 +5107,17 @@ class OuterTuneController extends ChangeNotifier {
 
     _offlinePlaybackPrefetchInFlight.add(song.id);
     try {
+      final int cacheEpoch = _offlinePlaybackCacheEpoch;
       final _ResolvedRemotePlayback resolved =
           await _resolvePlayableRemoteStream(song);
       final String resolvedUrl = resolved.resolvedUrl;
       if (_isDisposing || _isDisposed) {
         return;
       }
-      final Directory dir = await _offlinePlaybackCacheDirectory();
-      final String fileName = _offlinePlaybackCacheFileName(song, resolvedUrl);
-      final File target = File(p.join(dir.path, fileName));
+      final File target = await _offlinePlaybackCacheTargetFile(
+        song,
+        resolvedUrl,
+      );
       final File temp = File('${target.path}.part');
 
       final HttpClient client = HttpClient();
@@ -4986,6 +5146,12 @@ class OuterTuneController extends ChangeNotifier {
         await sink.close();
       } finally {
         client.close(force: true);
+      }
+
+      if (cacheEpoch != _offlinePlaybackCacheEpoch) {
+        await _deleteFileIfExists(temp.path);
+        await _deleteFileIfExists(target.path);
+        return;
       }
 
       if (await target.exists()) {
@@ -5017,14 +5183,6 @@ class OuterTuneController extends ChangeNotifier {
       result.add(song);
     }
 
-    addSong(anchor ?? currentSong);
-    final int historyStart = math.max(
-      0,
-      _queueIndex - _offlinePlaybackHistoryKeepCount,
-    );
-    for (int i = _queueIndex - 1; i >= historyStart; i -= 1) {
-      addSong(songById(_queueSongIds[i]));
-    }
     final int nextWarmCount = _settings.nextChanceSongCount.clamp(0, 5);
     final int end = math.min(
       _queueSongIds.length,
@@ -5040,25 +5198,6 @@ class OuterTuneController extends ChangeNotifier {
       'songs=${result.map((LibrarySong song) => song.id).join(', ')}',
     );
     return result;
-  }
-
-  Future<void> _pruneOfflinePlaybackCache(Set<String> keepIds) async {
-    final List<String> cachedIds = _offlinePlaybackCachePaths.keys.toList();
-    for (final String songId in cachedIds) {
-      if (keepIds.contains(songId)) {
-        continue;
-      }
-      final String? path = _offlinePlaybackCachePaths.remove(songId);
-      if (path == null) {
-        continue;
-      }
-      try {
-        final File file = File(path);
-        if (await file.exists()) {
-          await file.delete();
-        }
-      } catch (_) {}
-    }
   }
 
   void _enqueueOfflinePlaybackCacheSongs(List<LibrarySong> songs) {
@@ -5122,12 +5261,8 @@ class OuterTuneController extends ChangeNotifier {
         final List<LibrarySong> candidates = _offlinePlaybackCacheCandidates(
           anchor: nextAnchor,
         );
-        final Set<String> keepIds = candidates
-            .map((LibrarySong song) => song.id)
-            .toSet();
         _enqueueOfflinePlaybackCacheSongs(candidates);
         await _ensureOfflinePlaybackCacheWorkerRunning();
-        await _pruneOfflinePlaybackCache(keepIds);
         nextAnchor = _pendingOfflinePlaybackCacheAnchor;
       } while (_offlinePlaybackCacheRefreshQueued);
     } finally {
@@ -5718,6 +5853,7 @@ class OuterTuneController extends ChangeNotifier {
     final int? bitrate = info?.bitrateBitsPerSecond;
     if (info == null ||
         !info.transport.isNetwork ||
+        _proxyTrackedSongIds.contains(song.id) ||
         bitrate == null ||
         bitrate <= 0) {
       return;
@@ -5795,6 +5931,22 @@ class OuterTuneController extends ChangeNotifier {
               PlaybackEntry.fromJson(item as Map<String, dynamic>),
         )
         .toList();
+    final Map<String, dynamic> cachedPathsJson =
+        json['offlinePlaybackCachePaths'] as Map<String, dynamic>? ??
+        <String, dynamic>{};
+    _offlinePlaybackCachePaths
+      ..clear()
+      ..addEntries(
+        cachedPathsJson.entries
+            .map(
+              (MapEntry<String, dynamic> item) =>
+                  MapEntry<String, String>(item.key, item.value as String),
+            )
+            .where((MapEntry<String, String> item) {
+              return item.value.trim().isNotEmpty &&
+                  File(item.value).existsSync();
+            }),
+      );
     _dataUsage = AppDataUsageStats.fromJson(
       json['dataUsage'] as Map<String, dynamic>?,
     ).copyWith(currentSongBytes: 0, clearCurrentSongId: true);
@@ -5837,6 +5989,7 @@ class OuterTuneController extends ChangeNotifier {
             .where((PlaybackEntry entry) => songById(entry.songId) != null)
             .map((PlaybackEntry entry) => entry.toJson())
             .toList(),
+        'offlinePlaybackCachePaths': _offlinePlaybackCachePaths,
         'dataUsage': _dataUsage.toJson(),
       }),
     );
@@ -5870,6 +6023,7 @@ class OuterTuneController extends ChangeNotifier {
     unawaited(WindowsMediaControlsBridge.stop());
     _ytMusic?.close();
     _yt.close();
+    unawaited(_playbackProxy.dispose());
     _isDisposed = true;
     nowPlayingState.dispose();
     playbackProgressState.dispose();
@@ -5918,6 +6072,20 @@ class _LanguageSignal {
   final String label;
   final String queryToken;
   final double score;
+}
+
+class _ActivePlaybackProxy {
+  const _ActivePlaybackProxy({
+    required this.sessionId,
+    required this.proxyUrl,
+    required this.upstreamUrl,
+    required this.upstreamHeaders,
+  });
+
+  final String sessionId;
+  final String proxyUrl;
+  final String upstreamUrl;
+  final Map<String, String>? upstreamHeaders;
 }
 
 class _SessionContext {

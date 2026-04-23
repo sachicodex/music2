@@ -18,7 +18,14 @@ class _LibraryScreen extends StatelessWidget {
       return _DesktopLibraryScreen(controller: controller);
     }
     final List<UserPlaylist> playlists = controller.playlists;
+    final List<LibrarySong> cachedSongs = controller.cachedSongs;
+    final List<LibrarySong> likedSongs = controller.likedSongs;
+    final List<LibrarySong> dislikedSongs = controller.dislikedSongs;
     final bool offline = controller.isOffline;
+    final bool hasCachedPlaylist = cachedSongs.isNotEmpty;
+    final bool hasDislikedPlaylist = dislikedSongs.isNotEmpty;
+    final bool hasAnyPlaylistEntries =
+        hasCachedPlaylist || hasDislikedPlaylist || playlists.isNotEmpty;
 
     return DecoratedBox(
       decoration: _kineticPageDecoration(),
@@ -36,32 +43,25 @@ class _LibraryScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Expanded(
-                  child: offline
-                      ? const _LibraryBlockedCard(
-                          title: 'Liked Songs',
-                          subtitle: 'Internet required',
-                          icon: Icons.cloud_off_rounded,
-                        )
-                      : _LibraryFeatureCard(
-                          title: 'Liked\nSongs',
-                          subtitle: '${controller.likedSongs.length} tracks',
-                          icon: Icons.favorite_rounded,
-                          accent: const Color(0xFFFF8A3D),
-                          secondary: const Color(0xFFFF7D2F),
-                          watermark: Icons.favorite_rounded,
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (BuildContext context) =>
-                                    _KineticPlaylistScreen(
-                                      controller: controller,
-                                      title: 'Liked Songs',
-                                      songs: controller.likedSongs,
-                                    ),
-                              ),
-                            );
-                          },
+                  child: _LibraryFeatureCard(
+                    title: 'Liked\nSongs',
+                    subtitle: '${likedSongs.length} tracks',
+                    icon: Icons.favorite_rounded,
+                    accent: const Color(0xFFFF8A3D),
+                    secondary: const Color(0xFFFF7D2F),
+                    watermark: Icons.favorite_rounded,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (BuildContext context) => _KineticPlaylistScreen(
+                            controller: controller,
+                            title: 'Liked Songs',
+                            songs: likedSongs,
+                          ),
                         ),
+                      );
+                    },
+                  ),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -125,7 +125,31 @@ class _LibraryScreen extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 18),
-            if (!offline && playlists.isEmpty)
+            if (hasCachedPlaylist)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 18),
+                child: _LibraryPlaylistRow(
+                  controller: controller,
+                  title: 'Cached Songs',
+                  seed: 'cached_songs',
+                  songs: cachedSongs,
+                  subtitle: 'Playlist · ${cachedSongs.length} Cached',
+                  forceEnabled: true,
+                ),
+              ),
+            if (hasDislikedPlaylist)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 18),
+                child: _LibraryPlaylistRow(
+                  controller: controller,
+                  title: 'Disliked Songs',
+                  seed: 'disliked_songs',
+                  songs: dislikedSongs,
+                  subtitle: 'Playlist · ${dislikedSongs.length} Disliked',
+                  forceEnabled: true,
+                ),
+              ),
+            if (!offline && !hasAnyPlaylistEntries)
               _LibraryEmptyPlaylistCard(
                 onCreate: () => _showCreatePlaylistDialog(context, controller),
               )
@@ -135,11 +159,14 @@ class _LibraryScreen extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: 18),
                   child: _LibraryPlaylistRow(
                     controller: controller,
+                    title: playlist.name,
+                    seed: playlist.id,
+                    songs: controller.songsForPlaylist(playlist),
                     playlist: playlist,
                   ),
                 ),
               )
-            else
+            else if (!hasCachedPlaylist && !hasDislikedPlaylist)
               const _LibraryBlockedCard(
                 title: 'Cloud Playlists',
                 subtitle: 'Reconnect to open playlists from the cloud.',

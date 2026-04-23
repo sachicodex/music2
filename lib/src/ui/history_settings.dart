@@ -99,7 +99,7 @@ class _SettingsScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'The last 10 songs stay available. Pick how many upcoming songs to keep ready offline.',
+                      'Played songs stay cached until you clear them. Pick how many upcoming songs to keep ready offline.',
                       style: Theme.of(
                         context,
                       ).textTheme.bodySmall?.copyWith(color: subtitleColor),
@@ -661,6 +661,42 @@ class _ProfileDataUsageCard extends StatelessWidget {
     return ValueListenableBuilder<AppDataUsageStats>(
       valueListenable: controller.dataUsageState,
       builder: (BuildContext context, AppDataUsageStats usage, Widget? child) {
+        Future<void> clearCache() async {
+          final bool confirmed = await _showProfileActionConfirmationDialog(
+            context,
+            title: 'Clear offline cache?',
+            message:
+                'This removes cached songs saved for offline replay. Streaming will use data again until the songs are cached another time.',
+            confirmLabel: 'Clear Cache',
+            confirmColor: const Color(0xFFDE6B48),
+          );
+          if (!confirmed || !context.mounted) {
+            return;
+          }
+          await controller.clearOfflinePlaybackCacheAndNotify();
+          if (context.mounted) {
+            _showKineticSnackBar(context, 'Offline cache cleared');
+          }
+        }
+
+        Future<void> resetUsage() async {
+          final bool confirmed = await _showProfileActionConfirmationDialog(
+            context,
+            title: 'Reset data usage?',
+            message:
+                'This clears streaming and warm-cache transfer totals shown on your profile.',
+            confirmLabel: 'Reset Usage',
+            confirmColor: accent,
+          );
+          if (!confirmed || !context.mounted) {
+            return;
+          }
+          await controller.resetDataUsageStats();
+          if (context.mounted) {
+            _showKineticSnackBar(context, 'Data usage reset');
+          }
+        }
+
         return Container(
           decoration: BoxDecoration(
             color: card,
@@ -689,7 +725,7 @@ class _ProfileDataUsageCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'Live playback and offline cache transfer totals.',
+                'Live playback counts once while you listen. Future-song warmups are tracked separately.',
                 style: Theme.of(
                   context,
                 ).textTheme.bodySmall?.copyWith(color: subtitleColor),
@@ -729,12 +765,106 @@ class _ProfileDataUsageCard extends StatelessWidget {
                   ),
                 ],
               ),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: <Widget>[
+                  OutlinedButton.icon(
+                    onPressed: controller.offlinePlaybackCacheSongCount == 0
+                        ? null
+                        : clearCache,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFFFB18C),
+                      side: BorderSide(color: cardEdge.withValues(alpha: 0.95)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                    ),
+                    icon: const Icon(Icons.delete_sweep_rounded, size: 18),
+                    label: Text(
+                      controller.offlinePlaybackCacheSongCount == 0
+                          ? 'Cache Empty'
+                          : 'Clear Cache',
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: usage.totalBytes <= 0 ? null : resetUsage,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: accent,
+                      side: BorderSide(color: cardEdge.withValues(alpha: 0.95)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                    ),
+                    icon: const Icon(Icons.restart_alt_rounded, size: 18),
+                    label: const Text('Reset Data Usage'),
+                  ),
+                ],
+              ),
             ],
           ),
         );
       },
     );
   }
+}
+
+Future<bool> _showProfileActionConfirmationDialog(
+  BuildContext context, {
+  required String title,
+  required String message,
+  required String confirmLabel,
+  required Color confirmColor,
+}) async {
+  final bool? confirmed = await showDialog<bool>(
+    context: context,
+    builder: (BuildContext context) {
+      return AlertDialog(
+        backgroundColor: const Color(0xFF1C0904),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: const BorderSide(color: Color(0xFF3A170C)),
+        ),
+        title: Text(
+          title,
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            color: const Color(0xFFFFE6D5),
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        content: Text(
+          message,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: const Color(0xFFC89373)),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: confirmColor,
+              foregroundColor: Colors.white,
+            ),
+            child: Text(confirmLabel),
+          ),
+        ],
+      );
+    },
+  );
+  return confirmed ?? false;
 }
 
 class _ProfileCurrentStreamCard extends StatelessWidget {

@@ -1008,10 +1008,7 @@ class _DesktopPlayerQueuePanel extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              _DesktopPanelTitle(
-                eyebrow: 'QUEUE',
-                title: 'Up next',
-              ),
+              _DesktopPanelTitle(eyebrow: 'QUEUE', title: 'Up next'),
               const SizedBox(height: 14),
               if (loading)
                 Row(
@@ -2280,6 +2277,43 @@ class _KineticPlaylistScreenState extends State<_KineticPlaylistScreen> {
 
   bool get _selectionMode => _selectedSongIds.isNotEmpty;
 
+  Future<void> _playSongFromList(
+    List<LibrarySong> songs,
+    LibrarySong tappedSong,
+    String label,
+  ) async {
+    if (widget.localPlaybackOnly) {
+      if (tappedSong.isRemote) {
+        return;
+      }
+      final List<LibrarySong> localSongs = songs
+          .where((LibrarySong item) => !item.isRemote)
+          .toList(growable: false);
+      final int startIndex = localSongs.indexWhere(
+        (LibrarySong item) => item.id == tappedSong.id,
+      );
+      if (startIndex >= 0) {
+        await widget.controller.playSongs(
+          localSongs,
+          startIndex: startIndex,
+          label: label,
+        );
+      }
+      return;
+    }
+
+    final int startIndex = songs.indexWhere(
+      (LibrarySong item) => item.id == tappedSong.id,
+    );
+    if (startIndex >= 0) {
+      await widget.controller.playSongs(
+        songs,
+        startIndex: startIndex,
+        label: label,
+      );
+    }
+  }
+
   void _toggleSongSelection(String songId) {
     unawaited(HapticFeedback.selectionClick());
     setState(() {
@@ -2418,25 +2452,7 @@ class _KineticPlaylistScreenState extends State<_KineticPlaylistScreen> {
                   onLongPress: () => _toggleSongSelection(song.id),
                   onTap: _selectionMode
                       ? () => _toggleSongSelection(song.id)
-                      : widget.localPlaybackOnly
-                      ? () {
-                          if (!song.isRemote) {
-                            final List<LibrarySong> localSongs = songs
-                                .where((LibrarySong item) => !item.isRemote)
-                                .toList(growable: false);
-                            final int startIndex = localSongs.indexWhere(
-                              (LibrarySong item) => item.id == song.id,
-                            );
-                            if (startIndex >= 0) {
-                              widget.controller.playSongs(
-                                localSongs,
-                                startIndex: startIndex,
-                                label: title,
-                              );
-                            }
-                          }
-                        }
-                      : null,
+                      : () => _playSongFromList(songs, song, title),
                   enableQueueSwipe: !_selectionMode,
                   enablePlaylistRemovalSwipe: !_selectionMode,
                 ),
@@ -2810,16 +2826,28 @@ class _LibraryEmptyPlaylistCard extends StatelessWidget {
 }
 
 class _LibraryPlaylistRow extends StatelessWidget {
-  const _LibraryPlaylistRow({required this.controller, required this.playlist});
+  const _LibraryPlaylistRow({
+    required this.controller,
+    required this.title,
+    required this.seed,
+    required this.songs,
+    this.playlist,
+    this.subtitle,
+    this.forceEnabled = false,
+  });
 
   final OuterTuneController controller;
-  final UserPlaylist playlist;
+  final String title;
+  final String seed;
+  final List<LibrarySong> songs;
+  final UserPlaylist? playlist;
+  final String? subtitle;
+  final bool forceEnabled;
 
   @override
   Widget build(BuildContext context) {
-    final List<LibrarySong> songs = controller.songsForPlaylist(playlist);
     final LibrarySong? leadSong = songs.isEmpty ? null : songs.first;
-    final bool blocked = controller.isOffline;
+    final bool blocked = controller.isOffline && !forceEnabled;
 
     return InkWell(
       onTap: blocked
@@ -2829,7 +2857,7 @@ class _LibraryPlaylistRow extends StatelessWidget {
                 MaterialPageRoute<void>(
                   builder: (BuildContext context) => _KineticPlaylistScreen(
                     controller: controller,
-                    title: playlist.name,
+                    title: title,
                     songs: songs,
                     playlist: playlist,
                   ),
@@ -2846,8 +2874,8 @@ class _LibraryPlaylistRow extends StatelessWidget {
               height: 64,
               child: leadSong != null
                   ? _Artwork(
-                      seed: playlist.id,
-                      title: playlist.name,
+                      seed: seed,
+                      title: title,
                       size: 64,
                       imageUrl: leadSong.artworkUrl,
                     )
@@ -2873,7 +2901,7 @@ class _LibraryPlaylistRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
-                  playlist.name,
+                  title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.splineSans(
@@ -2884,7 +2912,7 @@ class _LibraryPlaylistRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Playlist · ${songs.length} Tracks',
+                  subtitle ?? 'Playlist - ${songs.length} Tracks',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.splineSans(
@@ -3292,6 +3320,12 @@ class _PlaylistGrid extends StatelessWidget {
         subtitle: '${controller.likedSongs.length} liked tracks',
         seed: 'liked_songs',
         songs: controller.likedSongs,
+      ),
+      _PlaylistShelf(
+        title: 'Disliked Songs',
+        subtitle: '${controller.dislikedSongs.length} disliked tracks',
+        seed: 'disliked_songs',
+        songs: controller.dislikedSongs,
       ),
       _PlaylistShelf(
         title: 'Most played',
