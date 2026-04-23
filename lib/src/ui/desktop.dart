@@ -1787,6 +1787,24 @@ class _DesktopSettingsScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 20),
+                  _ProfileDataUsageCard(
+                    controller: controller,
+                    card: card,
+                    cardEdge: cardEdge,
+                    titleColor: titleColor,
+                    subtitleColor: subtitleColor,
+                    accent: accent,
+                  ),
+                  const SizedBox(height: 20),
+                  _ProfileCurrentStreamCard(
+                    controller: controller,
+                    card: card,
+                    cardEdge: cardEdge,
+                    titleColor: titleColor,
+                    subtitleColor: subtitleColor,
+                    accent: accent,
+                  ),
+                  const SizedBox(height: 20),
                   Container(
                     decoration: BoxDecoration(
                       color: card,

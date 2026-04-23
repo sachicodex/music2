@@ -540,6 +540,305 @@ class SongRecommendation {
   final bool isExploratory;
 }
 
+enum PlaybackStreamTransport {
+  localFile('Local file', isHls: false, hasVideo: false, isNetwork: false),
+  cachedFile('Cached file', isHls: false, hasVideo: false, isNetwork: false),
+  directUrl('Direct URL', isHls: false, hasVideo: false, isNetwork: true),
+  audioOnly('Audio only', isHls: false, hasVideo: false, isNetwork: true),
+  hlsAudioOnly('HLS audio only', isHls: true, hasVideo: false, isNetwork: true),
+  muxed('Muxed', isHls: false, hasVideo: true, isNetwork: true),
+  hlsMuxed('HLS muxed', isHls: true, hasVideo: true, isNetwork: true),
+  hlsVideoOnly('HLS video only', isHls: true, hasVideo: true, isNetwork: true);
+
+  const PlaybackStreamTransport(
+    this.label, {
+    required this.isHls,
+    required this.hasVideo,
+    required this.isNetwork,
+  });
+
+  final String label;
+  final bool isHls;
+  final bool hasVideo;
+  final bool isNetwork;
+}
+
+class PlaybackStreamInfo {
+  const PlaybackStreamInfo({
+    required this.songId,
+    required this.sourceLabel,
+    required this.transport,
+    required this.selectionPolicy,
+    required this.originalUrl,
+    required this.resolvedUrl,
+    this.externalUrl,
+    this.upstreamTransport,
+    this.streamTag,
+    this.bitrateBitsPerSecond,
+    this.qualityLabel,
+    this.containerName,
+    this.codecDescription,
+    this.audioCodec,
+    this.videoCodec,
+    this.availableAudioOnlyCount = 0,
+    this.availableHlsAudioOnlyCount = 0,
+    this.availableMuxedCount = 0,
+    this.availableHlsMuxedCount = 0,
+    this.availableHlsVideoOnlyCount = 0,
+  });
+
+  final String songId;
+  final String sourceLabel;
+  final PlaybackStreamTransport transport;
+  final String selectionPolicy;
+  final String originalUrl;
+  final String resolvedUrl;
+  final String? externalUrl;
+  final PlaybackStreamTransport? upstreamTransport;
+  final int? streamTag;
+  final int? bitrateBitsPerSecond;
+  final String? qualityLabel;
+  final String? containerName;
+  final String? codecDescription;
+  final String? audioCodec;
+  final String? videoCodec;
+  final int availableAudioOnlyCount;
+  final int availableHlsAudioOnlyCount;
+  final int availableMuxedCount;
+  final int availableHlsMuxedCount;
+  final int availableHlsVideoOnlyCount;
+
+  double? get bitrateKiloBitsPerSecond {
+    final int? value = bitrateBitsPerSecond;
+    if (value == null || value <= 0) {
+      return null;
+    }
+    return value / 1024;
+  }
+
+  String get bitrateLabel {
+    final double? kbps = bitrateKiloBitsPerSecond;
+    if (kbps == null) {
+      return 'Unknown bitrate';
+    }
+    if (kbps >= 1024) {
+      return '${(kbps / 1024).toStringAsFixed(2)} Mbit/s';
+    }
+    return '${kbps.toStringAsFixed(2)} Kbit/s';
+  }
+
+  String get bitrateTier {
+    final int? value = bitrateBitsPerSecond;
+    if (value == null || value <= 0) {
+      return 'unknown';
+    }
+    if (value <= 128000) {
+      return 'low';
+    }
+    if (value <= 256000) {
+      return 'medium';
+    }
+    return 'high';
+  }
+
+  String get selectionPolicyLabel {
+    return switch (selectionPolicy) {
+      'lowest-bitrate-audio-first' => 'Lowest bitrate audio first',
+      'fallback-after-open-failure' => 'Fallback after open failure',
+      'cache-hit' => 'Cached playback',
+      'local-file' => 'Local file playback',
+      'direct-url' => 'Direct URL playback',
+      _ => selectionPolicy,
+    };
+  }
+
+  String get debugSummary {
+    final List<String> parts = <String>[
+      'source=$sourceLabel',
+      'transport=${transport.label}',
+      'policy=$selectionPolicy',
+      'bitrate=${bitrateBitsPerSecond ?? 0}',
+      'tier=$bitrateTier',
+      if ((qualityLabel ?? '').trim().isNotEmpty) 'quality=$qualityLabel',
+      if ((containerName ?? '').trim().isNotEmpty) 'container=$containerName',
+      if ((audioCodec ?? '').trim().isNotEmpty) 'audioCodec=$audioCodec',
+      if ((videoCodec ?? '').trim().isNotEmpty) 'videoCodec=$videoCodec',
+      if ((codecDescription ?? '').trim().isNotEmpty) 'codec=$codecDescription',
+      if (streamTag != null) 'tag=$streamTag',
+      if (upstreamTransport != null) 'upstream=${upstreamTransport!.label}',
+      'choices[a=$availableAudioOnlyCount,ha=$availableHlsAudioOnlyCount,m=$availableMuxedCount,hm=$availableHlsMuxedCount,hv=$availableHlsVideoOnlyCount]',
+    ];
+    return parts.join(' ');
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is PlaybackStreamInfo &&
+            runtimeType == other.runtimeType &&
+            songId == other.songId &&
+            sourceLabel == other.sourceLabel &&
+            transport == other.transport &&
+            selectionPolicy == other.selectionPolicy &&
+            originalUrl == other.originalUrl &&
+            resolvedUrl == other.resolvedUrl &&
+            externalUrl == other.externalUrl &&
+            upstreamTransport == other.upstreamTransport &&
+            streamTag == other.streamTag &&
+            bitrateBitsPerSecond == other.bitrateBitsPerSecond &&
+            qualityLabel == other.qualityLabel &&
+            containerName == other.containerName &&
+            codecDescription == other.codecDescription &&
+            audioCodec == other.audioCodec &&
+            videoCodec == other.videoCodec &&
+            availableAudioOnlyCount == other.availableAudioOnlyCount &&
+            availableHlsAudioOnlyCount == other.availableHlsAudioOnlyCount &&
+            availableMuxedCount == other.availableMuxedCount &&
+            availableHlsMuxedCount == other.availableHlsMuxedCount &&
+            availableHlsVideoOnlyCount == other.availableHlsVideoOnlyCount;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    songId,
+    sourceLabel,
+    transport,
+    selectionPolicy,
+    originalUrl,
+    resolvedUrl,
+    externalUrl,
+    upstreamTransport,
+    streamTag,
+    bitrateBitsPerSecond,
+    qualityLabel,
+    containerName,
+    codecDescription,
+    audioCodec,
+    videoCodec,
+    availableAudioOnlyCount,
+    availableHlsAudioOnlyCount,
+    availableMuxedCount,
+    availableHlsMuxedCount,
+    availableHlsVideoOnlyCount,
+  );
+}
+
+String formatDataSize(int bytes) {
+  final int sanitized = bytes < 0 ? 0 : bytes;
+  if (sanitized < 1024) {
+    return '$sanitized B';
+  }
+
+  const List<String> units = <String>['KB', 'MB', 'GB', 'TB'];
+  double value = sanitized / 1024;
+  int unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  final bool useWholeNumber = value >= 100 || value % 1 == 0;
+  final String formatted = useWholeNumber
+      ? value.toStringAsFixed(0)
+      : value.toStringAsFixed(1);
+  return '$formatted ${units[unitIndex]}';
+}
+
+class AppDataUsageStats {
+  const AppDataUsageStats({
+    this.totalBytes = 0,
+    this.streamBytes = 0,
+    this.cacheBytes = 0,
+    this.currentSongBytes = 0,
+    this.currentSongId,
+    this.lastUpdatedAt,
+  });
+
+  final int totalBytes;
+  final int streamBytes;
+  final int cacheBytes;
+  final int currentSongBytes;
+  final String? currentSongId;
+  final DateTime? lastUpdatedAt;
+
+  String get totalLabel => formatDataSize(totalBytes);
+  String get streamLabel => formatDataSize(streamBytes);
+  String get cacheLabel => formatDataSize(cacheBytes);
+  String get currentSongLabel => formatDataSize(currentSongBytes);
+  bool get hasCurrentSongUsage =>
+      (currentSongId?.trim().isNotEmpty ?? false) && currentSongBytes > 0;
+
+  AppDataUsageStats copyWith({
+    int? totalBytes,
+    int? streamBytes,
+    int? cacheBytes,
+    int? currentSongBytes,
+    String? currentSongId,
+    bool clearCurrentSongId = false,
+    DateTime? lastUpdatedAt,
+  }) {
+    return AppDataUsageStats(
+      totalBytes: totalBytes ?? this.totalBytes,
+      streamBytes: streamBytes ?? this.streamBytes,
+      cacheBytes: cacheBytes ?? this.cacheBytes,
+      currentSongBytes: currentSongBytes ?? this.currentSongBytes,
+      currentSongId: clearCurrentSongId
+          ? null
+          : currentSongId ?? this.currentSongId,
+      lastUpdatedAt: lastUpdatedAt ?? this.lastUpdatedAt,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'totalBytes': totalBytes,
+      'streamBytes': streamBytes,
+      'cacheBytes': cacheBytes,
+      'currentSongBytes': currentSongBytes,
+      'currentSongId': currentSongId,
+      'lastUpdatedAt': lastUpdatedAt?.toIso8601String(),
+    };
+  }
+
+  factory AppDataUsageStats.fromJson(Map<String, dynamic>? json) {
+    if (json == null) {
+      return const AppDataUsageStats();
+    }
+
+    return AppDataUsageStats(
+      totalBytes: (json['totalBytes'] as num?)?.toInt() ?? 0,
+      streamBytes: (json['streamBytes'] as num?)?.toInt() ?? 0,
+      cacheBytes: (json['cacheBytes'] as num?)?.toInt() ?? 0,
+      currentSongBytes: (json['currentSongBytes'] as num?)?.toInt() ?? 0,
+      currentSongId: json['currentSongId'] as String?,
+      lastUpdatedAt: DateTime.tryParse(json['lastUpdatedAt'] as String? ?? ''),
+    );
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is AppDataUsageStats &&
+            runtimeType == other.runtimeType &&
+            totalBytes == other.totalBytes &&
+            streamBytes == other.streamBytes &&
+            cacheBytes == other.cacheBytes &&
+            currentSongBytes == other.currentSongBytes &&
+            currentSongId == other.currentSongId &&
+            lastUpdatedAt == other.lastUpdatedAt;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    totalBytes,
+    streamBytes,
+    cacheBytes,
+    currentSongBytes,
+    currentSongId,
+    lastUpdatedAt,
+  );
+}
+
 class NowPlayingState {
   const NowPlayingState({
     this.song,
@@ -548,6 +847,7 @@ class NowPlayingState {
     this.repeatMode = PlaylistMode.none,
     this.queueIndex = 0,
     this.queueLength = 0,
+    this.streamInfo,
   });
 
   final LibrarySong? song;
@@ -556,6 +856,7 @@ class NowPlayingState {
   final PlaylistMode repeatMode;
   final int queueIndex;
   final int queueLength;
+  final PlaybackStreamInfo? streamInfo;
 
   @override
   bool operator ==(Object other) {
@@ -567,7 +868,8 @@ class NowPlayingState {
             isShuffleEnabled == other.isShuffleEnabled &&
             repeatMode == other.repeatMode &&
             queueIndex == other.queueIndex &&
-            queueLength == other.queueLength;
+            queueLength == other.queueLength &&
+            streamInfo == other.streamInfo;
   }
 
   @override
@@ -578,6 +880,7 @@ class NowPlayingState {
     repeatMode,
     queueIndex,
     queueLength,
+    streamInfo,
   );
 }
 

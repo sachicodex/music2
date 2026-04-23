@@ -21,6 +21,7 @@ import 'package:ytmusicapi_dart/enums.dart' as ytm;
 
 import 'android_media_notification_bridge.dart';
 import 'models.dart';
+import 'streaming.dart';
 import 'windows_media_controls_bridge.dart';
 
 class OuterTuneController extends ChangeNotifier {
@@ -48,6 +49,8 @@ class OuterTuneController extends ChangeNotifier {
       ValueNotifier<NowPlayingState>(const NowPlayingState());
   final ValueNotifier<PlaybackProgressState> playbackProgressState =
       ValueNotifier<PlaybackProgressState>(const PlaybackProgressState());
+  final ValueNotifier<AppDataUsageStats> dataUsageState =
+      ValueNotifier<AppDataUsageStats>(const AppDataUsageStats());
   StreamSubscription<String>? _notificationActionSubscription;
   StreamSubscription<String>? _windowsMediaActionSubscription;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
@@ -56,6 +59,15 @@ class OuterTuneController extends ChangeNotifier {
   final List<StreamSubscription<dynamic>> _subscriptions =
       <StreamSubscription<dynamic>>[];
   final Map<String, LibrarySong> _transientSongsById = <String, LibrarySong>{};
+  final Map<String, String> _preparedMediaUrlsBySongId = <String, String>{};
+  final Map<String, Map<String, String>?> _preparedMediaHeadersBySongId =
+      <String, Map<String, String>?>{};
+  final Map<String, List<PlaybackStreamCandidate>>
+  _rankedPlaybackCandidatesBySongId = <String, List<PlaybackStreamCandidate>>{};
+  final Map<String, PlaybackStreamInfo> _playbackStreamInfoBySongId =
+      <String, PlaybackStreamInfo>{};
+  final Map<String, int> _playbackCandidateIndexBySongId = <String, int>{};
+  final Map<String, int> _songPlaybackBytes = <String, int>{};
   bool _isDisposing = false;
   bool _isDisposed = false;
 
@@ -107,6 +119,9 @@ class OuterTuneController extends ChangeNotifier {
   String? _activePlaybackSongId;
   double _activePlaybackCompletionRatio = 0;
   DateTime? _lastAutoHomeRefreshAt;
+  AppDataUsageStats _dataUsage = const AppDataUsageStats();
+  Timer? _dataUsageSnapshotTimer;
+  bool _playbackFallbackRecoveryInFlight = false;
   bool _refreshingOfflinePlaybackCache = false;
   bool _offlinePlaybackCacheRefreshQueued = false;
   LibrarySong? _pendingOfflinePlaybackCacheAnchor;
@@ -144,6 +159,7 @@ class OuterTuneController extends ChangeNotifier {
   bool get offlineMusicMode => _settings.offlineMusicMode;
   bool get offlinePlaybackCacheEnabled => true;
   int get nextChanceSongCount => _settings.nextChanceSongCount;
+  AppDataUsageStats get dataUsage => dataUsageState.value;
   String? get statusMessage => _statusMessage;
   String? get errorMessage => _errorMessage;
   String? get onlineError => _onlineError;
@@ -189,6 +205,13 @@ class OuterTuneController extends ChangeNotifier {
       _homeFeed.isNotEmpty || _personalizedHomeRecommendations.isNotEmpty;
   bool get hasYtMusicAuth =>
       (_settings.ytMusicAuthJson?.trim().isNotEmpty ?? false);
+  PlaybackStreamInfo? get currentPlaybackStreamInfo {
+    final String? songId = miniPlayerSong?.id;
+    if (songId == null) {
+      return null;
+    }
+    return _playbackStreamInfoBySongId[songId];
+  }
 
   List<LibrarySong> get queueSongs => _queueSongIds
       .map(songById)
@@ -234,13 +257,15 @@ class OuterTuneController extends ChangeNotifier {
   }
 
   NowPlayingState _buildNowPlayingState() {
+    final LibrarySong? song = miniPlayerSong;
     return NowPlayingState(
-      song: miniPlayerSong,
+      song: song,
       isLoading: miniPlayerSelectionLoading,
       isShuffleEnabled: _isShuffleEnabled,
       repeatMode: _repeatMode,
       queueIndex: _queueIndex,
       queueLength: _queueSongIds.length,
+      streamInfo: song == null ? null : _playbackStreamInfoBySongId[song.id],
     );
   }
 
@@ -264,6 +289,71 @@ class OuterTuneController extends ChangeNotifier {
     if (playbackProgressState.value != nextProgress) {
       playbackProgressState.value = nextProgress;
     }
+    _syncDataUsageState();
+  }
+
+  void _syncDataUsageState() {
+    final String? songId = miniPlayerSong?.id ?? currentSong?.id;
+    final AppDataUsageStats next = _dataUsage.copyWith(
+      currentSongId: songId,
+      currentSongBytes: songId == null ? 0 : (_songPlaybackBytes[songId] ?? 0),
+    );
+    if (dataUsageState.value != next) {
+      _dataUsage = next;
+      dataUsageState.value = next;
+    }
+  }
+
+  void _recordStreamBytes(String songId, int bytes) {
+    if (bytes <= 0) {
+      return;
+    }
+    _songPlaybackBytes.update(
+      songId,
+      (int value) => value + bytes,
+      ifAbsent: () => bytes,
+    );
+    _dataUsage = _dataUsage.copyWith(
+      totalBytes: _dataUsage.totalBytes + bytes,
+      streamBytes: _dataUsage.streamBytes + bytes,
+      lastUpdatedAt: DateTime.now(),
+    );
+    _syncDataUsageState();
+    _scheduleSnapshotSave();
+  }
+
+  void _recordCacheBytes(int bytes) {
+    if (bytes <= 0) {
+      return;
+    }
+    _dataUsage = _dataUsage.copyWith(
+      totalBytes: _dataUsage.totalBytes + bytes,
+      cacheBytes: _dataUsage.cacheBytes + bytes,
+      lastUpdatedAt: DateTime.now(),
+    );
+    _syncDataUsageState();
+    _scheduleSnapshotSave();
+  }
+
+  void _scheduleSnapshotSave() {
+    _dataUsageSnapshotTimer?.cancel();
+    _dataUsageSnapshotTimer = Timer(const Duration(milliseconds: 700), () {
+      if (_isDisposing || _isDisposed) {
+        return;
+      }
+      unawaited(_saveSnapshot());
+    });
+  }
+
+  Future<void> _clearPreparedPlaybackState() async {
+    _preparedMediaUrlsBySongId.clear();
+    _preparedMediaHeadersBySongId.clear();
+    _rankedPlaybackCandidatesBySongId.clear();
+    _playbackCandidateIndexBySongId.clear();
+    _playbackStreamInfoBySongId.clear();
+    _songPlaybackBytes.clear();
+    _playbackFallbackRecoveryInFlight = false;
+    _syncDataUsageState();
   }
 
   @override
@@ -3319,7 +3409,9 @@ class OuterTuneController extends ChangeNotifier {
         isRemote: true,
         externalUrl: uri.toString(),
       );
-      await _openPreparedSong(song, label: 'URL Stream');
+      await _clearPreparedPlaybackState();
+      final LibrarySong prepared = await _preparePlayableSong(song);
+      await _openPreparedSong(prepared, label: 'URL Stream');
     } catch (error) {
       _errorMessage = '$error';
       notifyListeners();
@@ -3338,6 +3430,7 @@ class OuterTuneController extends ChangeNotifier {
     notifyListeners();
     try {
       await _player.stop();
+      await _clearPreparedPlaybackState();
       final LibrarySong prepared = await _preparePlayableSong(song);
       await _openPreparedSong(prepared, label: 'YouTube');
     } catch (_) {
@@ -3425,6 +3518,12 @@ class OuterTuneController extends ChangeNotifier {
           'queueIndex=$_queueIndex '
           'playerIndex=${_player.state.playlist.index}',
         );
+        final LibrarySong? failedSong = currentSong ?? _pendingSelectionSong;
+        if (_isPlayableOpenFailure(_errorMessage!) &&
+            failedSong != null &&
+            _schedulePlaybackFallbackRecovery(failedSong)) {
+          return;
+        }
         if (_isConnectivityError(_errorMessage!)) {
           _setOffline(true, notify: false);
         }
@@ -4045,6 +4144,7 @@ class OuterTuneController extends ChangeNotifier {
     notifyListeners();
     try {
       await _player.stop();
+      await _clearPreparedPlaybackState();
       final List<LibrarySong> preparedSongs = <LibrarySong>[];
       for (final LibrarySong song in songs) {
         preparedSongs.add(await _preparePlayableSong(song));
@@ -4166,12 +4266,20 @@ class OuterTuneController extends ChangeNotifier {
     _rememberTransientSong(song);
     final String? cachedPath = _offlinePlaybackCachePathForSong(song.id);
     if (cachedPath != null) {
-      final LibrarySong cached = song.copyWith(path: cachedPath);
-      _rememberTransientSong(cached);
-      return cached;
+      _preparedMediaUrlsBySongId[song.id] = cachedPath;
+      _preparedMediaHeadersBySongId[song.id] = null;
+      _playbackStreamInfoBySongId[song.id] = buildCachedPlaybackStreamInfo(
+        song: song,
+        cachedPath: cachedPath,
+        previousInfo: _playbackStreamInfoBySongId[song.id],
+      );
+      return song;
     }
 
     if (!song.isRemote) {
+      _preparedMediaUrlsBySongId[song.id] = song.path;
+      _preparedMediaHeadersBySongId[song.id] = null;
+      _playbackStreamInfoBySongId[song.id] = buildLocalPlaybackStreamInfo(song);
       return song;
     }
 
@@ -4179,10 +4287,16 @@ class OuterTuneController extends ChangeNotifier {
       throw const SocketException('Song is not cached for offline playback.');
     }
 
-    final String resolvedUrl = await _resolvePlayableRemoteUrl(song);
-    final LibrarySong prepared = song.copyWith(path: resolvedUrl);
-    _rememberTransientSong(prepared);
-    return prepared;
+    final _PreparedPlaybackSource prepared =
+        await _resolvePreparedPlaybackSource(song);
+    _preparedMediaUrlsBySongId[song.id] = prepared.mediaUrl;
+    _preparedMediaHeadersBySongId[song.id] = prepared.mediaHeaders;
+    _playbackStreamInfoBySongId[song.id] = prepared.streamInfo;
+    _debugPlayback(
+      'stream.selected song=${_debugSongLabel(song)} '
+      '${prepared.streamInfo.debugSummary}',
+    );
+    return song;
   }
 
   Future<void> _openPreparedSong(
@@ -4201,6 +4315,7 @@ class OuterTuneController extends ChangeNotifier {
       _queueIndex = 0;
       await _ensureSequentialPlayback();
       await _player.open(Playlist(<Media>[_mediaForSong(song)]));
+      await _player.play();
       _trackPlayback(song.id);
       unawaited(_maybeExtendSmartQueue(seed: song, force: true));
       unawaited(_refreshOfflinePlaybackCache(anchor: song));
@@ -4214,18 +4329,233 @@ class OuterTuneController extends ChangeNotifier {
 
   Media _mediaForSong(LibrarySong song) {
     return Media(
-      song.path,
+      _resolvedMediaUrlForSong(song),
       extras: <String, dynamic>{'songId': song.id},
-      httpHeaders: _httpHeadersForSong(song),
+      httpHeaders: _resolvedMediaHeadersForSong(song),
     );
   }
 
-  Map<String, String>? _httpHeadersForSong(LibrarySong song) {
-    if (!song.isRemote) {
-      return null;
+  String _resolvedMediaUrlForSong(LibrarySong song) {
+    final String? prepared = _preparedMediaUrlsBySongId[song.id];
+    if (prepared != null && prepared.isNotEmpty) {
+      return prepared;
     }
 
-    final Uri? uri = Uri.tryParse(song.path);
+    final String? cachedPath = _offlinePlaybackCachePathForSong(song.id);
+    if (cachedPath != null) {
+      return cachedPath;
+    }
+    return song.path;
+  }
+
+  Map<String, String>? _resolvedMediaHeadersForSong(LibrarySong song) {
+    if (_preparedMediaHeadersBySongId.containsKey(song.id)) {
+      return _preparedMediaHeadersBySongId[song.id];
+    }
+    return song.isRemote ? _upstreamHeadersForUrl(song, song.path) : null;
+  }
+
+  Future<_PreparedPlaybackSource> _resolvePreparedPlaybackSource(
+    LibrarySong song,
+  ) async {
+    final _ResolvedRemotePlayback resolved = await _resolvePlayableRemoteStream(
+      song,
+    );
+    return _PreparedPlaybackSource(
+      mediaUrl: resolved.resolvedUrl,
+      mediaHeaders: resolved.upstreamHeaders,
+      streamInfo: resolved.streamInfo,
+    );
+  }
+
+  Future<_ResolvedRemotePlayback> _resolvePlayableRemoteStream(
+    LibrarySong song,
+  ) async {
+    if (!_looksLikeYouTube(song.path)) {
+      return _ResolvedRemotePlayback(
+        resolvedUrl: song.path,
+        upstreamHeaders: _upstreamHeadersForUrl(song, song.path),
+        streamInfo: buildDirectPlaybackStreamInfo(song),
+      );
+    }
+
+    List<PlaybackStreamCandidate>? rankedCandidates =
+        _rankedPlaybackCandidatesBySongId[song.id];
+    if (rankedCandidates == null || rankedCandidates.isEmpty) {
+      final StreamManifest manifest = await _yt.videos.streams.getManifest(
+        song.path,
+      );
+      rankedCandidates = rankPlaybackStreamCandidates(
+        _buildPlaybackStreamCandidates(manifest),
+      );
+      _rankedPlaybackCandidatesBySongId[song.id] = rankedCandidates;
+    }
+
+    if (rankedCandidates.isEmpty) {
+      throw const FormatException('No playable YouTube stream found.');
+    }
+
+    final int selectedIndex = (_playbackCandidateIndexBySongId[song.id] ?? 0)
+        .clamp(0, rankedCandidates.length - 1);
+    _playbackCandidateIndexBySongId[song.id] = selectedIndex;
+    final PlaybackStreamResolution resolved = resolvePlaybackStreamAtIndex(
+      songId: song.id,
+      sourceLabel: song.sourceLabel,
+      originalUrl: song.path,
+      externalUrl: song.externalUrl,
+      candidates: rankedCandidates,
+      rankedCandidates: rankedCandidates,
+      selectedIndex: selectedIndex,
+      selectionPolicy: selectedIndex == 0
+          ? 'lowest-bitrate-audio-first'
+          : 'fallback-after-open-failure',
+    );
+    return _ResolvedRemotePlayback(
+      resolvedUrl: resolved.url,
+      upstreamHeaders: _upstreamHeadersForUrl(song, resolved.url),
+      streamInfo: resolved.info,
+    );
+  }
+
+  bool _isPlayableOpenFailure(String message) {
+    final String normalized = message.toLowerCase();
+    return normalized.contains('failed to open http://') ||
+        normalized.contains('failed to open https://');
+  }
+
+  bool _schedulePlaybackFallbackRecovery(LibrarySong song) {
+    if (_playbackFallbackRecoveryInFlight || !_looksLikeYouTube(song.path)) {
+      return false;
+    }
+    final List<PlaybackStreamCandidate>? rankedCandidates =
+        _rankedPlaybackCandidatesBySongId[song.id];
+    if (rankedCandidates == null || rankedCandidates.isEmpty) {
+      return false;
+    }
+    final int currentIndex = (_playbackCandidateIndexBySongId[song.id] ?? 0)
+        .clamp(0, rankedCandidates.length - 1);
+    final int? nextIndex = nextPlaybackFallbackIndex(
+      rankedCandidates,
+      currentIndex,
+    );
+    if (nextIndex == null) {
+      return false;
+    }
+    _playbackFallbackRecoveryInFlight = true;
+    unawaited(
+      _recoverPlaybackWithFallback(
+        song: song,
+        currentIndex: currentIndex,
+        nextIndex: nextIndex,
+      ),
+    );
+    return true;
+  }
+
+  Future<void> _recoverPlaybackWithFallback({
+    required LibrarySong song,
+    required int currentIndex,
+    required int nextIndex,
+  }) async {
+    try {
+      _playbackCandidateIndexBySongId[song.id] = nextIndex;
+      final _ResolvedRemotePlayback resolved =
+          await _resolvePlayableRemoteStream(song);
+      _preparedMediaUrlsBySongId[song.id] = resolved.resolvedUrl;
+      _preparedMediaHeadersBySongId[song.id] = resolved.upstreamHeaders;
+      _playbackStreamInfoBySongId[song.id] = resolved.streamInfo;
+      _errorMessage = null;
+      _debugPlayback(
+        'stream.fallback song=${_debugSongLabel(song)} '
+        'fromIndex=$currentIndex toIndex=$nextIndex '
+        '${resolved.streamInfo.debugSummary}',
+      );
+
+      final int queueSongIndex = _queueSongIds.indexOf(song.id);
+      if (queueSongIndex >= 0) {
+        await _reopenQueueAtIndex(queueSongIndex);
+        await _player.play();
+      } else {
+        final LibrarySong prepared = await _preparePlayableSong(song);
+        await _openPreparedSong(prepared, label: _queueLabel);
+      }
+      notifyListeners();
+    } catch (error) {
+      _debugPlayback(
+        'stream.fallback failed song=${_debugSongLabel(song)} '
+        'fromIndex=$currentIndex toIndex=$nextIndex error=$error',
+      );
+    } finally {
+      _playbackFallbackRecoveryInFlight = false;
+    }
+  }
+
+  List<PlaybackStreamCandidate> _buildPlaybackStreamCandidates(
+    StreamManifest manifest,
+  ) {
+    final List<PlaybackStreamCandidate> candidates = <PlaybackStreamCandidate>[
+      ...manifest.audioOnly.map((AudioOnlyStreamInfo stream) {
+        return _playbackStreamCandidate(
+          stream: stream,
+          transport: PlaybackStreamTransport.audioOnly,
+        );
+      }),
+      ...manifest.muxed.map((MuxedStreamInfo stream) {
+        return _playbackStreamCandidate(
+          stream: stream,
+          transport: PlaybackStreamTransport.muxed,
+        );
+      }),
+      ...manifest.streams.whereType<HlsAudioStreamInfo>().map((
+        HlsAudioStreamInfo stream,
+      ) {
+        return _playbackStreamCandidate(
+          stream: stream,
+          transport: PlaybackStreamTransport.hlsAudioOnly,
+        );
+      }),
+      ...manifest.streams.whereType<HlsMuxedStreamInfo>().map((
+        HlsMuxedStreamInfo stream,
+      ) {
+        return _playbackStreamCandidate(
+          stream: stream,
+          transport: PlaybackStreamTransport.hlsMuxed,
+        );
+      }),
+      ...manifest.streams.whereType<HlsVideoStreamInfo>().map((
+        HlsVideoStreamInfo stream,
+      ) {
+        return _playbackStreamCandidate(
+          stream: stream,
+          transport: PlaybackStreamTransport.hlsVideoOnly,
+        );
+      }),
+    ];
+    return candidates;
+  }
+
+  PlaybackStreamCandidate _playbackStreamCandidate({
+    required StreamInfo stream,
+    required PlaybackStreamTransport transport,
+  }) {
+    return PlaybackStreamCandidate(
+      transport: transport,
+      url: stream.url.toString(),
+      bitrateBitsPerSecond: stream.bitrate.bitsPerSecond,
+      streamTag: stream.tag,
+      qualityLabel: stream.qualityLabel,
+      containerName: stream.container.name,
+      codecDescription: stream.codec.toString(),
+      audioCodec: stream is AudioStreamInfo ? stream.audioCodec : null,
+      videoCodec: stream is VideoStreamInfo ? stream.videoCodec : null,
+    );
+  }
+
+  Map<String, String>? _upstreamHeadersForUrl(
+    LibrarySong song,
+    String resolvedUrl,
+  ) {
+    final Uri? uri = Uri.tryParse(resolvedUrl);
     if (uri == null || !uri.hasScheme) {
       return null;
     }
@@ -4234,11 +4564,18 @@ class OuterTuneController extends ChangeNotifier {
     if (host.contains('googlevideo.com') ||
         host.contains('youtube.com') ||
         host.contains('youtu.be')) {
+      final String referer = (song.externalUrl ?? '').trim().isNotEmpty
+          ? song.externalUrl!
+          : song.sourceLabel == 'YouTube'
+          ? 'https://www.youtube.com/'
+          : 'https://music.youtube.com/';
       return <String, String>{
         'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-        'Referer': song.externalUrl ?? 'https://music.youtube.com/',
-        'Origin': 'https://music.youtube.com',
+        'Referer': referer,
+        'Origin': referer.startsWith('https://www.youtube.com')
+            ? 'https://www.youtube.com'
+            : 'https://music.youtube.com',
         'Accept': '*/*',
       };
     }
@@ -4554,26 +4891,6 @@ class OuterTuneController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<String> _resolvePlayableRemoteUrl(LibrarySong song) async {
-    if (!_looksLikeYouTube(song.path)) {
-      return song.path;
-    }
-
-    final StreamManifest manifest = await _yt.videos.streams.getManifest(
-      song.path,
-    );
-    if (manifest.hls.isNotEmpty) {
-      return manifest.hls.first.url.toString();
-    }
-    if (manifest.muxed.isNotEmpty) {
-      return manifest.muxed.withHighestBitrate().url.toString();
-    }
-    if (manifest.audioOnly.isNotEmpty) {
-      return manifest.audioOnly.withHighestBitrate().url.toString();
-    }
-    throw const FormatException('No playable YouTube stream found.');
-  }
-
   Future<Directory> _offlinePlaybackCacheDirectory() async {
     final Directory root = await getApplicationSupportDirectory();
     final Directory dir = Directory(
@@ -4630,7 +4947,9 @@ class OuterTuneController extends ChangeNotifier {
 
     _offlinePlaybackPrefetchInFlight.add(song.id);
     try {
-      final String resolvedUrl = await _resolvePlayableRemoteUrl(song);
+      final _ResolvedRemotePlayback resolved =
+          await _resolvePlayableRemoteStream(song);
+      final String resolvedUrl = resolved.resolvedUrl;
       if (_isDisposing || _isDisposed) {
         return;
       }
@@ -4641,11 +4960,10 @@ class OuterTuneController extends ChangeNotifier {
 
       final HttpClient client = HttpClient();
       try {
-        final LibrarySong requestSong = song.copyWith(path: resolvedUrl);
         final HttpClientRequest request = await client.getUrl(
           Uri.parse(resolvedUrl),
         );
-        final Map<String, String>? headers = _httpHeadersForSong(requestSong);
+        final Map<String, String>? headers = resolved.upstreamHeaders;
         headers?.forEach(request.headers.set);
         final HttpClientResponse response = await request.close();
         if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -4656,7 +4974,13 @@ class OuterTuneController extends ChangeNotifier {
         }
         await temp.parent.create(recursive: true);
         final IOSink sink = temp.openWrite();
-        await response.forEach(sink.add);
+        await for (final List<int> chunk in response) {
+          if (chunk.isEmpty) {
+            continue;
+          }
+          sink.add(chunk);
+          _recordCacheBytes(chunk.length);
+        }
         await sink.close();
       } finally {
         client.close(force: true);
@@ -4667,8 +4991,6 @@ class OuterTuneController extends ChangeNotifier {
       }
       await temp.rename(target.path);
       _offlinePlaybackCachePaths[song.id] = target.path;
-      final LibrarySong cached = song.copyWith(path: target.path);
-      _rememberTransientSong(cached);
     } catch (_) {
       final String? path = _offlinePlaybackCachePaths[song.id];
       if (path != null && !File(path).existsSync()) {
@@ -5386,6 +5708,25 @@ class OuterTuneController extends ChangeNotifier {
     if (ratio > _activePlaybackCompletionRatio) {
       _activePlaybackCompletionRatio = ratio.clamp(0, 1);
     }
+    _recordEstimatedStreamBytes(song);
+  }
+
+  void _recordEstimatedStreamBytes(LibrarySong song) {
+    final PlaybackStreamInfo? info = _playbackStreamInfoBySongId[song.id];
+    final int? bitrate = info?.bitrateBitsPerSecond;
+    if (info == null ||
+        !info.transport.isNetwork ||
+        bitrate == null ||
+        bitrate <= 0) {
+      return;
+    }
+
+    final int estimatedBytes = ((bitrate * _position.inMilliseconds) / 8000)
+        .floor();
+    final int previousBytes = _songPlaybackBytes[song.id] ?? 0;
+    if (estimatedBytes > previousBytes) {
+      _recordStreamBytes(song.id, estimatedBytes - previousBytes);
+    }
   }
 
   void _finalizeActivePlaybackSession({String? nextSongId}) {
@@ -5452,6 +5793,10 @@ class OuterTuneController extends ChangeNotifier {
               PlaybackEntry.fromJson(item as Map<String, dynamic>),
         )
         .toList();
+    _dataUsage = AppDataUsageStats.fromJson(
+      json['dataUsage'] as Map<String, dynamic>?,
+    ).copyWith(currentSongBytes: 0, clearCurrentSongId: true);
+    dataUsageState.value = _dataUsage;
   }
 
   Future<void> _saveSnapshot() async {
@@ -5490,6 +5835,7 @@ class OuterTuneController extends ChangeNotifier {
             .where((PlaybackEntry entry) => songById(entry.songId) != null)
             .map((PlaybackEntry entry) => entry.toJson())
             .toList(),
+        'dataUsage': _dataUsage.toJson(),
       }),
     );
   }
@@ -5510,6 +5856,8 @@ class OuterTuneController extends ChangeNotifier {
       unawaited(subscription.cancel());
     }
     _subscriptions.clear();
+    _dataUsageSnapshotTimer?.cancel();
+    _dataUsageSnapshotTimer = null;
     unawaited(_notificationActionSubscription?.cancel());
     _notificationActionSubscription = null;
     unawaited(_windowsMediaActionSubscription?.cancel());
@@ -5523,6 +5871,7 @@ class OuterTuneController extends ChangeNotifier {
     _isDisposed = true;
     nowPlayingState.dispose();
     playbackProgressState.dispose();
+    dataUsageState.dispose();
     unawaited(_player.stop());
     unawaited(_player.dispose());
     super.dispose();
@@ -5616,4 +5965,28 @@ class _ScoredRecommendation {
   final double score;
   final String reason;
   final bool isExploratory;
+}
+
+class _PreparedPlaybackSource {
+  const _PreparedPlaybackSource({
+    required this.mediaUrl,
+    this.mediaHeaders,
+    required this.streamInfo,
+  });
+
+  final String mediaUrl;
+  final Map<String, String>? mediaHeaders;
+  final PlaybackStreamInfo streamInfo;
+}
+
+class _ResolvedRemotePlayback {
+  const _ResolvedRemotePlayback({
+    required this.resolvedUrl,
+    required this.streamInfo,
+    this.upstreamHeaders,
+  });
+
+  final String resolvedUrl;
+  final PlaybackStreamInfo streamInfo;
+  final Map<String, String>? upstreamHeaders;
 }

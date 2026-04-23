@@ -354,6 +354,24 @@ class _SettingsScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 14),
+            _ProfileDataUsageCard(
+              controller: controller,
+              card: card,
+              cardEdge: cardEdge,
+              titleColor: titleColor,
+              subtitleColor: subtitleColor,
+              accent: accent,
+            ),
+            const SizedBox(height: 14),
+            _ProfileCurrentStreamCard(
+              controller: controller,
+              card: card,
+              cardEdge: cardEdge,
+              titleColor: titleColor,
+              subtitleColor: subtitleColor,
+              accent: accent,
+            ),
+            const SizedBox(height: 14),
             Container(
               decoration: BoxDecoration(
                 color: card,
@@ -617,6 +635,355 @@ class _ProfileRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _ProfileDataUsageCard extends StatelessWidget {
+  const _ProfileDataUsageCard({
+    required this.controller,
+    required this.card,
+    required this.cardEdge,
+    required this.titleColor,
+    required this.subtitleColor,
+    required this.accent,
+  });
+
+  final OuterTuneController controller;
+  final Color card;
+  final Color cardEdge;
+  final Color titleColor;
+  final Color subtitleColor;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<AppDataUsageStats>(
+      valueListenable: controller.dataUsageState,
+      builder: (BuildContext context, AppDataUsageStats usage, Widget? child) {
+        return Container(
+          decoration: BoxDecoration(
+            color: card,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: cardEdge),
+          ),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  const Icon(
+                    Icons.data_usage_rounded,
+                    color: Color(0xFFC89373),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    'Network Usage',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: titleColor,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Live playback and offline cache transfer totals.',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: subtitleColor),
+              ),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: <Widget>[
+                  _UsageChip(
+                    label: 'Total',
+                    value: usage.totalLabel,
+                    accent: accent,
+                    titleColor: titleColor,
+                    subtitleColor: subtitleColor,
+                  ),
+                  _UsageChip(
+                    label: 'Streaming',
+                    value: usage.streamLabel,
+                    accent: accent,
+                    titleColor: titleColor,
+                    subtitleColor: subtitleColor,
+                  ),
+                  _UsageChip(
+                    label: 'Offline Cache',
+                    value: usage.cacheLabel,
+                    accent: accent,
+                    titleColor: titleColor,
+                    subtitleColor: subtitleColor,
+                  ),
+                  _UsageChip(
+                    label: 'Current Song',
+                    value: usage.currentSongLabel,
+                    accent: accent,
+                    titleColor: titleColor,
+                    subtitleColor: subtitleColor,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ProfileCurrentStreamCard extends StatelessWidget {
+  const _ProfileCurrentStreamCard({
+    required this.controller,
+    required this.card,
+    required this.cardEdge,
+    required this.titleColor,
+    required this.subtitleColor,
+    required this.accent,
+  });
+
+  final OuterTuneController controller;
+  final Color card;
+  final Color cardEdge;
+  final Color titleColor;
+  final Color subtitleColor;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<NowPlayingState>(
+      valueListenable: controller.nowPlayingState,
+      builder: (BuildContext context, NowPlayingState nowPlaying, Widget? child) {
+        return ValueListenableBuilder<AppDataUsageStats>(
+          valueListenable: controller.dataUsageState,
+          builder: (BuildContext context, AppDataUsageStats usage, Widget? child) {
+            final LibrarySong? song = nowPlaying.song;
+            final PlaybackStreamInfo? info = nowPlaying.streamInfo;
+
+            return Container(
+              decoration: BoxDecoration(
+                color: card,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: cardEdge),
+              ),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      const Icon(
+                        Icons.graphic_eq_rounded,
+                        color: Color(0xFFC89373),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Current Stream',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              color: titleColor,
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  if (song == null || info == null)
+                    Text(
+                      'Start playback to inspect transport, source, bitrate, codecs, and live bytes.',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: subtitleColor),
+                    )
+                  else ...<Widget>[
+                    Text(
+                      song.title,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: titleColor,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _songArtistLabel(song),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: subtitleColor),
+                    ),
+                    const SizedBox(height: 14),
+                    _ProfileDetailRow(
+                      title: 'Source',
+                      value: info.sourceLabel,
+                      titleColor: titleColor,
+                      valueColor: accent,
+                    ),
+                    _ProfileDetailRow(
+                      title: 'Transport',
+                      value: info.transport.label,
+                      titleColor: titleColor,
+                      valueColor: titleColor,
+                    ),
+                    _ProfileDetailRow(
+                      title: 'Bitrate',
+                      value: '${info.bitrateLabel} • ${info.bitrateTier}',
+                      titleColor: titleColor,
+                      valueColor: titleColor,
+                    ),
+                    _ProfileDetailRow(
+                      title: 'Policy',
+                      value: info.selectionPolicyLabel,
+                      titleColor: titleColor,
+                      valueColor: titleColor,
+                    ),
+                    if ((info.qualityLabel ?? '').trim().isNotEmpty)
+                      _ProfileDetailRow(
+                        title: 'Quality',
+                        value: info.qualityLabel!,
+                        titleColor: titleColor,
+                        valueColor: titleColor,
+                      ),
+                    if ((info.containerName ?? '').trim().isNotEmpty)
+                      _ProfileDetailRow(
+                        title: 'Container',
+                        value: info.containerName!,
+                        titleColor: titleColor,
+                        valueColor: titleColor,
+                      ),
+                    if ((info.audioCodec ?? '').trim().isNotEmpty)
+                      _ProfileDetailRow(
+                        title: 'Audio Codec',
+                        value: info.audioCodec!,
+                        titleColor: titleColor,
+                        valueColor: titleColor,
+                      ),
+                    if ((info.videoCodec ?? '').trim().isNotEmpty)
+                      _ProfileDetailRow(
+                        title: 'Video Codec',
+                        value: info.videoCodec!,
+                        titleColor: titleColor,
+                        valueColor: titleColor,
+                      ),
+                    _ProfileDetailRow(
+                      title: 'Song Data',
+                      value: usage.currentSongLabel,
+                      titleColor: titleColor,
+                      valueColor: accent,
+                    ),
+                    _ProfileDetailRow(
+                      title: 'Available',
+                      value:
+                          'A ${info.availableAudioOnlyCount} • HA ${info.availableHlsAudioOnlyCount} • M ${info.availableMuxedCount} • HM ${info.availableHlsMuxedCount} • HV ${info.availableHlsVideoOnlyCount}',
+                      titleColor: titleColor,
+                      valueColor: subtitleColor,
+                    ),
+                  ],
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _UsageChip extends StatelessWidget {
+  const _UsageChip({
+    required this.label,
+    required this.value,
+    required this.accent,
+    required this.titleColor,
+    required this.subtitleColor,
+  });
+
+  final String label;
+  final String value;
+  final Color accent;
+  final Color titleColor;
+  final Color subtitleColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 146,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1C0904),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF3A170C)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: subtitleColor,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: label == 'Total' || label == 'Streaming'
+                  ? accent
+                  : titleColor,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileDetailRow extends StatelessWidget {
+  const _ProfileDetailRow({
+    required this.title,
+    required this.value,
+    required this.titleColor,
+    required this.valueColor,
+  });
+
+  final String title;
+  final String value;
+  final Color titleColor;
+  final Color valueColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          SizedBox(
+            width: 92,
+            child: Text(
+              title,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: titleColor.withValues(alpha: 0.72),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: valueColor,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
