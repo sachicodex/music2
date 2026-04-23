@@ -4543,6 +4543,8 @@ class OuterTuneController extends ChangeNotifier {
       url: stream.url.toString(),
       bitrateBitsPerSecond: stream.bitrate.bitsPerSecond,
       streamTag: stream.tag,
+      videoHeight:
+          stream is VideoStreamInfo ? stream.videoResolution.height : null,
       qualityLabel: stream.qualityLabel,
       containerName: stream.container.name,
       codecDescription: stream.codec.toString(),

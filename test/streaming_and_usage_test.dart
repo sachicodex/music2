@@ -75,8 +75,47 @@ void main() {
             );
 
         expect(resolved.url, 'https://example.com/muxed-low');
+      expect(resolved.info.transport, PlaybackStreamTransport.muxed);
+      expect(resolved.info.bitrateBitsPerSecond, 64000);
+      },
+    );
+
+    test(
+      'prefers the lowest muxed resolution before bitrate when video fallback is needed',
+      () {
+        final PlaybackStreamResolution resolved =
+            resolvePreferredPlaybackStream(
+              songId: 'song-2b',
+              sourceLabel: 'YouTube',
+              originalUrl: 'https://www.youtube.com/watch?v=ghi',
+              candidates: const <PlaybackStreamCandidate>[
+                PlaybackStreamCandidate(
+                  transport: PlaybackStreamTransport.muxed,
+                  url: 'https://example.com/muxed-360p',
+                  bitrateBitsPerSecond: 64000,
+                  qualityLabel: '360p',
+                  videoHeight: 360,
+                ),
+                PlaybackStreamCandidate(
+                  transport: PlaybackStreamTransport.muxed,
+                  url: 'https://example.com/muxed-144p',
+                  bitrateBitsPerSecond: 96000,
+                  qualityLabel: '144p',
+                  videoHeight: 144,
+                ),
+                PlaybackStreamCandidate(
+                  transport: PlaybackStreamTransport.muxed,
+                  url: 'https://example.com/muxed-240p',
+                  bitrateBitsPerSecond: 80000,
+                  qualityLabel: '240p',
+                  videoHeight: 240,
+                ),
+              ],
+            );
+
+        expect(resolved.url, 'https://example.com/muxed-144p');
         expect(resolved.info.transport, PlaybackStreamTransport.muxed);
-        expect(resolved.info.bitrateBitsPerSecond, 64000);
+        expect(resolved.info.qualityLabel, '144p');
       },
     );
 

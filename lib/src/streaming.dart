@@ -8,6 +8,7 @@ class PlaybackStreamCandidate {
     required this.url,
     required this.bitrateBitsPerSecond,
     this.streamTag,
+    this.videoHeight,
     this.qualityLabel,
     this.containerName,
     this.codecDescription,
@@ -19,6 +20,7 @@ class PlaybackStreamCandidate {
   final String url;
   final int bitrateBitsPerSecond;
   final int? streamTag;
+  final int? videoHeight;
   final String? qualityLabel;
   final String? containerName;
   final String? codecDescription;
@@ -217,6 +219,18 @@ int _comparePlaybackStreamCandidates(
   PlaybackStreamCandidate a,
   PlaybackStreamCandidate b,
 ) {
+  if (_isVideoTransport(a.transport) && _isVideoTransport(b.transport)) {
+    final int? aHeight = _candidateVideoHeight(a);
+    final int? bHeight = _candidateVideoHeight(b);
+    if (aHeight != null || bHeight != null) {
+      final int heightCompare = (aHeight ?? 1 << 30).compareTo(
+        bHeight ?? 1 << 30,
+      );
+      if (heightCompare != 0) {
+        return heightCompare;
+      }
+    }
+  }
   final int bitrateCompare = a.bitrateBitsPerSecond.compareTo(
     b.bitrateBitsPerSecond,
   );
@@ -234,6 +248,39 @@ const List<PlaybackStreamTransport> _preferredTransportOrder =
       PlaybackStreamTransport.hlsMuxed,
       PlaybackStreamTransport.hlsVideoOnly,
     ];
+
+int? _candidateVideoHeight(PlaybackStreamCandidate candidate) {
+  return candidate.videoHeight ?? _parseVideoHeight(candidate.qualityLabel);
+}
+
+bool _isVideoTransport(PlaybackStreamTransport transport) {
+  switch (transport) {
+    case PlaybackStreamTransport.muxed:
+    case PlaybackStreamTransport.hlsMuxed:
+    case PlaybackStreamTransport.hlsVideoOnly:
+      return true;
+    case PlaybackStreamTransport.audioOnly:
+    case PlaybackStreamTransport.hlsAudioOnly:
+    case PlaybackStreamTransport.localFile:
+    case PlaybackStreamTransport.cachedFile:
+    case PlaybackStreamTransport.directUrl:
+      return false;
+  }
+}
+
+int? _parseVideoHeight(String? qualityLabel) {
+  if (qualityLabel == null || qualityLabel.trim().isEmpty) {
+    return null;
+  }
+  final RegExpMatch? match = RegExp(
+    r'(\d{3,4})\s*p',
+    caseSensitive: false,
+  ).firstMatch(qualityLabel);
+  if (match == null) {
+    return null;
+  }
+  return int.tryParse(match.group(1)!);
+}
 
 String? _containerNameForPath(String value) {
   final Uri? uri = Uri.tryParse(value);
