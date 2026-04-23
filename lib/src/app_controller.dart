@@ -151,6 +151,7 @@ class OuterTuneController extends ChangeNotifier {
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
   LibrarySong? _pendingSelectionSong;
+  String? _startupMiniPlayerSongId;
   String? _transitioningSongId;
   int? _transitioningQueueIndex;
   bool _hasPublishedPlaybackNotification = false;
@@ -260,7 +261,35 @@ class OuterTuneController extends ChangeNotifier {
           _pendingSelectionSong ??
           currentSong;
     }
-    return _pendingSelectionSong ?? currentSong;
+    return _pendingSelectionSong ?? currentSong ?? _startupMiniPlayerSong;
+  }
+
+  LibrarySong? get _startupMiniPlayerSong {
+    final LibrarySong? lastPlayedSong = _history
+        .map((PlaybackEntry entry) => songById(entry.songId))
+        .whereType<LibrarySong>()
+        .firstOrNull;
+    if (lastPlayedSong != null) {
+      _startupMiniPlayerSongId = lastPlayedSong.id;
+      return lastPlayedSong;
+    }
+
+    final String? cachedSongId = _startupMiniPlayerSongId;
+    if (cachedSongId != null) {
+      final LibrarySong? cachedSong = songById(cachedSongId);
+      if (cachedSong != null) {
+        return cachedSong;
+      }
+    }
+
+    if (_songs.isEmpty) {
+      _startupMiniPlayerSongId = null;
+      return null;
+    }
+
+    final LibrarySong randomSong = _songs[math.Random().nextInt(_songs.length)];
+    _startupMiniPlayerSongId = randomSong.id;
+    return randomSong;
   }
 
   bool get miniPlayerSelectionLoading {
