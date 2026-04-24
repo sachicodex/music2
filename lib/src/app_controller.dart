@@ -248,6 +248,11 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
       .whereType<LibrarySong>()
       .toList(growable: false);
 
+  List<String> get _playerQueueSongIds => _player.state.playlist.medias
+      .map((Media media) => media.extras?['songId'] as String?)
+      .whereType<String>()
+      .toList(growable: false);
+
   LibrarySong? get currentSong {
     if (_queueSongIds.isEmpty ||
         _queueIndex < 0 ||
@@ -311,6 +316,49 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
     }
     final LibrarySong? active = currentSong;
     return active == null || active.id != pending.id;
+  }
+
+  bool _playerQueueHasControllerPlaylist() {
+    if (_queueSongIds.isEmpty) {
+      return false;
+    }
+    final List<String> playerQueueSongIds = _playerQueueSongIds;
+    if (playerQueueSongIds.length != _queueSongIds.length) {
+      return false;
+    }
+    for (int i = 0; i < _queueSongIds.length; i += 1) {
+      if (playerQueueSongIds[i] != _queueSongIds[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool _playerQueueMatchesControllerState() {
+    if (!_playerQueueHasControllerPlaylist() ||
+        _queueIndex < 0 ||
+        _queueIndex >= _queueSongIds.length) {
+      return false;
+    }
+    final List<String> playerQueueSongIds = _playerQueueSongIds;
+    final int playerIndex = _player.state.playlist.index;
+    return playerIndex >= 0 &&
+        playerIndex < playerQueueSongIds.length &&
+        playerQueueSongIds[playerIndex] == _queueSongIds[_queueIndex];
+  }
+
+  Future<bool> _resumeMiniPlayerPlaybackFallback() async {
+    final LibrarySong? song = miniPlayerSong;
+    if (song == null) {
+      return false;
+    }
+    final String trimmedQueueLabel = _queueLabel.trim();
+    final String label =
+        trimmedQueueLabel.isEmpty || trimmedQueueLabel == 'Now Playing'
+        ? 'Jump back in'
+        : trimmedQueueLabel;
+    await playSong(song, label: label);
+    return true;
   }
 
   NowPlayingState _buildNowPlayingState() {
@@ -3905,6 +3953,9 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
     if (_queueSongIds.isEmpty) {
       return;
     }
+    if (!_playerQueueHasControllerPlaylist()) {
+      return;
+    }
     final int nextIndex = _player.state.playlist.index.clamp(
       0,
       _queueSongIds.length - 1,
@@ -4814,6 +4865,10 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
     if (await _tryHandleOfflineTargetTransition(index)) {
       return;
     }
+    if (!_playerQueueHasControllerPlaylist()) {
+      await _reopenQueueAtIndex(index);
+      return;
+    }
     if (await _shouldUseOfflineQueueTransition(index)) {
       await _reopenQueueAtIndex(index);
       return;
@@ -4928,12 +4983,31 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> togglePlayback() async {
+    if (_queueSongIds.isEmpty || currentSong == null) {
+      await _resumeMiniPlayerPlaybackFallback();
+      return;
+    }
+    if (!_playerQueueMatchesControllerState()) {
+      await _reopenQueueAtIndex(_queueIndex);
+      if (!_isPlaying) {
+        await _player.play();
+      }
+      return;
+    }
     await _player.playOrPause();
   }
 
   Future<void> play() async {
     if (_isPlaying) {
       return;
+    }
+    if (_queueSongIds.isEmpty || currentSong == null) {
+      if (await _resumeMiniPlayerPlaybackFallback()) {
+        return;
+      }
+    }
+    if (!_playerQueueMatchesControllerState()) {
+      await _reopenQueueAtIndex(_queueIndex);
     }
     await _player.play();
   }
@@ -4956,6 +5030,10 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
       'target=${_debugSongLabel(songById(_queueSongIds[targetIndex]))}',
     );
     if (await _tryHandleOfflineTargetTransition(targetIndex)) {
+      return;
+    }
+    if (!_playerQueueHasControllerPlaylist()) {
+      await _reopenQueueAtIndex(targetIndex);
       return;
     }
     if (await _shouldUseOfflineQueueTransition(targetIndex)) {
@@ -4985,6 +5063,10 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
       'target=${_debugSongLabel(songById(_queueSongIds[targetIndex]))}',
     );
     if (await _tryHandleOfflineTargetTransition(targetIndex)) {
+      return;
+    }
+    if (!_playerQueueHasControllerPlaylist()) {
+      await _reopenQueueAtIndex(targetIndex);
       return;
     }
     if (await _shouldUseOfflineQueueTransition(targetIndex)) {
@@ -6067,6 +6149,21 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
                   File(item.value).existsSync();
             }),
       );
+    final List<String> restoredQueueSongIds =
+        (json['queueSongIds'] as List<dynamic>? ?? <dynamic>[])
+            .map((dynamic item) => item as String)
+            .where((String songId) => songById(songId) != null)
+            .toList(growable: false);
+    _queueSongIds = restoredQueueSongIds;
+    final int restoredQueueIndex = (json['queueIndex'] as num?)?.toInt() ?? 0;
+    _queueIndex = restoredQueueSongIds.isEmpty
+        ? 0
+        : restoredQueueIndex.clamp(0, restoredQueueSongIds.length - 1);
+    final String restoredQueueLabel =
+        json['queueLabel'] as String? ?? 'Now Playing';
+    _queueLabel = restoredQueueLabel.trim().isEmpty
+        ? 'Now Playing'
+        : restoredQueueLabel;
     _dataUsage = AppDataUsageStats.fromJson(
       json['dataUsage'] as Map<String, dynamic>?,
     ).copyWith(currentSongBytes: 0, clearCurrentSongId: true);
@@ -6109,6 +6206,11 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
             .where((PlaybackEntry entry) => songById(entry.songId) != null)
             .map((PlaybackEntry entry) => entry.toJson())
             .toList(),
+        'queueSongIds': _queueSongIds
+            .where((String songId) => songById(songId) != null)
+            .toList(growable: false),
+        'queueIndex': _queueIndex,
+        'queueLabel': _queueLabel,
         'searchDraft': _searchDraft,
         'recentSearchTerms': _recentSearchTerms,
         'offlinePlaybackCachePaths': _offlinePlaybackCachePaths,
