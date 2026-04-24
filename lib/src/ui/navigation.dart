@@ -1,7 +1,7 @@
 part of '../ui.dart';
 
-class _KineticBottomNav extends StatelessWidget {
-  const _KineticBottomNav({
+class _SonixBottomNav extends StatelessWidget {
+  const _SonixBottomNav({
     required this.destination,
     required this.onDestinationChanged,
   });
@@ -40,7 +40,7 @@ class _KineticBottomNav extends StatelessWidget {
         children: items.map((_BottomItem item) {
           final bool selected = destination == item.destination;
           return Expanded(
-            child: _KineticBottomNavItem(
+            child: _SonixBottomNavItem(
               icon: item.icon,
               label: item.label,
               selected: selected,
@@ -60,7 +60,7 @@ class _MobileBottomChrome extends StatelessWidget {
     required this.child,
   });
 
-  final OuterTuneController controller;
+  final SonixController controller;
   final VoidCallback onOpenPlayer;
   final Widget child;
 
@@ -87,8 +87,8 @@ class _BottomItem {
   final IconData icon;
 }
 
-class _KineticBottomNavItem extends StatelessWidget {
-  const _KineticBottomNavItem({
+class _SonixBottomNavItem extends StatelessWidget {
+  const _SonixBottomNavItem({
     required this.icon,
     required this.label,
     required this.selected,

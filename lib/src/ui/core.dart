@@ -1,15 +1,15 @@
 part of '../ui.dart';
 
-class OuterTuneApp extends StatelessWidget {
-  const OuterTuneApp({super.key});
+class SonixApp extends StatelessWidget {
+  const SonixApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final OuterTuneController controller = context.watch<OuterTuneController>();
+    final SonixController controller = context.watch<SonixController>();
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'OuterTune Flutter',
+      title: 'SONIX',
       themeMode: controller.settings.themeMode,
       builder: (BuildContext context, Widget? child) {
         return Focus(
@@ -22,7 +22,7 @@ class OuterTuneApp extends StatelessWidget {
             if (_focusedWidgetAcceptsTextInput()) {
               return KeyEventResult.ignored;
             }
-            unawaited(context.read<OuterTuneController>().togglePlayback());
+            unawaited(context.read<SonixController>().togglePlayback());
             return KeyEventResult.handled;
           },
           child: child ?? const SizedBox.shrink(),
@@ -33,7 +33,7 @@ class OuterTuneApp extends StatelessWidget {
       ),
       theme: _buildTheme(Brightness.light),
       darkTheme: _buildTheme(Brightness.dark),
-      home: const OuterTuneShell(),
+      home: const SonixShell(),
     );
   }
 }
@@ -100,14 +100,14 @@ ThemeData _buildTheme(Brightness brightness) {
   );
 }
 
-class OuterTuneShell extends StatefulWidget {
-  const OuterTuneShell({super.key});
+class SonixShell extends StatefulWidget {
+  const SonixShell({super.key});
 
   @override
-  State<OuterTuneShell> createState() => _OuterTuneShellState();
+  State<SonixShell> createState() => _SonixShellState();
 }
 
-class _OuterTuneShellState extends State<OuterTuneShell> {
+class _SonixShellState extends State<SonixShell> {
   static const List<AppDestination> _mainDestinations = <AppDestination>[
     AppDestination.home,
     AppDestination.search,
@@ -130,7 +130,7 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
       }
       unawaited(
         context
-            .read<OuterTuneController>()
+            .read<SonixController>()
             .ensureNotificationPermissionIfNeeded(),
       );
     });
@@ -144,7 +144,7 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
 
   @override
   Widget build(BuildContext context) {
-    final OuterTuneController controller = context.watch<OuterTuneController>();
+    final SonixController controller = context.watch<SonixController>();
     final bool desktop = _isDesktopPlatform();
     final bool wide = MediaQuery.sizeOf(context).width >= 960;
     final List<Widget> pages = _mainDestinations
@@ -228,7 +228,7 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
           : _MobileBottomChrome(
               controller: controller,
               onOpenPlayer: () => _openPlayer(context, controller),
-              child: _KineticBottomNav(
+              child: _SonixBottomNav(
                 destination: _destination,
                 onDestinationChanged: (AppDestination value) {
                   _setDestination(value);
@@ -262,13 +262,13 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
   void _clearSearchIfNeeded(AppDestination nextDestination) {
     if (_destination == AppDestination.search &&
         nextDestination != AppDestination.search) {
-      context.read<OuterTuneController>().clearSearchState();
+      context.read<SonixController>().clearSearchState();
     }
   }
 
   Widget _buildPageForDestination(
     BuildContext context,
-    OuterTuneController controller,
+    SonixController controller,
     AppDestination destination,
   ) {
     return switch (destination) {
@@ -299,7 +299,7 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
 
   Future<void> _openPlayer(
     BuildContext context,
-    OuterTuneController controller,
+    SonixController controller,
   ) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -348,7 +348,7 @@ EdgeInsets _rootScreenContentPadding(
   );
 }
 
-BoxDecoration _kineticPageDecoration() {
+BoxDecoration _sonixPageDecoration() {
   return const BoxDecoration(
     gradient: LinearGradient(
       colors: <Color>[_kPageTop, _kPageMiddle, _kPageBottom],
@@ -358,7 +358,7 @@ BoxDecoration _kineticPageDecoration() {
   );
 }
 
-void _showKineticSnackBar(BuildContext context, String message) {
+void _showSonixSnackBar(BuildContext context, String message) {
   final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
   messenger.hideCurrentSnackBar();
   messenger.showSnackBar(
@@ -380,7 +380,7 @@ void _showKineticSnackBar(BuildContext context, String message) {
   );
 }
 
-PopupMenuItem<String> _kineticPopupMenuItem(String value, String label) {
+PopupMenuItem<String> _sonixPopupMenuItem(String value, String label) {
   return PopupMenuItem<String>(
     value: value,
     child: Text(

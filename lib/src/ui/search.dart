@@ -236,7 +236,7 @@ class _SearchTrendingTile extends StatelessWidget {
 
   final int rank;
   final LibrarySong song;
-  final OuterTuneController controller;
+  final SonixController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -326,9 +326,9 @@ class _SearchTrendingTile extends StatelessWidget {
                   }
                 },
                 itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                  _kineticPopupMenuItem('play', 'Play now'),
-                  _kineticPopupMenuItem('queue', 'Add to queue'),
-                  _kineticPopupMenuItem(
+                  _sonixPopupMenuItem('play', 'Play now'),
+                  _sonixPopupMenuItem('queue', 'Add to queue'),
+                  _sonixPopupMenuItem(
                     'favorite',
                     song.isFavorite ? 'Remove favorite' : 'Add favorite',
                   ),
@@ -345,7 +345,7 @@ class _SearchTrendingTile extends StatelessWidget {
 class _SearchScreen extends StatefulWidget {
   const _SearchScreen({super.key, required this.controller});
 
-  final OuterTuneController controller;
+  final SonixController controller;
 
   @override
   State<_SearchScreen> createState() => _SearchScreenState();
@@ -639,7 +639,7 @@ class _SearchScreenState extends State<_SearchScreen> {
                   const _SearchSectionTitle('Trending Now'),
                   const SizedBox(height: 6),
                   Text(
-                    '${_lastMonthLabel()} chart • ${widget.controller.trendingNowRegionLabel}',
+                    '${_lastMonthLabel()} chart â€¢ ${widget.controller.trendingNowRegionLabel}',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: const Color(0xFFD1A793),
                       fontWeight: FontWeight.w600,
@@ -733,7 +733,7 @@ class _SearchScreenState extends State<_SearchScreen> {
 class _SearchOfflineState extends StatelessWidget {
   const _SearchOfflineState({required this.controller});
 
-  final OuterTuneController controller;
+  final SonixController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -885,8 +885,8 @@ class _OnlineSongResultsSkeleton extends StatelessWidget {
   }
 }
 
-class _KineticSectionHeaderSkeleton extends StatelessWidget {
-  const _KineticSectionHeaderSkeleton();
+class _SonixSectionHeaderSkeleton extends StatelessWidget {
+  const _SonixSectionHeaderSkeleton();
 
   @override
   Widget build(BuildContext context) {
@@ -900,8 +900,8 @@ class _KineticSectionHeaderSkeleton extends StatelessWidget {
   }
 }
 
-class _KineticPopularTrackTileSkeleton extends StatelessWidget {
-  const _KineticPopularTrackTileSkeleton({required this.index});
+class _SonixPopularTrackTileSkeleton extends StatelessWidget {
+  const _SonixPopularTrackTileSkeleton({required this.index});
 
   final int index;
 

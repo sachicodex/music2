@@ -1,4 +1,4 @@
-package com.example.music
+package com.sachicodex.sonix
 
 import android.os.Handler
 import android.os.Looper

@@ -8,7 +8,7 @@ class _LibraryScreen extends StatelessWidget {
     required this.onFilterChanged,
   });
 
-  final OuterTuneController controller;
+  final SonixController controller;
   final LibraryFilter filter;
   final ValueChanged<LibraryFilter> onFilterChanged;
 
@@ -28,7 +28,7 @@ class _LibraryScreen extends StatelessWidget {
         hasCachedPlaylist || hasDislikedPlaylist || playlists.isNotEmpty;
 
     return DecoratedBox(
-      decoration: _kineticPageDecoration(),
+      decoration: _sonixPageDecoration(),
       child: SafeArea(
         bottom: false,
         child: ListView(
@@ -53,7 +53,7 @@ class _LibraryScreen extends StatelessWidget {
                     onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute<void>(
-                          builder: (BuildContext context) => _KineticPlaylistScreen(
+                          builder: (BuildContext context) => _SonixPlaylistScreen(
                             controller: controller,
                             title: 'Liked Songs',
                             songs: likedSongs,
@@ -77,7 +77,7 @@ class _LibraryScreen extends StatelessWidget {
                       Navigator.of(context).push(
                         MaterialPageRoute<void>(
                           builder: (BuildContext context) =>
-                              _KineticPlaylistScreen(
+                              _SonixPlaylistScreen(
                                 controller: controller,
                                 title: 'Offline',
                                 songs: controller.songs,
@@ -133,7 +133,7 @@ class _LibraryScreen extends StatelessWidget {
                   title: 'Cached Songs',
                   seed: 'cached_songs',
                   songs: cachedSongs,
-                  subtitle: 'Playlist · ${cachedSongs.length} Cached',
+                  subtitle: 'Playlist Â· ${cachedSongs.length} Cached',
                   forceEnabled: true,
                 ),
               ),
@@ -145,7 +145,7 @@ class _LibraryScreen extends StatelessWidget {
                   title: 'Disliked Songs',
                   seed: 'disliked_songs',
                   songs: dislikedSongs,
-                  subtitle: 'Playlist · ${dislikedSongs.length} Disliked',
+                  subtitle: 'Playlist Â· ${dislikedSongs.length} Disliked',
                   forceEnabled: true,
                 ),
               ),

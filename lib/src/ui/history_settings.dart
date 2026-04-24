@@ -4,7 +4,7 @@ part of '../ui.dart';
 class _HistoryScreen extends StatelessWidget {
   const _HistoryScreen({required this.controller});
 
-  final OuterTuneController controller;
+  final SonixController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -53,7 +53,7 @@ class _HistoryScreen extends StatelessWidget {
 class _SettingsScreen extends StatelessWidget {
   const _SettingsScreen({super.key, required this.controller});
 
-  final OuterTuneController controller;
+  final SonixController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -348,7 +348,7 @@ class _SettingsScreen extends StatelessWidget {
                   _ProfileRow(
                     title: 'Payment Method',
                     subtitle: 'Default card for renewals',
-                    trailing: '• • • •  4421',
+                    trailing: 'â€¢ â€¢ â€¢ â€¢  4421',
                   ),
                 ],
               ),
@@ -649,7 +649,7 @@ class _ProfileDataUsageCard extends StatelessWidget {
     required this.accent,
   });
 
-  final OuterTuneController controller;
+  final SonixController controller;
   final Color card;
   final Color cardEdge;
   final Color titleColor;
@@ -675,7 +675,7 @@ class _ProfileDataUsageCard extends StatelessWidget {
           }
           await controller.clearOfflinePlaybackCacheAndNotify();
           if (context.mounted) {
-            _showKineticSnackBar(context, 'Offline cache cleared');
+            _showSonixSnackBar(context, 'Offline cache cleared');
           }
         }
 
@@ -693,7 +693,7 @@ class _ProfileDataUsageCard extends StatelessWidget {
           }
           await controller.resetDataUsageStats();
           if (context.mounted) {
-            _showKineticSnackBar(context, 'Data usage reset');
+            _showSonixSnackBar(context, 'Data usage reset');
           }
         }
 
@@ -954,7 +954,7 @@ class _ProfileCurrentStreamCard extends StatelessWidget {
     required this.accent,
   });
 
-  final OuterTuneController controller;
+  final SonixController controller;
   final Color card;
   final Color cardEdge;
   final Color titleColor;
@@ -1037,7 +1037,7 @@ class _ProfileCurrentStreamCard extends StatelessWidget {
                     ),
                     _ProfileDetailRow(
                       title: 'Bitrate',
-                      value: '${info.bitrateLabel} • ${info.bitrateTier}',
+                      value: '${info.bitrateLabel} â€¢ ${info.bitrateTier}',
                       titleColor: titleColor,
                       valueColor: titleColor,
                     ),
@@ -1084,7 +1084,7 @@ class _ProfileCurrentStreamCard extends StatelessWidget {
                     _ProfileDetailRow(
                       title: 'Available',
                       value:
-                          'A ${info.availableAudioOnlyCount} • HA ${info.availableHlsAudioOnlyCount} • M ${info.availableMuxedCount} • HM ${info.availableHlsMuxedCount} • HV ${info.availableHlsVideoOnlyCount}',
+                          'A ${info.availableAudioOnlyCount} â€¢ HA ${info.availableHlsAudioOnlyCount} â€¢ M ${info.availableMuxedCount} â€¢ HM ${info.availableHlsMuxedCount} â€¢ HV ${info.availableHlsVideoOnlyCount}',
                       titleColor: titleColor,
                       valueColor: subtitleColor,
                     ),

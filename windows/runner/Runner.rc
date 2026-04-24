@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "OuterTune" "\0"
+            VALUE "CompanyName", "Sachi Codex" "\0"
+            VALUE "FileDescription", "SONIX" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "OuterTune" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "music.exe" "\0"
-            VALUE "ProductName", "OuterTune" "\0"
+            VALUE "InternalName", "SONIX" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Sachi Codex. All rights reserved." "\0"
+            VALUE "OriginalFilename", "sonix.exe" "\0"
+            VALUE "ProductName", "SONIX" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

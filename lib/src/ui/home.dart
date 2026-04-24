@@ -103,7 +103,7 @@ class _HomeScreen extends StatefulWidget {
     required this.onOpenSearch,
   });
 
-  final OuterTuneController controller;
+  final SonixController controller;
   final VoidCallback onOpenSearch;
 
   @override
@@ -137,7 +137,7 @@ class _HomeScreenState extends State<_HomeScreen>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final OuterTuneController controller = widget.controller;
+    final SonixController controller = widget.controller;
     if (_isDesktopPlatform()) {
       return _DesktopHomeScreen(
         controller: controller,
@@ -201,12 +201,12 @@ class _HomeScreenState extends State<_HomeScreen>
                   hasMiniPlayer: controller.miniPlayerSong != null,
                 ),
                 children: <Widget>[
-                  const _KineticTopBar(),
+                  const _SonixTopBar(),
                   const SizedBox(height: 14),
                   if (controller.homeLoading && !hasRevealableContent)
-                    const _KineticHeroSkeleton()
+                    const _SonixHeroSkeleton()
                   else if (featured != null)
-                    _KineticHeroCard(
+                    _SonixHeroCard(
                       badge: featured.badge,
                       title: featured.title,
                       subtitle: featured.subtitle,
@@ -219,7 +219,7 @@ class _HomeScreenState extends State<_HomeScreen>
                           'Play local songs, like tracks, or reconnect to load personalized recommendations here.',
                     ),
                   const SizedBox(height: 18),
-                  _KineticSectionHeader(
+                  _SonixSectionHeader(
                     title: 'MAY YOU LIKE',
                     onViewAll: () {
                       if (mayYouLikeFull.isEmpty) {
@@ -236,7 +236,7 @@ class _HomeScreenState extends State<_HomeScreen>
                   ),
                   const SizedBox(height: 10),
                   if (controller.homeLoading && !hasRevealableContent)
-                    const _KineticListSkeleton(count: 4)
+                    const _SonixListSkeleton(count: 4)
                   else if (mayYouLike.isEmpty)
                     const _PersonalizationHintCard(
                       message:
@@ -248,7 +248,7 @@ class _HomeScreenState extends State<_HomeScreen>
                         int index,
                       ) {
                         final LibrarySong song = mayYouLike[index];
-                        return _KineticPopularTrackTile(
+                        return _SonixPopularTrackTile(
                           index: index + 1,
                           song: song,
                           onTap: () {
@@ -269,7 +269,7 @@ class _HomeScreenState extends State<_HomeScreen>
                   if (!controller.homeLoading &&
                       jumpBackIn.isNotEmpty) ...<Widget>[
                     const SizedBox(height: 18),
-                    _KineticSectionHeader(
+                    _SonixSectionHeader(
                       title: 'JUMP BACK IN',
                       onViewAll: () {
                         Navigator.of(context).push(
@@ -281,7 +281,7 @@ class _HomeScreenState extends State<_HomeScreen>
                       },
                     ),
                     const SizedBox(height: 10),
-                    _KineticJumpBackGrid(
+                    _SonixJumpBackGrid(
                       items: jumpBackIn,
                       onTapItem: (LibrarySong song) {
                         if (song.isRemote) {
@@ -337,7 +337,7 @@ class _PersonalizationHintCard extends StatelessWidget {
 class _HomeOfflineState extends StatelessWidget {
   const _HomeOfflineState({required this.controller});
 
-  final OuterTuneController controller;
+  final SonixController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -365,7 +365,7 @@ class _HomeOfflineState extends StatelessWidget {
             hasMiniPlayer: controller.miniPlayerSong != null,
           ),
           children: <Widget>[
-            const _KineticTopBar(),
+            const _SonixTopBar(),
             const SizedBox(height: 18),
             _NetworkUnavailablePanel(
               title: controller.offlineMusicMode
@@ -403,7 +403,7 @@ class _HomeOfflineState extends StatelessWidget {
               )
             else
               ...localSongs.asMap().entries.map((MapEntry<int, LibrarySong> e) {
-                return _KineticPopularTrackTile(
+                return _SonixPopularTrackTile(
                   index: e.key + 1,
                   song: e.value,
                   onTap: () => controller.playSongs(
@@ -422,7 +422,7 @@ class _HomeOfflineState extends StatelessWidget {
 
 List<Widget> _buildMoreShelves({
   required BuildContext context,
-  required OuterTuneController controller,
+  required SonixController controller,
   int skipCount = 0,
 }) {
   final List<HomeFeedSection> sections = controller.homeFeed
@@ -455,7 +455,7 @@ List<Widget> _buildMoreShelves({
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              _KineticSectionHeader(
+              _SonixSectionHeader(
                 title: section.title.toUpperCase(),
                 onViewAll: () {
                   Navigator.of(context).push(
@@ -472,7 +472,7 @@ List<Widget> _buildMoreShelves({
               const SizedBox(height: 8),
               ...songs.asMap().entries.map((MapEntry<int, LibrarySong> e) {
                 final LibrarySong song = e.value;
-                return _KineticPopularTrackTile(
+                return _SonixPopularTrackTile(
                   index: e.key + 1,
                   song: song,
                   onTap: () {
@@ -532,7 +532,7 @@ class _SearchGenreShelf {
 }
 
 List<_SearchGenreShelf> _buildSearchGenreShelves(
-  OuterTuneController controller,
+  SonixController controller,
 ) {
   final List<LibrarySong> pool = <LibrarySong>[
     ..._resolvedMayYouLikeSongs(controller),
@@ -595,14 +595,16 @@ List<_SearchGenreShelf> _buildSearchGenreShelves(
   ];
 }
 
-List<LibrarySong> _resolvedMayYouLikeSongs(OuterTuneController controller) {
+List<LibrarySong> _resolvedMayYouLikeSongs(SonixController controller) {
   return _resolvedMayYouLikeRecommendations(
     controller,
-  ).map((SongRecommendation item) => item.song).toList(growable: false);
+  ).map((SongRecommendation item) => item.song)
+      .where((LibrarySong song) => song.isRemote)
+      .toList(growable: false);
 }
 
 List<SongRecommendation> _resolvedMayYouLikeRecommendations(
-  OuterTuneController controller,
+  SonixController controller,
 ) {
   if (controller.personalizedHomeRecommendations.isNotEmpty) {
     return controller.personalizedHomeRecommendations;
@@ -623,7 +625,8 @@ List<LibrarySong> _buildMayYouLike(List<HomeFeedSection> feed) {
   }
 
   final List<LibrarySong> all = <LibrarySong>[
-    for (final HomeFeedSection section in feed) ...section.songs,
+    for (final HomeFeedSection section in feed)
+      ...section.songs.where((LibrarySong song) => song.isRemote),
   ];
 
   final Set<String> seen = <String>{};
@@ -658,7 +661,7 @@ List<LibrarySong> _buildMayYouLike(List<HomeFeedSection> feed) {
 }
 
 List<LibrarySong> _buildMonthlyTrendingNow({
-  required OuterTuneController controller,
+  required SonixController controller,
 }) {
   final List<LibrarySong> seed = List<LibrarySong>.from(
     controller.trendingNowSongs,
@@ -683,7 +686,7 @@ int _hasArtwork(LibrarySong song) {
 
 int _durationScore(LibrarySong song) {
   final int seconds = song.duration.inSeconds;
-  // Prefer typical music-length tracks (avoid 1h “mix” style dominating).
+  // Prefer typical music-length tracks (avoid 1h ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œmixÃƒÂ¢Ã¢â€šÂ¬Ã‚Â style dominating).
   if (seconds == 0) return 1;
   if (seconds >= 120 && seconds <= 360) return 5; // 2-6 minutes
   if (seconds >= 60 && seconds < 120) return 3;
@@ -747,6 +750,339 @@ bool _isFilteredSuggestion(LibrarySong song) {
   return false;
 }
 
+String _heroSongKey(LibrarySong song) {
+  return '${song.title.trim().toLowerCase()}::${song.artist.trim().toLowerCase()}';
+}
+
+String _normalizeHeroToken(String value) {
+  return value
+      .trim()
+      .toLowerCase()
+      .replaceAll(
+        RegExp(r'[^\w\s\u0D80-\u0DFF\u0B80-\u0BFF\u0900-\u097F]'),
+        ' ',
+      )
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+}
+
+String _heroLanguageBucket(LibrarySong song) {
+  final String text =
+      '${song.title} ${song.artist} ${song.album} ${song.genre ?? ''}'.trim();
+  if (RegExp(r'[\u0D80-\u0DFF]').hasMatch(text)) {
+    return 'si';
+  }
+  if (RegExp(r'[\u0B80-\u0BFF]').hasMatch(text)) {
+    return 'ta';
+  }
+  if (RegExp(r'[\u0900-\u097F]').hasMatch(text)) {
+    return 'hi';
+  }
+  if (RegExp(r'[a-zA-Z]').hasMatch(text)) {
+    return 'en';
+  }
+  return 'unknown';
+}
+
+String _heroHintLanguageBucket(String text) {
+  final String normalized = _normalizeHeroToken(text);
+  if (normalized.contains('sinhala') ||
+      normalized.contains('sinhalese') ||
+      normalized.contains('sri lanka')) {
+    return 'si';
+  }
+  if (normalized.contains('tamil')) {
+    return 'ta';
+  }
+  if (normalized.contains('hindi') || normalized.contains('bollywood')) {
+    return 'hi';
+  }
+  if (normalized.contains('english')) {
+    return 'en';
+  }
+  return 'unknown';
+}
+
+Set<String> _heroVibeTokens(LibrarySong song) {
+  final String text =
+      '${song.title} ${song.artist} ${song.album} ${song.genre ?? ''}'
+          .toLowerCase();
+  const Map<String, List<String>> groups = <String, List<String>>{
+    'chill': <String>['chill', 'calm', 'soft', 'lofi', 'acoustic', 'mellow'],
+    'energy': <String>['dance', 'party', 'energy', 'club', 'anthem', 'beat'],
+    'romance': <String>['love', 'romance', 'heart', 'feel', 'melody'],
+    'sad': <String>['sad', 'cry', 'pain', 'broken', 'lonely'],
+    'folk': <String>['folk', 'traditional', 'classical', 'acoustic'],
+    'devotional': <String>['devotional', 'worship', 'spiritual', 'bhakti'],
+    'focus': <String>['focus', 'study', 'piano', 'instrumental'],
+  };
+  final Set<String> tokens = <String>{};
+  for (final MapEntry<String, List<String>> entry in groups.entries) {
+    if (entry.value.any(text.contains)) {
+      tokens.add(entry.key);
+    }
+  }
+  return tokens;
+}
+
+bool _hasKnownHeroArtist(LibrarySong song) {
+  final String artist = song.artist.trim().toLowerCase();
+  return artist.isNotEmpty &&
+      artist != 'unknown' &&
+      artist != 'unknown artist';
+}
+
+class _HeroPreferenceProfile {
+  const _HeroPreferenceProfile({
+    required this.primaryLanguage,
+    required this.secondaryLanguages,
+    required this.artistKeys,
+    required this.genreKeys,
+    required this.vibeKeys,
+    required this.recentArtistKeys,
+  });
+
+  final String primaryLanguage;
+  final Set<String> secondaryLanguages;
+  final Set<String> artistKeys;
+  final Set<String> genreKeys;
+  final Set<String> vibeKeys;
+  final Set<String> recentArtistKeys;
+}
+
+class _HeroCandidateInput {
+  const _HeroCandidateInput({
+    required this.song,
+    required this.fromMayYouLike,
+    this.queryHint = '',
+    this.sectionTitle = '',
+  });
+
+  final LibrarySong song;
+  final bool fromMayYouLike;
+  final String queryHint;
+  final String sectionTitle;
+}
+
+_HeroPreferenceProfile _buildHeroPreferenceProfile(SonixController controller) {
+  final Map<String, double> languageScores = <String, double>{};
+  final Map<String, double> artistScores = <String, double>{};
+  final Map<String, double> genreScores = <String, double>{};
+  final Map<String, double> vibeScores = <String, double>{};
+
+  void addSongs(Iterable<LibrarySong> songs, double baseWeight) {
+    int index = 0;
+    for (final LibrarySong song in songs) {
+      if (!song.isRemote) {
+        continue;
+      }
+      final double weight = math.max(1.0, baseWeight - (index * 0.18));
+      final String language = _heroLanguageBucket(song);
+      languageScores[language] = (languageScores[language] ?? 0) + weight;
+
+      final String artistKey = _normalizeHeroToken(song.artist);
+      if (artistKey.isNotEmpty) {
+        artistScores[artistKey] = (artistScores[artistKey] ?? 0) + weight;
+      }
+
+      final String genreKey = _normalizeHeroToken(song.genre ?? '');
+      if (genreKey.isNotEmpty) {
+        genreScores[genreKey] = (genreScores[genreKey] ?? 0) + weight;
+      }
+
+      for (final String vibe in _heroVibeTokens(song)) {
+        vibeScores[vibe] = (vibeScores[vibe] ?? 0) + weight;
+      }
+      index += 1;
+    }
+  }
+
+  addSongs(controller.recentlyPlayedSongs.take(18), 7.5);
+  addSongs(controller.topPlayedSongs.take(12), 5.8);
+  addSongs(controller.likedSongs.where((LibrarySong song) => song.isRemote).take(12), 5.2);
+  addSongs(controller.cachedSongs.take(10), 3.6);
+
+  List<String> topKeys(Map<String, double> scores, int limit) {
+    final List<MapEntry<String, double>> sorted = scores.entries.toList()
+      ..sort(
+        (MapEntry<String, double> a, MapEntry<String, double> b) =>
+            b.value.compareTo(a.value),
+      );
+    return sorted
+        .where((MapEntry<String, double> entry) => entry.key.isNotEmpty)
+        .take(limit)
+        .map((MapEntry<String, double> entry) => entry.key)
+        .toList(growable: false);
+  }
+
+  final List<String> topLanguages = topKeys(languageScores, 3);
+  final String preferredLanguage = controller.preferredLanguageCode;
+  final String primaryLanguage = topLanguages.firstWhere(
+    (String value) => value != 'unknown',
+    orElse: () => preferredLanguage,
+  );
+
+  return _HeroPreferenceProfile(
+    primaryLanguage: primaryLanguage,
+    secondaryLanguages: topLanguages.skip(1).toSet(),
+    artistKeys: topKeys(artistScores, 6).toSet(),
+    genreKeys: topKeys(genreScores, 5).toSet(),
+    vibeKeys: topKeys(vibeScores, 4).toSet(),
+    recentArtistKeys: controller.recentlyPlayedSongs
+        .take(8)
+        .map((LibrarySong song) => _normalizeHeroToken(song.artist))
+        .where((String artist) => artist.isNotEmpty)
+        .toSet(),
+  );
+}
+
+String _heroCandidateLanguageBucket(_HeroCandidateInput candidate) {
+  final String songLanguage = _heroLanguageBucket(candidate.song);
+  if (songLanguage != 'en' && songLanguage != 'unknown') {
+    return songLanguage;
+  }
+  final String hintedLanguage = _heroHintLanguageBucket(
+    '${candidate.queryHint} ${candidate.sectionTitle}',
+  );
+  if (hintedLanguage != 'unknown') {
+    return hintedLanguage;
+  }
+  return songLanguage;
+}
+
+bool _isEligibleHeroSong(
+  LibrarySong song, {
+  required Set<String> historyIds,
+  required Set<String> historyKeys,
+  required Set<String> queuedKeys,
+}) {
+  final String key = _heroSongKey(song);
+  if (!song.isRemote) {
+    return false;
+  }
+  if (song.playCount > 0 || song.lastPlayedAt != null) {
+    return false;
+  }
+  if (historyIds.contains(song.id) || historyKeys.contains(key)) {
+    return false;
+  }
+  if (queuedKeys.contains(key)) {
+    return false;
+  }
+  if (_isFilteredSuggestion(song)) {
+    return false;
+  }
+  if (!_hasKnownHeroArtist(song)) {
+    return false;
+  }
+  if (_durationScore(song) <= 0) {
+    return false;
+  }
+  return true;
+}
+
+double _heroCandidateScore(
+  _HeroCandidateInput candidate, {
+  required _HeroPreferenceProfile profile,
+  required String regionalLanguage,
+}) {
+  final LibrarySong song = candidate.song;
+  double score = 0;
+  if (candidate.fromMayYouLike) {
+    score += 28;
+  }
+  score += _hasArtwork(song) * 16;
+  score += _durationScore(song) * 3.5;
+  score += _titleScore(song) * 2.5;
+  if (song.sourceLabel == 'YouTube Music') {
+    score += 8;
+  } else if (song.sourceLabel == 'YouTube') {
+    score += 4;
+  }
+  if ((song.year ?? 0) >= DateTime.now().year - 4) {
+    score += 4;
+  }
+  final String language = _heroCandidateLanguageBucket(candidate);
+  final String artistKey = _normalizeHeroToken(song.artist);
+  final String genreKey = _normalizeHeroToken(song.genre ?? '');
+  final int vibeMatches =
+      _heroVibeTokens(song).intersection(profile.vibeKeys).length;
+  final bool hasTasteMatch =
+      profile.artistKeys.contains(artistKey) ||
+      (genreKey.isNotEmpty && profile.genreKeys.contains(genreKey)) ||
+      vibeMatches > 0;
+
+  if (language == profile.primaryLanguage) {
+    score += language == 'en' && !hasTasteMatch ? 4 : 26;
+  } else if (profile.secondaryLanguages.contains(language)) {
+    score += language == 'en' && !hasTasteMatch ? 2 : 12;
+  } else if (regionalLanguage != 'en' && language == regionalLanguage) {
+    score += 18;
+  } else {
+    if (language == 'en' && profile.primaryLanguage != 'en') {
+      score -= 18;
+    } else if (language != 'unknown' &&
+        profile.primaryLanguage != 'unknown') {
+      score -= 8;
+    }
+  }
+
+  if (profile.artistKeys.contains(artistKey)) {
+    score += 20;
+  }
+  if (genreKey.isNotEmpty && profile.genreKeys.contains(genreKey)) {
+    score += 10;
+  }
+  score += vibeMatches * 7;
+
+  if (!profile.recentArtistKeys.contains(artistKey)) {
+    score += 4;
+  } else if (!profile.artistKeys.contains(artistKey)) {
+    score -= 6;
+  }
+
+  if (language == 'en' && regionalLanguage != 'en' && !hasTasteMatch) {
+    score -= 18;
+  }
+
+  if (language != profile.primaryLanguage &&
+      !profile.artistKeys.contains(artistKey) &&
+      !profile.genreKeys.contains(genreKey) &&
+      vibeMatches == 0) {
+    score -= 16;
+  }
+  return score;
+}
+
+bool _heroMatchesProfile(
+  _HeroCandidateInput candidate,
+  _HeroPreferenceProfile profile, {
+  required String regionalLanguage,
+}) {
+  final LibrarySong song = candidate.song;
+  final String language = _heroCandidateLanguageBucket(candidate);
+  final String artistKey = _normalizeHeroToken(song.artist);
+  final String genreKey = _normalizeHeroToken(song.genre ?? '');
+  final int vibeMatches =
+      _heroVibeTokens(song).intersection(profile.vibeKeys).length;
+  final bool tasteMatch =
+      profile.artistKeys.contains(artistKey) ||
+      (genreKey.isNotEmpty && profile.genreKeys.contains(genreKey)) ||
+      vibeMatches > 0;
+
+  if (language == profile.primaryLanguage ||
+      profile.secondaryLanguages.contains(language)) {
+    if (language != 'en') {
+      return true;
+    }
+    return tasteMatch;
+  }
+  if (regionalLanguage != 'en' && language == regionalLanguage && tasteMatch) {
+    return true;
+  }
+  return tasteMatch;
+}
+
 class _FeaturedHeroData {
   const _FeaturedHeroData({
     required this.badge,
@@ -765,7 +1101,7 @@ class _FeaturedHeroData {
 
 _FeaturedHeroData? _pickFeaturedHero({
   required BuildContext context,
-  required OuterTuneController controller,
+  required SonixController controller,
   required List<HomeFeedSection> feed,
   required List<LibrarySong> mayYouLike,
 }) {
@@ -793,114 +1129,136 @@ _FeaturedHeroData? _pickFeaturedHero({
 }
 
 LibrarySong? _pickAdvancedHeroSong({
-  required OuterTuneController controller,
+  required SonixController controller,
   required List<HomeFeedSection> feed,
   required List<LibrarySong> mayYouLike,
 }) {
   final Set<String> historyIds = controller.history
       .map((PlaybackEntry entry) => entry.songId)
       .toSet();
-  final List<LibrarySong> historySongs = controller.history
+  final Set<String> historyKeys = controller.history
       .map((PlaybackEntry entry) => controller.songById(entry.songId))
       .whereType<LibrarySong>()
-      .toList(growable: false);
-  final LibrarySong? fallbackSong = controller.startupSuggestionSong;
+      .map(_heroSongKey)
+      .toSet();
+  final Set<String> queuedKeys = controller.queueSongs
+      .where((LibrarySong song) => song.isRemote)
+      .map(_heroSongKey)
+      .toSet();
+  final _HeroPreferenceProfile profile = _buildHeroPreferenceProfile(controller);
+  final String regionalLanguage = controller.preferredRegion.languageCode;
+  final Set<String> mayYouLikeKeys = mayYouLike.map(_heroSongKey).toSet();
+  final Map<String, _HeroCandidateInput> candidatesByKey =
+      <String, _HeroCandidateInput>{};
 
-  final Set<String> seen = <String>{};
-  final List<LibrarySong> candidates =
-      <LibrarySong>[
-            ...mayYouLike,
-            for (final HomeFeedSection section in feed) ...section.songs,
-            ...controller.onlineResults,
-            ...?fallbackSong == null ? null : <LibrarySong>[fallbackSong],
-          ]
-          .where((LibrarySong song) {
-            final String key =
-                '${song.title.toLowerCase()}::${song.artist.toLowerCase()}';
-            return seen.add(key);
-          })
-          .toList(growable: false);
+  void addCandidate(
+    LibrarySong song, {
+    required bool fromMayYouLike,
+    String queryHint = '',
+    String sectionTitle = '',
+  }) {
+    if (!_isEligibleHeroSong(
+      song,
+      historyIds: historyIds,
+      historyKeys: historyKeys,
+      queuedKeys: queuedKeys,
+    )) {
+      return;
+    }
+    final String key = _heroSongKey(song);
+    final _HeroCandidateInput? existing = candidatesByKey[key];
+    if (existing == null) {
+      candidatesByKey[key] = _HeroCandidateInput(
+        song: song,
+        fromMayYouLike: fromMayYouLike,
+        queryHint: queryHint,
+        sectionTitle: sectionTitle,
+      );
+      return;
+    }
+    candidatesByKey[key] = _HeroCandidateInput(
+      song: existing.song,
+      fromMayYouLike: existing.fromMayYouLike || fromMayYouLike,
+      queryHint: existing.queryHint.isNotEmpty ? existing.queryHint : queryHint,
+      sectionTitle: existing.sectionTitle.isNotEmpty
+          ? existing.sectionTitle
+          : sectionTitle,
+    );
+  }
+
+  for (final HomeFeedSection section in feed) {
+    for (final LibrarySong song in section.songs) {
+      addCandidate(
+        song,
+        fromMayYouLike: mayYouLikeKeys.contains(_heroSongKey(song)),
+        queryHint: section.query,
+        sectionTitle: section.title,
+      );
+    }
+  }
+  for (final LibrarySong song in mayYouLike) {
+    addCandidate(song, fromMayYouLike: true);
+  }
+
+  final List<_HeroCandidateInput> candidates = candidatesByKey.values.toList(
+    growable: false,
+  );
   if (candidates.isEmpty) {
-    return fallbackSong;
+    return null;
   }
 
-  final Map<String, double> artistAffinity = <String, double>{};
-  final Map<String, double> genreAffinity = <String, double>{};
-  final Map<String, double> languageAffinity = <String, double>{};
-  final Map<String, double> vibeAffinity = <String, double>{};
-
-  for (int i = 0; i < historySongs.length; i += 1) {
-    final LibrarySong song = historySongs[i];
-    final double weight = math.max(1, 28 - i).toDouble();
-    final String artist = song.artist.trim().toLowerCase();
-    final String genre = (song.genre ?? '').trim().toLowerCase();
-    final String language = _songLanguageToken(song);
-    if (artist.isNotEmpty) {
-      artistAffinity[artist] = (artistAffinity[artist] ?? 0) + weight;
-    }
-    if (genre.isNotEmpty) {
-      genreAffinity[genre] = (genreAffinity[genre] ?? 0) + weight;
-    }
-    languageAffinity[language] = (languageAffinity[language] ?? 0) + weight;
-    for (final String token in _heroVibeTokens(song)) {
-      vibeAffinity[token] = (vibeAffinity[token] ?? 0) + (weight * 0.7);
-    }
-  }
-
-  final List<LibrarySong> favorites = controller.likedSongs
-      .take(12)
+  final List<_HeroCandidateInput> profileMatched = candidates
+      .where(
+        (_HeroCandidateInput candidate) => _heroMatchesProfile(
+          candidate,
+          profile,
+          regionalLanguage: regionalLanguage,
+        ),
+      )
       .toList(growable: false);
-  for (int i = 0; i < favorites.length; i += 1) {
-    final LibrarySong song = favorites[i];
-    final String artist = song.artist.trim().toLowerCase();
-    if (artist.isNotEmpty) {
-      artistAffinity[artist] = (artistAffinity[artist] ?? 0) + (12 - i);
-    }
+  if (profileMatched.isEmpty) {
+    return null;
   }
+
+  final List<_HeroCandidateInput> languageMatched = profileMatched
+      .where(
+        (_HeroCandidateInput candidate) =>
+            _heroCandidateLanguageBucket(candidate) == profile.primaryLanguage,
+      )
+      .toList(growable: false);
+  final List<_HeroCandidateInput> regionalLanguageMatched = regionalLanguage ==
+          'en'
+      ? const <_HeroCandidateInput>[]
+      : profileMatched
+            .where(
+              (_HeroCandidateInput candidate) =>
+                  _heroCandidateLanguageBucket(candidate) == regionalLanguage,
+            )
+            .toList(growable: false);
+  final List<_HeroCandidateInput> explicitNonEnglishMatches = profileMatched
+      .where((_HeroCandidateInput candidate) {
+        final String language = _heroCandidateLanguageBucket(candidate);
+        return language != 'en' && language != 'unknown';
+      })
+      .toList(growable: false);
+  final List<_HeroCandidateInput> rankingPool =
+      languageMatched.isNotEmpty
+      ? languageMatched
+      : regionalLanguageMatched.isNotEmpty
+      ? regionalLanguageMatched
+      : explicitNonEnglishMatches.isNotEmpty
+      ? explicitNonEnglishMatches
+      : profileMatched;
 
   final List<_HeroCandidateScore> ranked =
-      candidates
-          .map((LibrarySong song) {
-            double score = 0;
-            final String artist = song.artist.trim().toLowerCase();
-            final String genre = (song.genre ?? '').trim().toLowerCase();
-            final String language = _songLanguageToken(song);
-            final bool unheard =
-                !historyIds.contains(song.id) && song.playCount == 0;
-            final bool mostlyUnheard = !historyIds.contains(song.id);
-
-            if (unheard) {
-              score += 80;
-            } else if (mostlyUnheard) {
-              score += 42;
-            } else {
-              score -= 18;
-            }
-
-            score += artistAffinity[artist] ?? 0;
-            score += (genreAffinity[genre] ?? 0) * 0.9;
-            score += (languageAffinity[language] ?? 0) * 0.8;
-            for (final String vibe in _heroVibeTokens(song)) {
-              score += vibeAffinity[vibe] ?? 0;
-            }
-
-            if ((song.artworkUrl ?? '').trim().isNotEmpty) {
-              score += 6;
-            }
-            final int seconds = song.duration.inSeconds;
-            if (seconds >= 120 && seconds <= 360) {
-              score += 5;
-            } else if (seconds > 0 && seconds < 480) {
-              score += 2;
-            }
-            if (song.isRemote) {
-              score += 2;
-            }
-            if (_isFilteredSuggestion(song)) {
-              score -= 30;
-            }
-
-            return _HeroCandidateScore(song: song, score: score);
+      rankingPool
+          .map((_HeroCandidateInput candidate) {
+            final double score = _heroCandidateScore(
+              candidate,
+              profile: profile,
+              regionalLanguage: regionalLanguage,
+            );
+            return _HeroCandidateScore(song: candidate.song, score: score);
           })
           .toList(growable: false)
         ..sort((_HeroCandidateScore a, _HeroCandidateScore b) {
@@ -912,43 +1270,7 @@ LibrarySong? _pickAdvancedHeroSong({
             b.song.title.toLowerCase(),
           );
         });
-
-  return ranked.firstOrNull?.song ?? fallbackSong;
-}
-
-String _songLanguageToken(LibrarySong song) {
-  final String text =
-      '${song.title} ${song.artist} ${song.album} ${song.genre ?? ''}'.trim();
-  if (RegExp(r'[඀-෿]').hasMatch(text)) {
-    return 'sinhala';
-  }
-  if (RegExp(r'[஀-௿]').hasMatch(text)) {
-    return 'tamil';
-  }
-  if (RegExp(r'[a-zA-Z]').hasMatch(text)) {
-    return 'english';
-  }
-  return 'unknown';
-}
-
-Set<String> _heroVibeTokens(LibrarySong song) {
-  final String text =
-      '${song.title} ${song.artist} ${song.album} ${song.genre ?? ''}'
-          .toLowerCase();
-  final Set<String> tokens = <String>{};
-  const Map<String, List<String>> groups = <String, List<String>>{
-    'chill': <String>['chill', 'calm', 'soft', 'acoustic', 'lofi'],
-    'energy': <String>['dance', 'party', 'energy', 'anthem', 'beat'],
-    'romance': <String>['love', 'romance', 'heart', 'feel', 'melody'],
-    'sad': <String>['sad', 'cry', 'pain', 'broken', 'lonely'],
-    'focus': <String>['focus', 'study', 'piano', 'instrumental'],
-  };
-  groups.forEach((String vibe, List<String> words) {
-    if (words.any(text.contains)) {
-      tokens.add(vibe);
-    }
-  });
-  return tokens;
+  return ranked.firstOrNull?.song;
 }
 
 class _HeroCandidateScore {
@@ -958,21 +1280,21 @@ class _HeroCandidateScore {
   final double score;
 }
 
-class _KineticTopBar extends StatelessWidget {
-  const _KineticTopBar();
+class _SonixTopBar extends StatelessWidget {
+  const _SonixTopBar();
 
   @override
   Widget build(BuildContext context) {
-    return const _HomeStyleHeader(
-      title: 'KINETIC',
-      leading: _HomeStyleProfileBadge(),
+      return const _HomeStyleHeader(
+        title: 'SONIX',
+        leading: _HomeStyleProfileBadge(),
       trailing: _HomeStyleNotificationIcon(),
     );
   }
 }
 
-class _KineticHeroCard extends StatelessWidget {
-  const _KineticHeroCard({
+class _SonixHeroCard extends StatelessWidget {
+  const _SonixHeroCard({
     required this.badge,
     required this.title,
     required this.subtitle,
@@ -1159,8 +1481,8 @@ class _KineticHeroCard extends StatelessWidget {
   }
 }
 
-class _KineticSectionHeader extends StatelessWidget {
-  const _KineticSectionHeader({required this.title, required this.onViewAll});
+class _SonixSectionHeader extends StatelessWidget {
+  const _SonixSectionHeader({required this.title, required this.onViewAll});
 
   final String title;
   final VoidCallback onViewAll;
@@ -1202,8 +1524,8 @@ class _KineticSectionHeader extends StatelessWidget {
   }
 }
 
-class _KineticPopularTrackTile extends StatelessWidget {
-  const _KineticPopularTrackTile({
+class _SonixPopularTrackTile extends StatelessWidget {
+  const _SonixPopularTrackTile({
     required this.index,
     required this.song,
     required this.onTap,
@@ -1283,8 +1605,8 @@ class _KineticPopularTrackTile extends StatelessWidget {
   }
 }
 
-class _KineticJumpBackGrid extends StatelessWidget {
-  const _KineticJumpBackGrid({required this.items, required this.onTapItem});
+class _SonixJumpBackGrid extends StatelessWidget {
+  const _SonixJumpBackGrid({required this.items, required this.onTapItem});
 
   final List<LibrarySong> items;
   final ValueChanged<LibrarySong> onTapItem;
@@ -1293,7 +1615,7 @@ class _KineticJumpBackGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     if (items.isEmpty) {
       return Text(
-        'Play something and it’ll show up here.',
+        'Play something and itÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ll show up here.',
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
           color: Colors.white.withValues(alpha: 0.55),
         ),
@@ -1309,7 +1631,7 @@ class _KineticJumpBackGrid extends StatelessWidget {
       spacing: gap,
       runSpacing: gap,
       children: items.take(4).map((LibrarySong song) {
-        return _KineticJumpBackCard(
+        return _SonixJumpBackCard(
           width: cardWidth,
           title: song.title,
           subtitle: _songArtistLabel(song),
@@ -1322,8 +1644,8 @@ class _KineticJumpBackGrid extends StatelessWidget {
   }
 }
 
-class _KineticJumpBackCard extends StatelessWidget {
-  const _KineticJumpBackCard({
+class _SonixJumpBackCard extends StatelessWidget {
+  const _SonixJumpBackCard({
     required this.width,
     required this.title,
     required this.subtitle,
@@ -1453,19 +1775,19 @@ class _PopularTracksScreen extends StatelessWidget {
     required this.songs,
   });
 
-  final OuterTuneController controller;
+  final SonixController controller;
   final String title;
   final List<LibrarySong> songs;
 
   @override
   Widget build(BuildContext context) {
-    return _KineticSubscreenScaffold(
+    return _SonixSubscreenScaffold(
       title: title,
       child: _ProgressiveListReveal(
         itemCount: songs.length,
         itemBuilder: (BuildContext context, int index) {
           final LibrarySong song = songs[index];
-          return _KineticPopularTrackTile(
+          return _SonixPopularTrackTile(
             index: index + 1,
             song: song,
             onTap: () {
@@ -1485,14 +1807,82 @@ class _PopularTracksScreen extends StatelessWidget {
 class _RecentPlaysScreen extends StatelessWidget {
   const _RecentPlaysScreen({required this.controller});
 
-  final OuterTuneController controller;
+  final SonixController controller;
 
   @override
   Widget build(BuildContext context) {
-    final List<LibrarySong> songs = controller.recentlyPlayedSongs;
+    final SonixController liveController = context.watch<SonixController>();
+    final List<LibrarySong> songs = liveController.recentlyPlayedSongs;
 
-    return _KineticSubscreenScaffold(
+    return _SonixSubscreenScaffold(
       title: 'JUMP BACK IN',
+      actions: <Widget>[
+        TextButton.icon(
+          onPressed: songs.isEmpty
+              ? null
+              : () async {
+                  final bool confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (BuildContext context) {
+                          return AlertDialog(
+                            backgroundColor: _kSurface,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(24),
+                              side: const BorderSide(color: _kSurfaceEdge),
+                            ),
+                            title: Text(
+                              'Clear history?',
+                              style: GoogleFonts.splineSans(
+                                color: _kTextPrimary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            content: Text(
+                              'This clears Jump Back In history and removes its playback traces.',
+                              style: GoogleFonts.splineSans(
+                                color: _kTextSecondary,
+                                height: 1.45,
+                              ),
+                            ),
+                            actions: <Widget>[
+                              TextButton(
+                                onPressed: () => Navigator.of(context).pop(false),
+                                child: const Text('Cancel'),
+                              ),
+                              FilledButton(
+                                onPressed: () => Navigator.of(context).pop(true),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: const Color(0xFFDE6B48),
+                                  foregroundColor: Colors.white,
+                                ),
+                                child: const Text('Clear'),
+                              ),
+                            ],
+                          );
+                        },
+                      ) ??
+                      false;
+                  if (!confirmed || !context.mounted) {
+                    return;
+                  }
+                  await liveController.clearPlaybackHistory();
+                  if (context.mounted) {
+                    _showSonixSnackBar(context, 'Playback history cleared');
+                  }
+                },
+          icon: const Icon(Icons.history_toggle_off_rounded),
+          label: const Text('Clear History'),
+          style: TextButton.styleFrom(
+            foregroundColor: _kAccent,
+            backgroundColor: const Color(0x221C0904),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: const BorderSide(color: _kSurfaceEdge),
+            ),
+          ),
+        ),
+      ],
       child: songs.isEmpty
           ? Builder(
               builder: (BuildContext context) {
@@ -1512,9 +1902,9 @@ class _RecentPlaysScreen extends StatelessWidget {
                   song: song,
                   onTap: () {
                     if (song.isRemote) {
-                      controller.playOnlineSong(song);
+                      liveController.playOnlineSong(song);
                     } else {
-                      controller.playSong(song, label: 'Jump back in');
+                      liveController.playSong(song, label: 'Jump back in');
                     }
                   },
                 );
@@ -1524,8 +1914,8 @@ class _RecentPlaysScreen extends StatelessWidget {
   }
 }
 
-class _KineticSubscreenScaffold extends StatelessWidget {
-  const _KineticSubscreenScaffold({
+class _SonixSubscreenScaffold extends StatelessWidget {
+  const _SonixSubscreenScaffold({
     required this.title,
     required this.child,
     this.actions = const <Widget>[],
@@ -1537,7 +1927,7 @@ class _KineticSubscreenScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final OuterTuneController controller = context.watch<OuterTuneController>();
+    final SonixController controller = context.watch<SonixController>();
     final bool desktop = _isDesktopPlatform();
     final Widget content = ListView(
       padding: EdgeInsets.fromLTRB(
@@ -1550,7 +1940,7 @@ class _KineticSubscreenScaffold extends StatelessWidget {
                 : 0),
       ),
       children: <Widget>[
-        _KineticSubscreenHeader(title: title, actions: actions),
+        _SonixSubscreenHeader(title: title, actions: actions),
         const SizedBox(height: 10),
         child,
       ],
@@ -1559,7 +1949,7 @@ class _KineticSubscreenScaffold extends StatelessWidget {
     return Scaffold(
       backgroundColor: const Color(0xFF120503),
       body: DecoratedBox(
-        decoration: _kineticPageDecoration(),
+        decoration: _sonixPageDecoration(),
         child: SafeArea(
           child: desktop
               ? Padding(
@@ -1613,8 +2003,8 @@ class _KineticSubscreenScaffold extends StatelessWidget {
   }
 }
 
-class _KineticSubscreenHeader extends StatelessWidget {
-  const _KineticSubscreenHeader({
+class _SonixSubscreenHeader extends StatelessWidget {
+  const _SonixSubscreenHeader({
     required this.title,
     this.actions = const <Widget>[],
   });
@@ -1655,7 +2045,7 @@ class _KineticSubscreenHeader extends StatelessWidget {
 class _MayYouLikeScreen extends StatefulWidget {
   const _MayYouLikeScreen({required this.controller});
 
-  final OuterTuneController controller;
+  final SonixController controller;
 
   @override
   State<_MayYouLikeScreen> createState() => _MayYouLikeScreenState();
@@ -1670,10 +2060,10 @@ class _MayYouLikeScreenState extends State<_MayYouLikeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final OuterTuneController controller = widget.controller;
+    final SonixController controller = widget.controller;
     final List<SongRecommendation> items = _allItems;
 
-    return _KineticSubscreenScaffold(
+    return _SonixSubscreenScaffold(
       title: 'MAY YOU LIKE',
       child: Column(
         children: <Widget>[
@@ -1690,7 +2080,7 @@ class _MayYouLikeScreenState extends State<_MayYouLikeScreen> {
               itemBuilder: (BuildContext context, int index) {
                 final SongRecommendation recommendation = items[index];
                 final LibrarySong song = recommendation.song;
-                return _KineticPopularTrackTile(
+                return _SonixPopularTrackTile(
                   index: index + 1,
                   song: song,
                   onTap: () {
@@ -1726,15 +2116,15 @@ class _ProgressiveSkeletonList extends StatelessWidget {
         return Padding(
           key: ValueKey<String>('skeleton-$index'),
           padding: EdgeInsets.zero,
-          child: _KineticPopularTrackTileSkeleton(index: index + 1),
+          child: _SonixPopularTrackTileSkeleton(index: index + 1),
         );
       },
     );
   }
 }
 
-class _KineticListSkeleton extends StatelessWidget {
-  const _KineticListSkeleton({required this.count});
+class _SonixListSkeleton extends StatelessWidget {
+  const _SonixListSkeleton({required this.count});
 
   final int count;
 
@@ -1744,7 +2134,7 @@ class _KineticListSkeleton extends StatelessWidget {
       children: List<Widget>.generate(count, (int index) {
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),
-          child: _KineticPopularTrackTileSkeleton(index: index + 1),
+          child: _SonixPopularTrackTileSkeleton(index: index + 1),
         );
       }),
     );
@@ -1871,8 +2261,8 @@ class _RevealIn extends StatelessWidget {
   }
 }
 
-class _KineticHeroSkeleton extends StatelessWidget {
-  const _KineticHeroSkeleton();
+class _SonixHeroSkeleton extends StatelessWidget {
+  const _SonixHeroSkeleton();
 
   @override
   Widget build(BuildContext context) {

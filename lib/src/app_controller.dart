@@ -27,8 +27,8 @@ import 'windows_media_controls_bridge.dart';
 
 enum _AppNetworkUsageBucket { search, load, artwork, metadata }
 
-class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
-  OuterTuneController() : _player = Player(), _yt = YoutubeExplode() {
+class SonixController extends ChangeNotifier with WidgetsBindingObserver {
+  SonixController() : _player = Player(), _yt = YoutubeExplode() {
     WidgetsBinding.instance.addObserver(this);
   }
   static const int _smartQueueBatchSize = 7;
@@ -290,17 +290,22 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
     final String? cachedSongId = _startupMiniPlayerSongId;
     if (cachedSongId != null) {
       final LibrarySong? cachedSong = songById(cachedSongId);
-      if (cachedSong != null) {
+      if (cachedSong != null && cachedSong.isRemote) {
         return cachedSong;
       }
     }
 
-    if (_songs.isEmpty) {
+    final List<LibrarySong> remoteSongs = <LibrarySong>[
+      ..._songs.where((LibrarySong song) => song.isRemote),
+      ..._transientSongsById.values.where((LibrarySong song) => song.isRemote),
+    ];
+    if (remoteSongs.isEmpty) {
       _startupMiniPlayerSongId = null;
       return null;
     }
 
-    final LibrarySong randomSong = _songs[math.Random().nextInt(_songs.length)];
+    final LibrarySong randomSong =
+        remoteSongs[math.Random().nextInt(remoteSongs.length)];
     _startupMiniPlayerSongId = randomSong.id;
     return randomSong;
   }
@@ -814,6 +819,14 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
             _shouldUseSongIdForHistorySignals(entry.songId) &&
             (entry.listenedToEnd || entry.completionRatio >= 0.88),
       )
+      .toList(growable: false);
+
+  List<LibrarySong> get _decisionLikedSongs => likedSongs
+      .where((LibrarySong song) => song.isRemote)
+      .toList(growable: false);
+
+  List<LibrarySong> get _decisionDislikedSongs => dislikedSongs
+      .where((LibrarySong song) => song.isRemote)
       .toList(growable: false);
 
   bool _shouldUseSongForHistorySignals(LibrarySong song) => song.isRemote;
@@ -2295,7 +2308,7 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
   }) {
     final Set<String> seenKeys = <String>{};
     final Set<String> seenIds = <String>{};
-    final Set<String> dislikedKeys = dislikedSongs
+    final Set<String> dislikedKeys = _decisionDislikedSongs
         .map(_songIdentityKey)
         .toSet();
     final List<LibrarySong> result = <LibrarySong>[];
@@ -2508,7 +2521,11 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
 
-    final LibrarySong? anchor = seed ?? currentSong;
+    final LibrarySong? anchor = (seed != null && seed.isRemote)
+        ? seed
+        : (currentSong?.isRemote ?? false)
+        ? currentSong
+        : null;
     if (anchor == null) {
       return;
     }
@@ -2543,7 +2560,8 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
       if (_isDisposing || _isDisposed) {
         return;
       }
-      final LibrarySong? fallbackAnchor = currentSong;
+      final LibrarySong? fallbackAnchor =
+          (currentSong?.isRemote ?? false) ? currentSong : null;
       if (predictions.isEmpty &&
           fallbackAnchor != null &&
           fallbackAnchor.id != anchor.id) {
@@ -2567,7 +2585,7 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
         return;
       }
 
-      final Set<String> dislikedKeys = dislikedSongs
+      final Set<String> dislikedKeys = _decisionDislikedSongs
           .map(_songIdentityKey)
           .toSet();
       final Set<String> queuedIds = <String>{..._queueSongIds};
@@ -2663,7 +2681,9 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   LibrarySong? _primaryRecommendationSeed() {
-    return currentSong ??
+    return (currentSong?.isRemote ?? false)
+        ? currentSong
+        :
         _validHistorySongs().firstOrNull ??
         _rankedPreferenceSongs().firstOrNull;
   }
@@ -2793,7 +2813,8 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
     final List<LibrarySong> fullListenSongs = _validHistorySongs();
     final _TasteProfile profile = _buildTasteProfile();
     final List<LibrarySong> sectionSongs = <LibrarySong>[
-      for (final HomeFeedSection section in sections) ...section.songs.take(12),
+      for (final HomeFeedSection section in sections)
+        ...section.songs.where((LibrarySong song) => song.isRemote).take(12),
     ];
     final Map<String, int> sectionHits = <String, int>{};
     final Map<String, HomeFeedSection> primarySectionBySong =
@@ -2807,7 +2828,7 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
         .map(_songIdentityKey)
         .toSet();
     final Set<String> skippedSongIds = _recentSkippedSongIds();
-    final Set<String> dislikedArtistKeys = dislikedSongs
+    final Set<String> dislikedArtistKeys = _decisionDislikedSongs
         .map((LibrarySong song) => _normalizeToken(song.artist))
         .where((String key) => key.isNotEmpty)
         .toSet();
@@ -2832,7 +2853,7 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
     final Set<String> fullListenIds = validPlaybackHistory
         .map((PlaybackEntry entry) => entry.songId)
         .toSet();
-    final Set<String> likedArtistKeys = likedSongs
+    final Set<String> likedArtistKeys = _decisionLikedSongs
         .map((LibrarySong song) => _normalizeToken(song.artist))
         .where((String key) => key.isNotEmpty)
         .toSet();
@@ -2843,10 +2864,11 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
 
     final List<LibrarySong> seedSongs = _dedupeSongs(
       <LibrarySong>[
-        if (currentSong case final LibrarySong current) current,
-        if (seedSong case final LibrarySong seed) seed,
+        if (currentSong case final LibrarySong current when current.isRemote)
+          current,
+        if (seedSong case final LibrarySong seed when seed.isRemote) seed,
         ...fullListenSongs.take(4),
-        ...likedSongs.take(4),
+        ..._decisionLikedSongs.take(4),
       ],
       excludedIds: <String>{},
       limit: 10,
@@ -2950,7 +2972,9 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
   Set<String> _recentSkippedSongIds() {
     final Set<String> result = <String>{};
     for (final PlaybackEntry entry in _history.take(80)) {
-      if (!entry.listenedToEnd && entry.completionRatio < 0.45) {
+      if (_shouldUseSongIdForHistorySignals(entry.songId) &&
+          !entry.listenedToEnd &&
+          entry.completionRatio < 0.45) {
         result.add(entry.songId);
       }
     }
@@ -3398,7 +3422,7 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   double _familiarityNeed() {
-    final List<PlaybackEntry> recent = _history
+    final List<PlaybackEntry> recent = validPlaybackHistory
         .take(30)
         .toList(growable: false);
     if (recent.isEmpty) {
@@ -3420,7 +3444,7 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
     final Set<String> result = <String>{};
     for (int i = start; i < end; i += 1) {
       final LibrarySong? song = songById(_queueSongIds[i]);
-      if (song == null) {
+      if (song == null || !song.isRemote) {
         continue;
       }
       result.add(_normalizeToken(song.artist));
@@ -3434,7 +3458,7 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
     final Set<String> result = <String>{};
     for (int i = start; i < end; i += 1) {
       final LibrarySong? song = songById(_queueSongIds[i]);
-      if (song == null) {
+      if (song == null || !song.isRemote) {
         continue;
       }
       result.add(_songIdentityKey(song));
@@ -3590,7 +3614,9 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
       ..._transientSongsById,
     };
     final List<LibrarySong> ranked = allSongs.values
-        .where((LibrarySong song) => _songPreferenceWeight(song) > 0)
+        .where(
+          (LibrarySong song) => song.isRemote && _songPreferenceWeight(song) > 0,
+        )
         .toList();
     ranked.sort((LibrarySong a, LibrarySong b) {
       final double leftScore =
@@ -4218,6 +4244,33 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
     _lastTrackedSongId = null;
     _smartQueueSongIds.clear();
     await _player.stop();
+    await _saveSnapshot();
+    notifyListeners();
+  }
+
+  Future<void> clearPlaybackHistory() async {
+    _history = <PlaybackEntry>[];
+    _songs = _songs
+        .map(
+          (LibrarySong song) => song.copyWith(
+            playCount: 0,
+            clearLastPlayedAt: true,
+          ),
+        )
+        .toList(growable: false);
+    _transientSongsById.updateAll(
+      (_, LibrarySong song) => song.copyWith(
+        playCount: 0,
+        clearLastPlayedAt: true,
+      ),
+    );
+    _activePlaybackSongId = null;
+    _activePlaybackCompletionRatio = 0;
+    _lastTrackedSongId = null;
+    _startupMiniPlayerSongId = null;
+    _homeFeed = <HomeFeedSection>[];
+    _personalizedHomeRecommendations = <SongRecommendation>[];
+    _scheduleSnapshotSave();
     await _saveSnapshot();
     notifyListeners();
   }
@@ -6340,7 +6393,10 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
     final List<String> restoredQueueSongIds =
         (json['queueSongIds'] as List<dynamic>? ?? <dynamic>[])
             .map((dynamic item) => item as String)
-            .where((String songId) => songById(songId) != null)
+            .where((String songId) {
+              final LibrarySong? song = songById(songId);
+              return song != null && song.isRemote;
+            })
             .toList(growable: false);
     _queueSongIds = restoredQueueSongIds;
     final int restoredQueueIndex = (json['queueIndex'] as num?)?.toInt() ?? 0;
@@ -6409,7 +6465,7 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<File> _snapshotFile() async {
     final Directory root = await getApplicationSupportDirectory();
-    return File(p.join(root.path, 'outer_tune_flutter_state.json'));
+    return File(p.join(root.path, 'sonix_flutter_state.json'));
   }
 
   @override

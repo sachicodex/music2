@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:music/src/models.dart';
-import 'package:music/src/streaming.dart';
+import 'package:sonix/src/models.dart';
+import 'package:sonix/src/streaming.dart';
 
 void main() {
   group('resolvePreferredPlaybackStream', () {

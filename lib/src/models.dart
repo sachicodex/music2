@@ -271,6 +271,7 @@ class LibrarySong {
     bool? isFavorite,
     int? playCount,
     DateTime? lastPlayedAt,
+    bool clearLastPlayedAt = false,
     bool? isRemote,
     String? artworkUrl,
     String? externalUrl,
@@ -295,7 +296,9 @@ class LibrarySong {
       discNumber: discNumber ?? this.discNumber,
       isFavorite: isFavorite ?? this.isFavorite,
       playCount: playCount ?? this.playCount,
-      lastPlayedAt: lastPlayedAt ?? this.lastPlayedAt,
+      lastPlayedAt: clearLastPlayedAt
+          ? null
+          : lastPlayedAt ?? this.lastPlayedAt,
       isRemote: isRemote ?? this.isRemote,
       artworkUrl: artworkUrl ?? this.artworkUrl,
       externalUrl: externalUrl ?? this.externalUrl,

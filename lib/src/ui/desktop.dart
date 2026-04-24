@@ -25,7 +25,7 @@ class _DesktopShellScaffold extends StatelessWidget {
     required this.onOpenPlayer,
   });
 
-  final OuterTuneController controller;
+  final SonixController controller;
   final AppDestination destination;
   final List<AppDestination> destinations;
   final int pageIndex;
@@ -157,7 +157,7 @@ class _DesktopSidebar extends StatelessWidget {
     required this.onDestinationChanged,
   });
 
-  final OuterTuneController controller;
+  final SonixController controller;
   final AppDestination destination;
   final List<AppDestination> destinations;
   final bool compact;
@@ -204,7 +204,7 @@ class _DesktopSidebar extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
                       Text(
-                        'OUTERTUNE',
+                        'SONIX',
                         style: GoogleFonts.spaceGrotesk(
                           color: _kTextPrimary,
                           fontSize: 20,
@@ -329,7 +329,7 @@ class _DesktopSidebarButtonState extends State<_DesktopSidebarButton> {
 class _DesktopSidebarStatus extends StatelessWidget {
   const _DesktopSidebarStatus({required this.controller});
 
-  final OuterTuneController controller;
+  final SonixController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -467,7 +467,7 @@ class _DesktopNowPlayingRail extends StatelessWidget {
     required this.onOpenPlayer,
   });
 
-  final OuterTuneController controller;
+  final SonixController controller;
   final VoidCallback onOpenPlayer;
 
   @override
@@ -691,7 +691,7 @@ class _DesktopHomeScreen extends StatelessWidget {
     required this.onOpenSearch,
   });
 
-  final OuterTuneController controller;
+  final SonixController controller;
   final VoidCallback onOpenSearch;
 
   @override
@@ -754,7 +754,7 @@ class _DesktopHomeScreen extends StatelessWidget {
                   else
                     ...localSongs.asMap().entries.map(
                       (MapEntry<int, LibrarySong> entry) =>
-                          _KineticPopularTrackTile(
+                          _SonixPopularTrackTile(
                             index: entry.key + 1,
                             song: entry.value,
                             onTap: () => controller.playSongs(
@@ -802,7 +802,7 @@ class _DesktopHomeScreen extends StatelessWidget {
         children: <Widget>[
           _DesktopPanel(
             child: featured != null
-                ? _KineticHeroCard(
+                ? _SonixHeroCard(
                     badge: featured.badge,
                     title: featured.title,
                     subtitle: featured.subtitle,
@@ -819,7 +819,7 @@ class _DesktopHomeScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                _KineticSectionHeader(
+                _SonixSectionHeader(
                   title: 'MAY YOU LIKE',
                   onViewAll: () {
                     if (mayYouLikeFull.isEmpty) {
@@ -836,7 +836,7 @@ class _DesktopHomeScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 if (controller.homeLoading && !hasRevealableContent)
-                  const _KineticListSkeleton(count: 4)
+                  const _SonixListSkeleton(count: 4)
                 else if (mayYouLike.isEmpty)
                   const _PersonalizationHintCard(
                     message:
@@ -848,7 +848,7 @@ class _DesktopHomeScreen extends StatelessWidget {
                       int index,
                     ) {
                       final LibrarySong song = mayYouLike[index];
-                      return _KineticPopularTrackTile(
+                      return _SonixPopularTrackTile(
                         index: index + 1,
                         song: song,
                         onTap: () {
@@ -915,7 +915,7 @@ class _DesktopHomeScreen extends StatelessWidget {
                             spacing: 20,
                             runSpacing: 20,
                             children: jumpBackIn.map((LibrarySong song) {
-                              return _KineticJumpBackCard(
+                              return _SonixJumpBackCard(
                                 width: width.clamp(220.0, 420.0),
                                 title: song.title,
                                 subtitle: _songArtistLabel(song),
@@ -958,7 +958,7 @@ class _DesktopSearchScreen extends StatelessWidget {
     required this.onRemoveSearch,
   });
 
-  final OuterTuneController controller;
+  final SonixController controller;
   final TextEditingController searchController;
   final ScrollController scrollController;
   final List<String> recentSearches;
@@ -1243,7 +1243,7 @@ class _DesktopSearchScreen extends StatelessWidget {
 class _DesktopLibraryScreen extends StatelessWidget {
   const _DesktopLibraryScreen({required this.controller});
 
-  final OuterTuneController controller;
+  final SonixController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -1302,12 +1302,11 @@ class _DesktopLibraryScreen extends StatelessWidget {
                   onTap: () {
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                        builder: (BuildContext context) =>
-                            _KineticPlaylistScreen(
-                              controller: controller,
-                              title: 'Liked Songs',
-                              songs: likedSongs,
-                            ),
+                        builder: (BuildContext context) => _SonixPlaylistScreen(
+                          controller: controller,
+                          title: 'Liked Songs',
+                          songs: likedSongs,
+                        ),
                       ),
                     );
                   },
@@ -1326,13 +1325,12 @@ class _DesktopLibraryScreen extends StatelessWidget {
                   onTap: () {
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                        builder: (BuildContext context) =>
-                            _KineticPlaylistScreen(
-                              controller: controller,
-                              title: 'Offline',
-                              songs: controller.songs,
-                              localPlaybackOnly: true,
-                            ),
+                        builder: (BuildContext context) => _SonixPlaylistScreen(
+                          controller: controller,
+                          title: 'Offline',
+                          songs: controller.songs,
+                          localPlaybackOnly: true,
+                        ),
                       ),
                     );
                   },
@@ -1446,7 +1444,7 @@ class _DesktopPlaylistBox extends StatelessWidget {
     this.subtitle,
   });
 
-  final OuterTuneController controller;
+  final SonixController controller;
   final String title;
   final String seed;
   final List<LibrarySong> songs;
@@ -1490,7 +1488,7 @@ class _DesktopPlaylistBox extends StatelessWidget {
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute<void>(
-            builder: (BuildContext context) => _KineticPlaylistScreen(
+            builder: (BuildContext context) => _SonixPlaylistScreen(
               controller: controller,
               title: title,
               songs: songs,
@@ -1618,7 +1616,7 @@ class _DesktopSettingsScreen extends StatelessWidget {
     required this.onPickRegion,
   });
 
-  final OuterTuneController controller;
+  final SonixController controller;
   final Future<void> Function() onPickNextChanceSongCount;
   final Future<void> Function() onPickRegion;
 

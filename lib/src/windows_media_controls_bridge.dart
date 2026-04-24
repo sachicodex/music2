@@ -8,7 +8,7 @@ import 'models.dart';
 
 class WindowsMediaControlsBridge {
   static const MethodChannel _channel = MethodChannel(
-    'com.example.music/windows_media_controls',
+    'com.sachicodex.sonix/windows_media_controls',
   );
 
   static const String _actionPlayPause = 'play_pause';
