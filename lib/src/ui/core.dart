@@ -181,6 +181,7 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
             controller: _pageController,
             onPageChanged: (int index) {
               final AppDestination destination = _mainDestinations[index];
+              _clearSearchIfNeeded(destination);
               if (_destination != destination && mounted) {
                 setState(() => _destination = destination);
               }
@@ -241,6 +242,7 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
     if (_destination == destination) {
       return;
     }
+    _clearSearchIfNeeded(destination);
     final int pageIndex = _mainDestinations.indexOf(destination);
     if (pageIndex < 0) {
       return;
@@ -254,6 +256,13 @@ class _OuterTuneShellState extends State<OuterTuneShell> {
           curve: Curves.easeOutCubic,
         ),
       );
+    }
+  }
+
+  void _clearSearchIfNeeded(AppDestination nextDestination) {
+    if (_destination == AppDestination.search &&
+        nextDestination != AppDestination.search) {
+      context.read<OuterTuneController>().clearSearchState();
     }
   }
 

@@ -370,6 +370,7 @@ class _SearchScreenState extends State<_SearchScreen> {
       );
     }
     _recentSearches.addAll(widget.controller.recentSearchTerms);
+    widget.controller.addListener(_syncSearchStateFromController);
     _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _requestedTrending) {
@@ -388,10 +389,30 @@ class _SearchScreenState extends State<_SearchScreen> {
   @override
   void dispose() {
     _searchDebounce?.cancel();
+    widget.controller.removeListener(_syncSearchStateFromController);
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _syncSearchStateFromController() {
+    final String draft = widget.controller.searchDraft;
+    if (_searchController.text != draft) {
+      _searchDebounce?.cancel();
+      _searchController.value = TextEditingValue(
+        text: draft,
+        selection: TextSelection.collapsed(offset: draft.length),
+      );
+    }
+    final List<String> nextRecentSearches = widget.controller.recentSearchTerms;
+    if (!listEquals(_recentSearches, nextRecentSearches) && mounted) {
+      setState(() {
+        _recentSearches
+          ..clear()
+          ..addAll(nextRecentSearches);
+      });
+    }
   }
 
   void _onScroll() {

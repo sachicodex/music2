@@ -771,6 +771,22 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
     _searchDraft = value;
   }
 
+  void clearSearchState({bool clearRecentSearches = false}) {
+    _onlineSearchRequestId += 1;
+    _searchDraft = '';
+    _onlineResults = <LibrarySong>[];
+    _onlineError = null;
+    _onlineLoading = false;
+    _onlineQuery = '';
+    _onlineResultLimit = 0;
+    _onlineHasMore = false;
+    if (clearRecentSearches) {
+      _recentSearchTerms = <String>[];
+    }
+    _scheduleSnapshotSave();
+    notifyListeners();
+  }
+
   void rememberRecentSearch(String value) {
     final String trimmed = value.trim();
     if (trimmed.isEmpty) {
@@ -6399,6 +6415,7 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.detached) {
+      clearSearchState();
       _finalizeActivePlaybackSession();
       unawaited(_saveSnapshot());
     }
