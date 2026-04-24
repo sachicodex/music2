@@ -628,6 +628,17 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     _offlinePlaybackCachePaths[result.songId] = result.cachedFilePath;
+    _preparedMediaUrlsBySongId[result.songId] = result.cachedFilePath;
+    _preparedMediaHeadersBySongId[result.songId] = null;
+    final LibrarySong? song = songById(result.songId);
+    if (song != null) {
+      _playbackStreamInfoBySongId[result.songId] =
+          buildCachedPlaybackStreamInfo(
+            song: song,
+            cachedPath: result.cachedFilePath,
+            previousInfo: _playbackStreamInfoBySongId[result.songId],
+          );
+    }
     unawaited(_saveSnapshot());
     notifyListeners();
   }
@@ -4673,7 +4684,11 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     _clearOfflineQueueWait(notify: false);
     _offlineDetachedQueueMode = false;
     _pendingSelectionSong = songs[safeIndex];
-    _beginPlaybackActivation(songs[safeIndex], resetMetrics: true, notify: false);
+    _beginPlaybackActivation(
+      songs[safeIndex],
+      resetMetrics: true,
+      notify: false,
+    );
     notifyListeners();
     try {
       await _player.stop();
@@ -4887,23 +4902,70 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   String _resolvedMediaUrlForSong(LibrarySong song) {
-    final String? prepared = _preparedMediaUrlsBySongId[song.id];
-    if (prepared != null && prepared.isNotEmpty) {
-      return prepared;
-    }
-
     final String? cachedPath = _offlinePlaybackCachePathForSong(song.id);
     if (cachedPath != null) {
       return cachedPath;
+    }
+
+    final String? prepared = _preparedMediaUrlsBySongId[song.id];
+    if (prepared != null && prepared.isNotEmpty) {
+      return prepared;
     }
     return song.path;
   }
 
   Map<String, String>? _resolvedMediaHeadersForSong(LibrarySong song) {
+    if (_offlinePlaybackCachePathForSong(song.id) != null) {
+      return null;
+    }
     if (_preparedMediaHeadersBySongId.containsKey(song.id)) {
       return _preparedMediaHeadersBySongId[song.id];
     }
     return song.isRemote ? _upstreamHeadersForUrl(song, song.path) : null;
+  }
+
+  Media? _playerQueueMediaAt(int index) {
+    final List<Media> medias = _player.state.playlist.medias;
+    if (index < 0 || index >= medias.length) {
+      return null;
+    }
+    return medias[index];
+  }
+
+  bool _playerQueueEntryNeedsRefresh(LibrarySong song, int index) {
+    final Media? media = _playerQueueMediaAt(index);
+    if (media == null) {
+      return true;
+    }
+    final String expectedUrl = Media.normalizeURI(
+      _resolvedMediaUrlForSong(song),
+    );
+    if (media.uri != expectedUrl) {
+      _debugPlayback(
+        'queue.refresh stale media '
+        'index=$index song=${_debugSongLabel(song)} '
+        'expected="$expectedUrl" actual="${media.uri}"',
+      );
+      return true;
+    }
+    final Map<String, String>? expectedHeaders = _resolvedMediaHeadersForSong(
+      song,
+    );
+    if (!mapEquals(media.httpHeaders, expectedHeaders)) {
+      _debugPlayback(
+        'queue.refresh stale headers '
+        'index=$index song=${_debugSongLabel(song)}',
+      );
+      return true;
+    }
+    return false;
+  }
+
+  bool _queueSongNeedsQueueRefresh(LibrarySong song, int index) {
+    if (_queueSongNeedsPreparedMediaSource(song)) {
+      return true;
+    }
+    return _playerQueueEntryNeedsRefresh(song, index);
   }
 
   Future<_PreparedPlaybackSource> _resolvePreparedPlaybackSource(
@@ -4995,8 +5057,7 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
   Future<_ResolvedRemotePlayback> _resolvePlayableRemoteStream(
     LibrarySong song, {
     bool preferPlaybackCompatibility = false,
-  }
-  ) async {
+  }) async {
     if (!_looksLikeYouTube(song.path)) {
       return _ResolvedRemotePlayback(
         resolvedUrl: song.path,
@@ -5069,7 +5130,9 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
   void _primePlaybackFallbackRecovery(LibrarySong song) {
     final int queueSongIndex = _queueSongIds.indexOf(song.id);
     _playbackFallbackRecoverySongId = song.id;
-    _playbackFallbackRecoveryIndex = queueSongIndex >= 0 ? queueSongIndex : null;
+    _playbackFallbackRecoveryIndex = queueSongIndex >= 0
+        ? queueSongIndex
+        : null;
     _transitioningSongId = song.id;
     if (queueSongIndex >= 0) {
       _transitioningQueueIndex = queueSongIndex;
@@ -5275,7 +5338,8 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     }
     final bool shouldBootstrapPlayback =
         _shouldBootstrapPlaybackForQueueNavigation();
-    final bool shouldShowPlaybackLoading = _isPlaying || shouldBootstrapPlayback;
+    final bool shouldShowPlaybackLoading =
+        _isPlaying || shouldBootstrapPlayback;
     final LibrarySong? targetSong = songById(_queueSongIds[index]);
     if (shouldShowPlaybackLoading) {
       _beginPlaybackActivation(targetSong, resetMetrics: true);
@@ -5299,7 +5363,7 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       await _reopenQueueAtIndex(index, forcePlay: shouldBootstrapPlayback);
       return;
     }
-    if (targetSong != null && _queueSongNeedsPreparedMediaSource(targetSong)) {
+    if (targetSong != null && _queueSongNeedsQueueRefresh(targetSong, index)) {
       await _reopenQueueAtIndex(index, forcePlay: shouldBootstrapPlayback);
       return;
     }
@@ -5421,7 +5485,8 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     if (!_isPlaying) {
       _beginPlaybackActivation(activeSong);
     }
-    if (activeSong != null && _queueSongNeedsPreparedMediaSource(activeSong)) {
+    if (activeSong != null &&
+        _queueSongNeedsQueueRefresh(activeSong, _queueIndex)) {
       await _reopenQueueAtIndex(_queueIndex);
       if (!_isPlaying) {
         await _player.play();
@@ -5449,7 +5514,8 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     }
     final LibrarySong? activeSong = currentSong;
     _beginPlaybackActivation(activeSong);
-    if (activeSong != null && _queueSongNeedsPreparedMediaSource(activeSong)) {
+    if (activeSong != null &&
+        _queueSongNeedsQueueRefresh(activeSong, _queueIndex)) {
       await _reopenQueueAtIndex(_queueIndex);
       await _player.play();
       return;
@@ -5475,7 +5541,8 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     }
     final bool shouldBootstrapPlayback =
         _shouldBootstrapPlaybackForQueueNavigation();
-    final bool shouldShowPlaybackLoading = _isPlaying || shouldBootstrapPlayback;
+    final bool shouldShowPlaybackLoading =
+        _isPlaying || shouldBootstrapPlayback;
     final LibrarySong? targetSong = songById(_queueSongIds[targetIndex]);
     if (shouldShowPlaybackLoading) {
       _beginPlaybackActivation(targetSong, resetMetrics: true);
@@ -5505,7 +5572,8 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       );
       return;
     }
-    if (targetSong != null && _queueSongNeedsPreparedMediaSource(targetSong)) {
+    if (targetSong != null &&
+        _queueSongNeedsQueueRefresh(targetSong, targetIndex)) {
       await _reopenQueueAtIndex(
         targetIndex,
         forcePlay: shouldBootstrapPlayback,
@@ -5531,7 +5599,8 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     }
     final bool shouldBootstrapPlayback =
         _shouldBootstrapPlaybackForQueueNavigation();
-    final bool shouldShowPlaybackLoading = _isPlaying || shouldBootstrapPlayback;
+    final bool shouldShowPlaybackLoading =
+        _isPlaying || shouldBootstrapPlayback;
     final LibrarySong? targetSong = songById(_queueSongIds[targetIndex]);
     if (shouldShowPlaybackLoading) {
       _beginPlaybackActivation(targetSong, resetMetrics: true);
@@ -5561,7 +5630,8 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       );
       return;
     }
-    if (targetSong != null && _queueSongNeedsPreparedMediaSource(targetSong)) {
+    if (targetSong != null &&
+        _queueSongNeedsQueueRefresh(targetSong, targetIndex)) {
       await _reopenQueueAtIndex(
         targetIndex,
         forcePlay: shouldBootstrapPlayback,
