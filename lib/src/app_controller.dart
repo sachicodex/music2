@@ -25,8 +25,10 @@ import 'playback_proxy.dart';
 import 'streaming.dart';
 import 'windows_media_controls_bridge.dart';
 
-class OuterTuneController extends ChangeNotifier {
-  OuterTuneController() : _player = Player(), _yt = YoutubeExplode();
+class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
+  OuterTuneController() : _player = Player(), _yt = YoutubeExplode() {
+    WidgetsBinding.instance.addObserver(this);
+  }
   static const int _smartQueueBatchSize = 7;
 
   static const List<String> supportedExtensions = <String>[
@@ -155,6 +157,8 @@ class OuterTuneController extends ChangeNotifier {
   String? _transitioningSongId;
   int? _transitioningQueueIndex;
   bool _hasPublishedPlaybackNotification = false;
+  String _searchDraft = '';
+  List<String> _recentSearchTerms = <String>[];
 
   String? _lastTrackedSongId;
 
@@ -222,6 +226,9 @@ class OuterTuneController extends ChangeNotifier {
   List<UserPlaylist> get playlists =>
       List<UserPlaylist>.unmodifiable(_playlists);
   List<PlaybackEntry> get history => List<PlaybackEntry>.unmodifiable(_history);
+  String get searchDraft => _searchDraft;
+  List<String> get recentSearchTerms =>
+      List<String>.unmodifiable(_recentSearchTerms);
   String get queueLabel => _queueLabel;
   int get queueIndex => _queueIndex;
   bool get hasHomeRecommendations =>
@@ -264,11 +271,10 @@ class OuterTuneController extends ChangeNotifier {
     return _pendingSelectionSong ?? currentSong ?? _startupMiniPlayerSong;
   }
 
+  LibrarySong? get startupSuggestionSong => _startupMiniPlayerSong;
+
   LibrarySong? get _startupMiniPlayerSong {
-    final LibrarySong? lastPlayedSong = _history
-        .map((PlaybackEntry entry) => songById(entry.songId))
-        .whereType<LibrarySong>()
-        .firstOrNull;
+    final LibrarySong? lastPlayedSong = recentlyPlayedSongs.firstOrNull;
     if (lastPlayedSong != null) {
       _startupMiniPlayerSongId = lastPlayedSong.id;
       return lastPlayedSong;
@@ -553,7 +559,9 @@ class OuterTuneController extends ChangeNotifier {
   }
 
   List<LibrarySong> get topPlayedSongs {
-    final List<LibrarySong> result = List<LibrarySong>.from(_songs);
+    final List<LibrarySong> result = _songs
+        .where(_shouldUseSongForHistorySignals)
+        .toList(growable: false);
     result.sort((LibrarySong a, LibrarySong b) {
       final int countCompare = b.playCount.compareTo(a.playCount);
       if (countCompare != 0) {
@@ -570,20 +578,85 @@ class OuterTuneController extends ChangeNotifier {
     for (final PlaybackEntry entry in _history) {
       if (seen.add(entry.songId)) {
         final LibrarySong? song = songById(entry.songId);
-        if (song != null) {
+        if (song != null && _shouldUseSongForHistorySignals(song)) {
           result.add(song);
         }
+      }
+    }
+    final List<LibrarySong> fallbackSongs =
+        <LibrarySong>[..._songs, ..._transientSongsById.values]
+            .where(
+              (LibrarySong song) =>
+                  _shouldUseSongForHistorySignals(song) &&
+                  (song.playCount > 0 || song.lastPlayedAt != null),
+            )
+            .toList(growable: false)
+          ..sort((LibrarySong a, LibrarySong b) {
+            final DateTime left = a.lastPlayedAt ?? a.addedAt;
+            final DateTime right = b.lastPlayedAt ?? b.addedAt;
+            final int recentCompare = right.compareTo(left);
+            if (recentCompare != 0) {
+              return recentCompare;
+            }
+            return b.playCount.compareTo(a.playCount);
+          });
+    for (final LibrarySong song in fallbackSongs) {
+      if (seen.add(song.id)) {
+        result.add(song);
       }
     }
     return result;
   }
 
+  void cacheSearchDraft(String value) {
+    _searchDraft = value;
+  }
+
+  void rememberRecentSearch(String value) {
+    final String trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      return;
+    }
+    _recentSearchTerms = <String>[
+      trimmed,
+      ..._recentSearchTerms.where(
+        (String item) => item.toLowerCase() != trimmed.toLowerCase(),
+      ),
+    ].take(8).toList(growable: false);
+    _scheduleSnapshotSave();
+  }
+
+  void removeRecentSearch(String value) {
+    _recentSearchTerms = _recentSearchTerms
+        .where((String item) => item != value)
+        .toList(growable: false);
+    _scheduleSnapshotSave();
+  }
+
   List<PlaybackEntry> get validPlaybackHistory => _history
       .where(
         (PlaybackEntry entry) =>
-            entry.listenedToEnd || entry.completionRatio >= 0.88,
+            _shouldUseSongIdForHistorySignals(entry.songId) &&
+            (entry.listenedToEnd || entry.completionRatio >= 0.88),
       )
       .toList(growable: false);
+
+  bool _shouldUseSongForHistorySignals(LibrarySong song) => song.isRemote;
+
+  bool _shouldUseSongIdForHistorySignals(String songId) {
+    final LibrarySong? song = songById(songId);
+    return song != null && _shouldUseSongForHistorySignals(song);
+  }
+
+  void _prunePlaybackHistory() {
+    _history = _history
+        .where(
+          (PlaybackEntry entry) =>
+              _shouldUseSongIdForHistorySignals(entry.songId),
+        )
+        .take(300)
+        .toList(growable: false);
+  }
 
   List<AlbumCollection> get albums {
     final Map<String, List<LibrarySong>> grouped =
@@ -3977,6 +4050,7 @@ class OuterTuneController extends ChangeNotifier {
                 scanned.any((LibrarySong song) => song.id == entry.songId),
           )
           .toList();
+      _prunePlaybackHistory();
 
       _statusMessage = scanned.isEmpty
           ? 'No supported audio files found on this device.'
@@ -5830,16 +5904,19 @@ class OuterTuneController extends ChangeNotifier {
   void _trackPlayback(String songId) {
     final DateTime now = DateTime.now();
     _finalizeActivePlaybackSession(nextSongId: songId);
+    final LibrarySong? currentSong = songById(songId);
+    final bool shouldTrack =
+        currentSong != null && _shouldUseSongForHistorySignals(currentSong);
     final int index = _songs.indexWhere(
       (LibrarySong song) => song.id == songId,
     );
-    if (index >= 0) {
+    if (shouldTrack && index >= 0) {
       final LibrarySong song = _songs[index];
       _songs[index] = song.copyWith(
         playCount: song.playCount + 1,
         lastPlayedAt: now,
       );
-    } else {
+    } else if (shouldTrack) {
       final LibrarySong? transient = _transientSongsById[songId];
       if (transient != null) {
         _transientSongsById[songId] = transient.copyWith(
@@ -5852,7 +5929,7 @@ class OuterTuneController extends ChangeNotifier {
     _activePlaybackSongId = songId;
     _activePlaybackCompletionRatio = 0;
     _lastTrackedSongId = songId;
-    unawaited(_saveSnapshot());
+    _scheduleSnapshotSave();
   }
 
   void _updateActivePlaybackProgress() {
@@ -5901,6 +5978,11 @@ class OuterTuneController extends ChangeNotifier {
     if (songId == null || songId == nextSongId) {
       return;
     }
+    if (!_shouldUseSongIdForHistorySignals(songId)) {
+      _activePlaybackSongId = null;
+      _activePlaybackCompletionRatio = 0;
+      return;
+    }
     final DateTime now = DateTime.now();
     final double ratio = _activePlaybackCompletionRatio.clamp(0, 1);
     final bool listenedToEnd = ratio >= 0.88;
@@ -5915,6 +5997,7 @@ class OuterTuneController extends ChangeNotifier {
     ].take(300).toList();
     _activePlaybackSongId = null;
     _activePlaybackCompletionRatio = 0;
+    _scheduleSnapshotSave();
   }
 
   Future<void> _loadSnapshot() async {
@@ -5960,6 +6043,14 @@ class OuterTuneController extends ChangeNotifier {
               PlaybackEntry.fromJson(item as Map<String, dynamic>),
         )
         .toList();
+    _prunePlaybackHistory();
+    _searchDraft = json['searchDraft'] as String? ?? '';
+    _recentSearchTerms =
+        (json['recentSearchTerms'] as List<dynamic>? ?? <dynamic>[])
+            .map((dynamic item) => item as String)
+            .where((String item) => item.trim().isNotEmpty)
+            .take(8)
+            .toList(growable: false);
     final Map<String, dynamic> cachedPathsJson =
         json['offlinePlaybackCachePaths'] as Map<String, dynamic>? ??
         <String, dynamic>{};
@@ -6018,6 +6109,8 @@ class OuterTuneController extends ChangeNotifier {
             .where((PlaybackEntry entry) => songById(entry.songId) != null)
             .map((PlaybackEntry entry) => entry.toJson())
             .toList(),
+        'searchDraft': _searchDraft,
+        'recentSearchTerms': _recentSearchTerms,
         'offlinePlaybackCachePaths': _offlinePlaybackCachePaths,
         'dataUsage': _dataUsage.toJson(),
       }),
@@ -6030,12 +6123,22 @@ class OuterTuneController extends ChangeNotifier {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.detached) {
+      _finalizeActivePlaybackSession();
+      unawaited(_saveSnapshot());
+    }
+  }
+
+  @override
   void dispose() {
     if (_isDisposed || _isDisposing) {
       return;
     }
     _isDisposing = true;
     _finalizeActivePlaybackSession();
+    WidgetsBinding.instance.removeObserver(this);
+    unawaited(_saveSnapshot());
     for (final StreamSubscription<dynamic> subscription in _subscriptions) {
       unawaited(subscription.cancel());
     }

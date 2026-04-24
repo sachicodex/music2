@@ -362,6 +362,14 @@ class _SearchScreenState extends State<_SearchScreen> {
   @override
   void initState() {
     super.initState();
+    final String initialDraft = widget.controller.searchDraft;
+    if (initialDraft.isNotEmpty) {
+      _searchController.value = TextEditingValue(
+        text: initialDraft,
+        selection: TextSelection.collapsed(offset: initialDraft.length),
+      );
+    }
+    _recentSearches.addAll(widget.controller.recentSearchTerms);
     _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _requestedTrending) {
@@ -401,6 +409,7 @@ class _SearchScreenState extends State<_SearchScreen> {
 
   void _runSearch(String value) {
     final String trimmed = value.trim();
+    widget.controller.cacheSearchDraft(value);
     setState(() {});
     _searchDebounce?.cancel();
     _searchDebounce = Timer(_searchDebounceDuration, () {
@@ -416,14 +425,11 @@ class _SearchScreenState extends State<_SearchScreen> {
     if (trimmed.isEmpty) {
       return;
     }
+    widget.controller.rememberRecentSearch(trimmed);
     setState(() {
-      _recentSearches.removeWhere(
-        (String item) => item.toLowerCase() == trimmed.toLowerCase(),
-      );
-      _recentSearches.insert(0, trimmed);
-      if (_recentSearches.length > 8) {
-        _recentSearches.removeRange(8, _recentSearches.length);
-      }
+      _recentSearches
+        ..clear()
+        ..addAll(widget.controller.recentSearchTerms);
     });
   }
 
@@ -448,7 +454,12 @@ class _SearchScreenState extends State<_SearchScreen> {
         onRememberSearch: _rememberSearch,
         onApplySearch: _applySearch,
         onRemoveSearch: (String term) {
-          setState(() => _recentSearches.remove(term));
+          widget.controller.removeRecentSearch(term);
+          setState(() {
+            _recentSearches
+              ..clear()
+              ..addAll(widget.controller.recentSearchTerms);
+          });
         },
       );
     }
@@ -541,7 +552,12 @@ class _SearchScreenState extends State<_SearchScreen> {
                             label: term,
                             onTap: () => _applySearch(term),
                             onRemove: () {
-                              setState(() => _recentSearches.remove(term));
+                              widget.controller.removeRecentSearch(term);
+                              setState(() {
+                                _recentSearches
+                                  ..clear()
+                                  ..addAll(widget.controller.recentSearchTerms);
+                              });
                             },
                           ),
                         );

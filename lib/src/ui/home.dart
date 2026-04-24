@@ -804,6 +804,7 @@ LibrarySong? _pickAdvancedHeroSong({
       .map((PlaybackEntry entry) => controller.songById(entry.songId))
       .whereType<LibrarySong>()
       .toList(growable: false);
+  final LibrarySong? fallbackSong = controller.startupSuggestionSong;
 
   final Set<String> seen = <String>{};
   final List<LibrarySong> candidates =
@@ -811,6 +812,7 @@ LibrarySong? _pickAdvancedHeroSong({
             ...mayYouLike,
             for (final HomeFeedSection section in feed) ...section.songs,
             ...controller.onlineResults,
+            ...?fallbackSong == null ? null : <LibrarySong>[fallbackSong],
           ]
           .where((LibrarySong song) {
             final String key =
@@ -819,7 +821,7 @@ LibrarySong? _pickAdvancedHeroSong({
           })
           .toList(growable: false);
   if (candidates.isEmpty) {
-    return null;
+    return fallbackSong;
   }
 
   final Map<String, double> artistAffinity = <String, double>{};
@@ -911,7 +913,7 @@ LibrarySong? _pickAdvancedHeroSong({
           );
         });
 
-  return ranked.firstOrNull?.song;
+  return ranked.firstOrNull?.song ?? fallbackSong;
 }
 
 String _songLanguageToken(LibrarySong song) {
@@ -1389,10 +1391,7 @@ class _KineticJumpBackCard extends StatelessWidget {
 }
 
 class _SimplePlaybackTile extends StatelessWidget {
-  const _SimplePlaybackTile({
-    required this.song,
-    required this.onTap,
-  });
+  const _SimplePlaybackTile({required this.song, required this.onTap});
 
   final LibrarySong song;
   final VoidCallback onTap;

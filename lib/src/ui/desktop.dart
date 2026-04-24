@@ -887,6 +887,22 @@ class _DesktopHomeScreen extends StatelessWidget {
                           ),
                         );
                       },
+                      style: TextButton.styleFrom(
+                        foregroundColor: _kAccent,
+                        backgroundColor: const Color(0x221C0904),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          side: const BorderSide(color: _kSurfaceEdge),
+                        ),
+                        textStyle: GoogleFonts.ibmPlexSans(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                       child: const Text('Open history'),
                     ),
                   ),
