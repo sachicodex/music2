@@ -2560,8 +2560,9 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       if (_isDisposing || _isDisposed) {
         return;
       }
-      final LibrarySong? fallbackAnchor =
-          (currentSong?.isRemote ?? false) ? currentSong : null;
+      final LibrarySong? fallbackAnchor = (currentSong?.isRemote ?? false)
+          ? currentSong
+          : null;
       if (predictions.isEmpty &&
           fallbackAnchor != null &&
           fallbackAnchor.id != anchor.id) {
@@ -2683,9 +2684,8 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
   LibrarySong? _primaryRecommendationSeed() {
     return (currentSong?.isRemote ?? false)
         ? currentSong
-        :
-        _validHistorySongs().firstOrNull ??
-        _rankedPreferenceSongs().firstOrNull;
+        : _validHistorySongs().firstOrNull ??
+              _rankedPreferenceSongs().firstOrNull;
   }
 
   List<_RecommendationQuery> _buildHomeQueries(LibrarySong? seedSong) {
@@ -3615,7 +3615,8 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     };
     final List<LibrarySong> ranked = allSongs.values
         .where(
-          (LibrarySong song) => song.isRemote && _songPreferenceWeight(song) > 0,
+          (LibrarySong song) =>
+              song.isRemote && _songPreferenceWeight(song) > 0,
         )
         .toList();
     ranked.sort((LibrarySong a, LibrarySong b) {
@@ -4252,17 +4253,13 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     _history = <PlaybackEntry>[];
     _songs = _songs
         .map(
-          (LibrarySong song) => song.copyWith(
-            playCount: 0,
-            clearLastPlayedAt: true,
-          ),
+          (LibrarySong song) =>
+              song.copyWith(playCount: 0, clearLastPlayedAt: true),
         )
         .toList(growable: false);
     _transientSongsById.updateAll(
-      (_, LibrarySong song) => song.copyWith(
-        playCount: 0,
-        clearLastPlayedAt: true,
-      ),
+      (_, LibrarySong song) =>
+          song.copyWith(playCount: 0, clearLastPlayedAt: true),
     );
     _activePlaybackSongId = null;
     _activePlaybackCompletionRatio = 0;
@@ -4713,6 +4710,10 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       return song;
     }
 
+    if (_isSongUsingPlaybackProxy(song.id)) {
+      return song;
+    }
+
     if (!song.isRemote) {
       _preparedMediaUrlsBySongId[song.id] = song.path;
       _preparedMediaHeadersBySongId[song.id] = null;
@@ -4826,6 +4827,15 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     );
   }
 
+  bool _isSongUsingPlaybackProxy(String songId) {
+    final _ActivePlaybackProxy? activeProxy =
+        _activePlaybackProxiesBySongId[songId];
+    if (activeProxy == null) {
+      return false;
+    }
+    return _preparedMediaUrlsBySongId[songId] == activeProxy.proxyUrl;
+  }
+
   Future<String> _registerPlaybackProxy({
     required LibrarySong song,
     required String upstreamUrl,
@@ -4839,6 +4849,10 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
         mapEquals(existing.upstreamHeaders, upstreamHeaders)) {
       _proxyTrackedSongIds.add(song.id);
       return existing.proxyUrl;
+    }
+    _proxyTrackedSongIds.remove(song.id);
+    if (existing != null) {
+      unawaited(_playbackProxy.unregister(existing.sessionId));
     }
 
     final String sessionId = _uuid.v4();
@@ -4925,7 +4939,8 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
   bool _isPlayableOpenFailure(String message) {
     final String normalized = message.toLowerCase();
     return normalized.contains('failed to open http://') ||
-        normalized.contains('failed to open https://');
+        normalized.contains('failed to open https://') ||
+        normalized.contains('failed to recognize file format');
   }
 
   bool _schedulePlaybackFallbackRecovery(LibrarySong song) {
@@ -5098,20 +5113,25 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     if (index < 0 || index >= _queueSongIds.length) {
       return;
     }
+    final bool shouldBootstrapPlayback =
+        _shouldBootstrapPlaybackForQueueNavigation();
     _debugPlayback(
       'jumpToQueue requested index=$index '
       'currentIndex=$_queueIndex '
       'target=${_debugSongLabel(songById(_queueSongIds[index]))}',
     );
-    if (await _tryHandleOfflineTargetTransition(index)) {
+    if (await _tryHandleOfflineTargetTransition(
+      index,
+      bootstrapPlayback: shouldBootstrapPlayback,
+    )) {
       return;
     }
     if (!_playerQueueHasControllerPlaylist()) {
-      await _reopenQueueAtIndex(index);
+      await _reopenQueueAtIndex(index, forcePlay: shouldBootstrapPlayback);
       return;
     }
     if (await _shouldUseOfflineQueueTransition(index)) {
-      await _reopenQueueAtIndex(index);
+      await _reopenQueueAtIndex(index, forcePlay: shouldBootstrapPlayback);
       return;
     }
     _primePendingTrackTransition(index);
@@ -5265,20 +5285,31 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     if (targetIndex == null) {
       return;
     }
+    final bool shouldBootstrapPlayback =
+        _shouldBootstrapPlaybackForQueueNavigation();
     _debugPlayback(
       'nextTrack requested currentIndex=$_queueIndex targetIndex=$targetIndex '
       'current=${_debugSongLabel(currentSong)} '
       'target=${_debugSongLabel(songById(_queueSongIds[targetIndex]))}',
     );
-    if (await _tryHandleOfflineTargetTransition(targetIndex)) {
+    if (await _tryHandleOfflineTargetTransition(
+      targetIndex,
+      bootstrapPlayback: shouldBootstrapPlayback,
+    )) {
       return;
     }
     if (!_playerQueueHasControllerPlaylist()) {
-      await _reopenQueueAtIndex(targetIndex);
+      await _reopenQueueAtIndex(
+        targetIndex,
+        forcePlay: shouldBootstrapPlayback,
+      );
       return;
     }
     if (await _shouldUseOfflineQueueTransition(targetIndex)) {
-      await _reopenQueueAtIndex(targetIndex);
+      await _reopenQueueAtIndex(
+        targetIndex,
+        forcePlay: shouldBootstrapPlayback,
+      );
       return;
     }
     _primePendingTrackTransition(targetIndex);
@@ -5298,20 +5329,31 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     if (targetIndex == null) {
       return;
     }
+    final bool shouldBootstrapPlayback =
+        _shouldBootstrapPlaybackForQueueNavigation();
     _debugPlayback(
       'previousTrack requested currentIndex=$_queueIndex targetIndex=$targetIndex '
       'current=${_debugSongLabel(currentSong)} '
       'target=${_debugSongLabel(songById(_queueSongIds[targetIndex]))}',
     );
-    if (await _tryHandleOfflineTargetTransition(targetIndex)) {
+    if (await _tryHandleOfflineTargetTransition(
+      targetIndex,
+      bootstrapPlayback: shouldBootstrapPlayback,
+    )) {
       return;
     }
     if (!_playerQueueHasControllerPlaylist()) {
-      await _reopenQueueAtIndex(targetIndex);
+      await _reopenQueueAtIndex(
+        targetIndex,
+        forcePlay: shouldBootstrapPlayback,
+      );
       return;
     }
     if (await _shouldUseOfflineQueueTransition(targetIndex)) {
-      await _reopenQueueAtIndex(targetIndex);
+      await _reopenQueueAtIndex(
+        targetIndex,
+        forcePlay: shouldBootstrapPlayback,
+      );
       return;
     }
     _primePendingTrackTransition(targetIndex);
@@ -5609,6 +5651,10 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       result.add(song);
     }
 
+    if (anchor != null && !_isSongUsingPlaybackProxy(anchor.id)) {
+      addSong(anchor);
+    }
+
     final int nextWarmCount = _settings.nextChanceSongCount.clamp(0, 5);
     final int end = math.min(
       _queueSongIds.length,
@@ -5696,7 +5742,7 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _reopenQueueAtIndex(int index) async {
+  Future<void> _reopenQueueAtIndex(int index, {bool forcePlay = false}) async {
     if (index < 0 || index >= _queueSongIds.length) {
       return;
     }
@@ -5704,28 +5750,42 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     if (queue.isEmpty || index >= queue.length) {
       return;
     }
-    final LibrarySong target = await _preparePlayableSong(queue[index]);
+    final bool openDetachedQueue = _isOffline || offlineMusicMode;
+    final bool prepareEntireQueue =
+        !openDetachedQueue && queue.any(_queueSongNeedsPreparedMediaSource);
     final List<LibrarySong> preparedQueue = <LibrarySong>[];
     for (int i = 0; i < queue.length; i += 1) {
       final LibrarySong song = queue[i];
-      if (i == index) {
-        preparedQueue.add(target);
+      final bool shouldPrepare =
+          i == index || (prepareEntireQueue && song.isRemote);
+      if (!shouldPrepare) {
+        preparedQueue.add(song);
         continue;
       }
-      final String? cachedPath = _offlinePlaybackCachePathForSong(song.id);
-      preparedQueue.add(
-        cachedPath == null ? song : song.copyWith(path: cachedPath),
-      );
+      try {
+        preparedQueue.add(await _preparePlayableSong(song));
+      } catch (error) {
+        if (i == index) {
+          rethrow;
+        }
+        _debugPlayback(
+          'queue.reopen prepare skipped '
+          'index=$i song=${_debugSongLabel(song)} error=$error',
+        );
+        preparedQueue.add(song);
+      }
     }
+    final LibrarySong target = preparedQueue[index];
 
     _primePendingTrackTransition(index);
     try {
-      final bool shouldResume = _isPlaying;
-      final bool openDetachedQueue = _isOffline || offlineMusicMode;
+      final bool shouldResume = forcePlay || _isPlaying;
       _debugPlayback(
         'queue.reopen start index=$index '
         'target=${_debugSongLabel(target)} '
         'shouldResume=$shouldResume '
+        'forcePlay=$forcePlay '
+        'prepareAll=$prepareEntireQueue '
         'currentIndex=$_queueIndex '
         'playerIndex=${_player.state.playlist.index} '
         'detached=$openDetachedQueue',
@@ -5775,7 +5835,24 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<bool> _tryHandleOfflineTargetTransition(int targetIndex) async {
+  bool _queueSongNeedsPreparedMediaSource(LibrarySong song) {
+    if (!song.isRemote) {
+      return false;
+    }
+    if (_offlinePlaybackCachePathForSong(song.id) != null) {
+      return false;
+    }
+    if (!_looksLikeYouTube(song.path)) {
+      return false;
+    }
+    final String? prepared = _preparedMediaUrlsBySongId[song.id];
+    return prepared == null || prepared.isEmpty || prepared == song.path;
+  }
+
+  Future<bool> _tryHandleOfflineTargetTransition(
+    int targetIndex, {
+    bool bootstrapPlayback = false,
+  }) async {
     if (!offlineMusicMode && !_isOffline) {
       return false;
     }
@@ -5790,11 +5867,18 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
         !targetSong.isRemote ||
         _offlinePlaybackCachePathForSong(targetSong.id) != null;
     if (canOpenNow) {
-      await _reopenQueueAtIndex(targetIndex);
+      await _reopenQueueAtIndex(targetIndex, forcePlay: bootstrapPlayback);
       return true;
     }
     await _enterOfflineQueueWait(targetIndex);
     return true;
+  }
+
+  bool _shouldBootstrapPlaybackForQueueNavigation() {
+    return !_isPlaying &&
+        _queueSongIds.isNotEmpty &&
+        currentSong != null &&
+        _player.state.playlist.medias.isEmpty;
   }
 
   Future<bool> _shouldUseOfflineQueueTransition(int targetIndex) async {
@@ -6329,8 +6413,24 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
 
-    final Map<String, dynamic> json =
-        jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+    late final Map<String, dynamic> json;
+    try {
+      final String raw = await file.readAsString();
+      if (raw.trim().isEmpty) {
+        await file.delete();
+        return;
+      }
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) {
+        throw const FormatException('Snapshot root is not a JSON object.');
+      }
+      json = decoded;
+    } on FormatException catch (error) {
+      debugPrint('Snapshot load skipped due to invalid JSON: $error');
+      await file.delete();
+      return;
+    }
+
     _settings = AppSettings.fromJson(json['settings'] as Map<String, dynamic>?);
     _sources = (json['sources'] as List<dynamic>? ?? <dynamic>[])
         .map((dynamic item) => item as String)
