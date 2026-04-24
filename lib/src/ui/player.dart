@@ -1226,26 +1226,31 @@ class _PlayerProgressAndControls extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        SliderTheme(
-          data: SliderTheme.of(context).copyWith(
-            trackHeight: _scale(6, min: 4, max: 6),
-            activeTrackColor: accent,
-            inactiveTrackColor: trackInactive,
-            thumbColor: accent,
-            overlayShape: SliderComponentShape.noOverlay,
-            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 0),
+        if (isPlayerLoading)
+          _PlaybackLoadingBar(
+            accent: accent,
+            trackColor: trackInactive,
+            height: _scale(6, min: 4, max: 6),
+          )
+        else
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: _scale(6, min: 4, max: 6),
+              activeTrackColor: accent,
+              inactiveTrackColor: trackInactive,
+              thumbColor: accent,
+              overlayShape: SliderComponentShape.noOverlay,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 0),
+            ),
+            child: Slider(
+              value: sliderValue,
+              min: 0,
+              max: sliderMax,
+              onChanged: (double value) {
+                onSeek(Duration(milliseconds: value.round()));
+              },
+            ),
           ),
-          child: Slider(
-            value: sliderValue,
-            min: 0,
-            max: sliderMax,
-            onChanged: isPlayerLoading
-                ? null
-                : (double value) {
-                    onSeek(Duration(milliseconds: value.round()));
-                  },
-          ),
-        ),
         SizedBox(height: _scale(10, min: 6, max: 15)),
         Row(
           children: <Widget>[
@@ -1335,6 +1340,34 @@ class _PlayerProgressAndControls extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+class _PlaybackLoadingBar extends StatelessWidget {
+  const _PlaybackLoadingBar({
+    required this.accent,
+    required this.trackColor,
+    this.height = 6,
+  });
+
+  final Color accent;
+  final Color trackColor;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: SizedBox(
+        height: height,
+        width: double.infinity,
+        child: LinearProgressIndicator(
+          minHeight: height,
+          backgroundColor: trackColor,
+          valueColor: AlwaysStoppedAnimation<Color>(accent),
+        ),
+      ),
     );
   }
 }
@@ -3660,31 +3693,39 @@ class _MiniPlayer extends StatelessWidget {
                                           ],
                                         ),
                                         const SizedBox(height: 8),
-                                        ClipRRect(
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                          child: SizedBox(
+                                        if (isMiniLoading)
+                                          const _PlaybackLoadingBar(
+                                            accent: accent,
+                                            trackColor: track,
                                             height: 5,
-                                            width: double.infinity,
-                                            child: ColoredBox(
-                                              color: track,
-                                              child: Align(
-                                                alignment: Alignment.centerLeft,
-                                                child: FractionallySizedBox(
-                                                  widthFactor: safeProgress,
+                                          )
+                                        else
+                                          ClipRRect(
+                                            borderRadius: BorderRadius.circular(
+                                              999,
+                                            ),
+                                            child: SizedBox(
+                                              height: 5,
+                                              width: double.infinity,
+                                              child: ColoredBox(
+                                                color: track,
+                                                child: Align(
                                                   alignment:
                                                       Alignment.centerLeft,
-                                                  child: const SizedBox.expand(
-                                                    child: ColoredBox(
-                                                      color: accent,
+                                                  child: FractionallySizedBox(
+                                                    widthFactor: safeProgress,
+                                                    alignment:
+                                                        Alignment.centerLeft,
+                                                    child: const SizedBox.expand(
+                                                      child: ColoredBox(
+                                                        color: accent,
+                                                      ),
                                                     ),
                                                   ),
                                                 ),
                                               ),
                                             ),
                                           ),
-                                        ),
                                       ],
                                     );
                                   },

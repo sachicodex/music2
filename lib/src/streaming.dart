@@ -73,6 +73,33 @@ int? nextPlaybackFallbackIndex(
   return null;
 }
 
+int preferredPlaybackCandidateIndex({
+  required List<PlaybackStreamCandidate> rankedCandidates,
+  required int currentIndex,
+  bool preferMuxedStability = false,
+}) {
+  if (rankedCandidates.isEmpty) {
+    return 0;
+  }
+  final int safeCurrentIndex = currentIndex.clamp(0, rankedCandidates.length - 1);
+  if (!preferMuxedStability || safeCurrentIndex != 0) {
+    return safeCurrentIndex;
+  }
+  final PlaybackStreamTransport transport =
+      rankedCandidates[safeCurrentIndex].transport;
+  if (transport != PlaybackStreamTransport.audioOnly &&
+      transport != PlaybackStreamTransport.hlsAudioOnly) {
+    return safeCurrentIndex;
+  }
+  final int muxedIndex = rankedCandidates.indexWhere((
+    PlaybackStreamCandidate candidate,
+  ) {
+    return candidate.transport == PlaybackStreamTransport.muxed ||
+        candidate.transport == PlaybackStreamTransport.hlsMuxed;
+  });
+  return muxedIndex >= 0 ? muxedIndex : safeCurrentIndex;
+}
+
 PlaybackStreamResolution resolvePreferredPlaybackStream({
   required String songId,
   required String sourceLabel,

@@ -83,6 +83,7 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
   bool _isDisposed = false;
 
   bool _initialized = false;
+  bool _startupContinuationScheduled = false;
   bool _scanning = false;
   bool _onlineLoading = false;
   bool _trendingNowLoading = false;
@@ -133,6 +134,9 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
   AppDataUsageStats _dataUsage = const AppDataUsageStats();
   Timer? _dataUsageSnapshotTimer;
   bool _playbackFallbackRecoveryInFlight = false;
+  String? _playbackFallbackRecoverySongId;
+  int? _playbackFallbackRecoveryIndex;
+  String? _playbackActivationSongId;
   bool _refreshingOfflinePlaybackCache = false;
   bool _offlinePlaybackCacheRefreshQueued = false;
   LibrarySong? _pendingOfflinePlaybackCacheAnchor;
@@ -311,6 +315,9 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   bool get miniPlayerSelectionLoading {
+    if (_playbackActivationSongId != null) {
+      return true;
+    }
     final LibrarySong? active = currentSong;
     final String? waitingSongId = _offlineQueueWaitingSongId;
     if (waitingSongId != null &&
@@ -436,6 +443,50 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     );
     _syncDataUsageState();
     _scheduleSnapshotSave();
+  }
+
+  void _beginPlaybackActivation(
+    LibrarySong? song, {
+    bool resetMetrics = false,
+    bool notify = true,
+  }) {
+    if (song == null) {
+      return;
+    }
+    _playbackActivationSongId = song.id;
+    if (resetMetrics) {
+      _position = Duration.zero;
+      _duration = Duration.zero;
+    }
+    if (notify) {
+      notifyListeners();
+    }
+  }
+
+  void _clearPlaybackActivation({bool notify = false}) {
+    if (_playbackActivationSongId == null) {
+      return;
+    }
+    _playbackActivationSongId = null;
+    if (notify) {
+      notifyListeners();
+    }
+  }
+
+  void _maybeResolvePlaybackActivation() {
+    final String? targetSongId = _playbackActivationSongId;
+    if (targetSongId == null) {
+      return;
+    }
+    final LibrarySong? active = currentSong;
+    if (active == null || active.id != targetSongId) {
+      return;
+    }
+    if (_isPlaying ||
+        (!_shouldHoldTransitionMetrics() &&
+            (_duration > Duration.zero || _position > Duration.zero))) {
+      _playbackActivationSongId = null;
+    }
   }
 
   void _recordCacheBytes(int bytes) {
@@ -604,6 +655,9 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     _playbackStreamInfoBySongId.clear();
     _songPlaybackBytes.clear();
     _playbackFallbackRecoveryInFlight = false;
+    _playbackFallbackRecoverySongId = null;
+    _playbackFallbackRecoveryIndex = null;
+    _playbackActivationSongId = null;
     for (final String sessionId in sessionIds) {
       unawaited(_playbackProxy.unregister(sessionId));
     }
@@ -957,10 +1011,10 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> initialize() async {
+    if (_initialized) {
+      return;
+    }
     await _loadSnapshot();
-    await _recreateYtMusicClient();
-    await refreshConnectivityStatus(notify: false);
-    _startConnectivityMonitoring();
     await _player.setRate(_settings.playbackRate);
     // Never block app startup on Android runtime permission UI.
     unawaited(_ensureNotificationPermission());
@@ -971,8 +1025,32 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     unawaited(AndroidMediaNotificationBridge.stop());
     unawaited(WindowsMediaControlsBridge.stop());
     notifyListeners();
-    unawaited(rescanLibrary());
-    _requestAutoHomeRefresh();
+    _scheduleStartupContinuation();
+  }
+
+  void _scheduleStartupContinuation() {
+    if (_startupContinuationScheduled || _isDisposed || _isDisposing) {
+      return;
+    }
+    _startupContinuationScheduled = true;
+    unawaited(_completeStartupInitialization());
+  }
+
+  Future<void> _completeStartupInitialization() async {
+    try {
+      await _recreateYtMusicClient();
+      await refreshConnectivityStatus(notify: false);
+      if (_isDisposed || _isDisposing) {
+        return;
+      }
+      _startConnectivityMonitoring();
+      notifyListeners();
+      unawaited(rescanLibrary());
+      _requestAutoHomeRefresh();
+    } catch (error, stackTrace) {
+      debugPrint('Startup continuation failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
   }
 
   Future<bool> refreshConnectivityStatus({bool notify = true}) async {
@@ -3834,6 +3912,7 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       await _openPreparedSong(prepared, label: 'YouTube');
     } catch (_) {
       _pendingSelectionSong = null;
+      _clearPlaybackActivation();
       notifyListeners();
       rethrow;
     }
@@ -3846,6 +3925,7 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
           return;
         }
         _isPlaying = value as bool;
+        _maybeResolvePlaybackActivation();
         _publishNotificationState();
         _syncPlaybackNotifiers();
       }),
@@ -3860,6 +3940,7 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
           return;
         }
         _position = value as Duration;
+        _maybeResolvePlaybackActivation();
         _updateActivePlaybackProgress();
         _syncQueueIndexFromPlayerState();
         _maybeAdvanceOfflineQueueAtTrackEnd();
@@ -3877,6 +3958,7 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
           return;
         }
         _duration = value as Duration;
+        _maybeResolvePlaybackActivation();
         _publishNotificationState();
         _syncPlaybackNotifiers();
       }),
@@ -3952,6 +4034,7 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
             'queueIndex=$_queueIndex',
           );
         }
+        _clearPlaybackActivation();
         notifyListeners();
       }),
     );
@@ -3977,9 +4060,32 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
           'nextSong=${nextQueueSongIds.isEmpty ? 'null' : nextQueueSongIds[nextQueueIndex]} '
           'queueLen=${nextQueueSongIds.length} '
           'activationTarget=$_offlineQueueActivationTargetSongId '
+          'fallbackTarget=$_playbackFallbackRecoverySongId '
           'transitionSong=$_transitioningSongId '
           'transitionIndex=$_transitioningQueueIndex',
         );
+        if (_playbackFallbackRecoverySongId != null) {
+          final String? activeSongId = nextQueueSongIds.isEmpty
+              ? null
+              : nextQueueSongIds[nextQueueIndex];
+          final bool recoveryResolved =
+              activeSongId == _playbackFallbackRecoverySongId &&
+              (_playbackFallbackRecoveryIndex == null ||
+                  nextQueueIndex == _playbackFallbackRecoveryIndex);
+          if (!recoveryResolved) {
+            _debugPlayback(
+              'player.playlist ignored during fallback recovery '
+              'active=$activeSongId '
+              'expected=$_playbackFallbackRecoverySongId '
+              'expectedIndex=$_playbackFallbackRecoveryIndex',
+            );
+            return;
+          }
+          _debugPlayback(
+            'player.playlist fallback recovery resolved '
+            'song=$activeSongId index=$nextQueueIndex',
+          );
+        }
         if (_offlineQueueActivationTargetSongId != null) {
           final String? activeSongId = nextQueueSongIds.isEmpty
               ? null
@@ -4133,12 +4239,14 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     if (_offlineQueueActivationTargetSongId != null ||
+        _playbackFallbackRecoverySongId != null ||
         _offlineDetachedQueueMode ||
         _offlineQueueWaitingSongId != null ||
         _transitioningSongId != null) {
       _debugPlayback(
         'player.position queue sync skipped '
         'activation=$_offlineQueueActivationTargetSongId '
+        'fallback=$_playbackFallbackRecoverySongId '
         'detached=$_offlineDetachedQueueMode '
         'waiting=$_offlineQueueWaitingSongId '
         'transitionSong=$_transitioningSongId '
@@ -4565,6 +4673,7 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     _clearOfflineQueueWait(notify: false);
     _offlineDetachedQueueMode = false;
     _pendingSelectionSong = songs[safeIndex];
+    _beginPlaybackActivation(songs[safeIndex], resetMetrics: true, notify: false);
     notifyListeners();
     try {
       await _player.stop();
@@ -4592,6 +4701,7 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
     } catch (_) {
       _pendingSelectionSong = null;
+      _clearPlaybackActivation();
       notifyListeners();
       rethrow;
     }
@@ -4746,6 +4856,7 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     _clearOfflineQueueWait(notify: false);
     _offlineDetachedQueueMode = false;
     _pendingSelectionSong = song;
+    _beginPlaybackActivation(song, resetMetrics: true, notify: false);
     notifyListeners();
     _rememberTransientSong(song);
     try {
@@ -4800,6 +4911,7 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
   ) async {
     final _ResolvedRemotePlayback resolved = await _resolvePlayableRemoteStream(
       song,
+      preferPlaybackCompatibility: true,
     );
     final File cacheTarget = await _offlinePlaybackCacheTargetFile(
       song,
@@ -4881,7 +4993,9 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<_ResolvedRemotePlayback> _resolvePlayableRemoteStream(
-    LibrarySong song,
+    LibrarySong song, {
+    bool preferPlaybackCompatibility = false,
+  }
   ) async {
     if (!_looksLikeYouTube(song.path)) {
       return _ResolvedRemotePlayback(
@@ -4916,8 +5030,13 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       throw const FormatException('No playable YouTube stream found.');
     }
 
-    final int selectedIndex = (_playbackCandidateIndexBySongId[song.id] ?? 0)
+    final int currentIndex = (_playbackCandidateIndexBySongId[song.id] ?? 0)
         .clamp(0, rankedCandidates.length - 1);
+    final int selectedIndex = preferredPlaybackCandidateIndex(
+      rankedCandidates: rankedCandidates,
+      currentIndex: currentIndex,
+      preferMuxedStability: preferPlaybackCompatibility && Platform.isWindows,
+    );
     _playbackCandidateIndexBySongId[song.id] = selectedIndex;
     final PlaybackStreamResolution resolved = resolvePlaybackStreamAtIndex(
       songId: song.id,
@@ -4927,9 +5046,11 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       candidates: rankedCandidates,
       rankedCandidates: rankedCandidates,
       selectedIndex: selectedIndex,
-      selectionPolicy: selectedIndex == 0
-          ? 'lowest-bitrate-audio-first'
-          : 'fallback-after-open-failure',
+      selectionPolicy: selectedIndex == currentIndex
+          ? (selectedIndex == 0
+                ? 'lowest-bitrate-audio-first'
+                : 'fallback-after-open-failure')
+          : 'windows-muxed-stability-first',
     );
     return _ResolvedRemotePlayback(
       resolvedUrl: resolved.url,
@@ -4943,6 +5064,36 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     return normalized.contains('failed to open http://') ||
         normalized.contains('failed to open https://') ||
         normalized.contains('failed to recognize file format');
+  }
+
+  void _primePlaybackFallbackRecovery(LibrarySong song) {
+    final int queueSongIndex = _queueSongIds.indexOf(song.id);
+    _playbackFallbackRecoverySongId = song.id;
+    _playbackFallbackRecoveryIndex = queueSongIndex >= 0 ? queueSongIndex : null;
+    _transitioningSongId = song.id;
+    if (queueSongIndex >= 0) {
+      _transitioningQueueIndex = queueSongIndex;
+    }
+    _pendingSelectionSong = song;
+    _position = Duration.zero;
+    _duration = Duration.zero;
+    _beginPlaybackActivation(song, notify: false);
+    _debugPlayback(
+      'stream.fallback prime song=${_debugSongLabel(song)} '
+      'targetIndex=$_playbackFallbackRecoveryIndex queueIndex=$_queueIndex',
+    );
+    notifyListeners();
+  }
+
+  void _clearPlaybackFallbackRecoveryState() {
+    _playbackFallbackRecoverySongId = null;
+    _playbackFallbackRecoveryIndex = null;
+  }
+
+  Future<void> _pausePlayerForFallbackRecovery() async {
+    try {
+      await _player.pause();
+    } catch (_) {}
   }
 
   bool _schedulePlaybackFallbackRecovery(LibrarySong song) {
@@ -4964,6 +5115,8 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       return false;
     }
     _playbackFallbackRecoveryInFlight = true;
+    _primePlaybackFallbackRecovery(song);
+    unawaited(_pausePlayerForFallbackRecovery());
     unawaited(
       _recoverPlaybackWithFallback(
         song: song,
@@ -4982,7 +5135,10 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     try {
       _playbackCandidateIndexBySongId[song.id] = nextIndex;
       final _ResolvedRemotePlayback resolved =
-          await _resolvePlayableRemoteStream(song);
+          await _resolvePlayableRemoteStream(
+            song,
+            preferPlaybackCompatibility: true,
+          );
       _preparedMediaUrlsBySongId[song.id] = resolved.resolvedUrl;
       _preparedMediaHeadersBySongId[song.id] = resolved.upstreamHeaders;
       _playbackStreamInfoBySongId[song.id] = resolved.streamInfo;
@@ -5007,7 +5163,9 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
         'stream.fallback failed song=${_debugSongLabel(song)} '
         'fromIndex=$currentIndex toIndex=$nextIndex error=$error',
       );
+      _clearPlaybackActivation();
     } finally {
+      _clearPlaybackFallbackRecoveryState();
       _playbackFallbackRecoveryInFlight = false;
     }
   }
@@ -5117,6 +5275,11 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     }
     final bool shouldBootstrapPlayback =
         _shouldBootstrapPlaybackForQueueNavigation();
+    final bool shouldShowPlaybackLoading = _isPlaying || shouldBootstrapPlayback;
+    final LibrarySong? targetSong = songById(_queueSongIds[index]);
+    if (shouldShowPlaybackLoading) {
+      _beginPlaybackActivation(targetSong, resetMetrics: true);
+    }
     _debugPlayback(
       'jumpToQueue requested index=$index '
       'currentIndex=$_queueIndex '
@@ -5136,7 +5299,6 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       await _reopenQueueAtIndex(index, forcePlay: shouldBootstrapPlayback);
       return;
     }
-    final LibrarySong? targetSong = songById(_queueSongIds[index]);
     if (targetSong != null && _queueSongNeedsPreparedMediaSource(targetSong)) {
       await _reopenQueueAtIndex(index, forcePlay: shouldBootstrapPlayback);
       return;
@@ -5256,6 +5418,9 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     final LibrarySong? activeSong = currentSong;
+    if (!_isPlaying) {
+      _beginPlaybackActivation(activeSong);
+    }
     if (activeSong != null && _queueSongNeedsPreparedMediaSource(activeSong)) {
       await _reopenQueueAtIndex(_queueIndex);
       if (!_isPlaying) {
@@ -5283,6 +5448,7 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
     final LibrarySong? activeSong = currentSong;
+    _beginPlaybackActivation(activeSong);
     if (activeSong != null && _queueSongNeedsPreparedMediaSource(activeSong)) {
       await _reopenQueueAtIndex(_queueIndex);
       await _player.play();
@@ -5298,6 +5464,7 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     if (!_isPlaying) {
       return;
     }
+    _clearPlaybackActivation();
     await _player.pause();
   }
 
@@ -5308,6 +5475,11 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     }
     final bool shouldBootstrapPlayback =
         _shouldBootstrapPlaybackForQueueNavigation();
+    final bool shouldShowPlaybackLoading = _isPlaying || shouldBootstrapPlayback;
+    final LibrarySong? targetSong = songById(_queueSongIds[targetIndex]);
+    if (shouldShowPlaybackLoading) {
+      _beginPlaybackActivation(targetSong, resetMetrics: true);
+    }
     _debugPlayback(
       'nextTrack requested currentIndex=$_queueIndex targetIndex=$targetIndex '
       'current=${_debugSongLabel(currentSong)} '
@@ -5333,7 +5505,6 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       );
       return;
     }
-    final LibrarySong? targetSong = songById(_queueSongIds[targetIndex]);
     if (targetSong != null && _queueSongNeedsPreparedMediaSource(targetSong)) {
       await _reopenQueueAtIndex(
         targetIndex,
@@ -5360,6 +5531,11 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     }
     final bool shouldBootstrapPlayback =
         _shouldBootstrapPlaybackForQueueNavigation();
+    final bool shouldShowPlaybackLoading = _isPlaying || shouldBootstrapPlayback;
+    final LibrarySong? targetSong = songById(_queueSongIds[targetIndex]);
+    if (shouldShowPlaybackLoading) {
+      _beginPlaybackActivation(targetSong, resetMetrics: true);
+    }
     _debugPlayback(
       'previousTrack requested currentIndex=$_queueIndex targetIndex=$targetIndex '
       'current=${_debugSongLabel(currentSong)} '
@@ -5385,7 +5561,6 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       );
       return;
     }
-    final LibrarySong? targetSong = songById(_queueSongIds[targetIndex]);
     if (targetSong != null && _queueSongNeedsPreparedMediaSource(targetSong)) {
       await _reopenQueueAtIndex(
         targetIndex,
@@ -5804,6 +5979,9 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     _primePendingTrackTransition(index);
     try {
       final bool shouldResume = forcePlay || _isPlaying;
+      if (shouldResume) {
+        _beginPlaybackActivation(target, notify: false);
+      }
       _debugPlayback(
         'queue.reopen start index=$index '
         'target=${_debugSongLabel(target)} '
@@ -6038,6 +6216,7 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     _position = Duration.zero;
     _duration = Duration.zero;
     _statusMessage = 'Waiting for internet to continue queue';
+    _clearPlaybackActivation();
     _debugPlayback(
       'offline.wait enter '
       'targetIndex=$targetIndex song=${_debugSongLabel(targetSong)}',

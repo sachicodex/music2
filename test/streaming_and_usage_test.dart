@@ -141,6 +141,41 @@ void main() {
 
       expect(nextPlaybackFallbackIndex(ranked, 0), 2);
     });
+
+    test(
+      'preferredPlaybackCandidateIndex can switch audio-only startup to muxed stability',
+      () {
+        final List<PlaybackStreamCandidate> ranked =
+            rankPlaybackStreamCandidates(const <PlaybackStreamCandidate>[
+              PlaybackStreamCandidate(
+                transport: PlaybackStreamTransport.audioOnly,
+                url: 'https://example.com/audio-low',
+                bitrateBitsPerSecond: 32000,
+              ),
+              PlaybackStreamCandidate(
+                transport: PlaybackStreamTransport.audioOnly,
+                url: 'https://example.com/audio-mid',
+                bitrateBitsPerSecond: 64000,
+              ),
+              PlaybackStreamCandidate(
+                transport: PlaybackStreamTransport.muxed,
+                url: 'https://example.com/muxed-low',
+                bitrateBitsPerSecond: 96000,
+                qualityLabel: '144p',
+                videoHeight: 144,
+              ),
+            ]);
+
+        expect(
+          preferredPlaybackCandidateIndex(
+            rankedCandidates: ranked,
+            currentIndex: 0,
+            preferMuxedStability: true,
+          ),
+          2,
+        );
+      },
+    );
   });
 
   group('queueReopenPreparationIndexes', () {

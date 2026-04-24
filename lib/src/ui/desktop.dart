@@ -552,25 +552,32 @@ class _DesktopNowPlayingRail extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 18),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(999),
-                        child: SizedBox(
+                      if (nowPlaying.isLoading)
+                        const _PlaybackLoadingBar(
+                          accent: _kAccent,
+                          trackColor: Color(0xFF4D2A1D),
                           height: 6,
-                          child: ColoredBox(
-                            color: const Color(0xFF4D2A1D),
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: FractionallySizedBox(
-                                widthFactor: safeProgress,
+                        )
+                      else
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(999),
+                          child: SizedBox(
+                            height: 6,
+                            child: ColoredBox(
+                              color: const Color(0xFF4D2A1D),
+                              child: Align(
                                 alignment: Alignment.centerLeft,
-                                child: const SizedBox.expand(
-                                  child: ColoredBox(color: _kAccent),
+                                child: FractionallySizedBox(
+                                  widthFactor: safeProgress,
+                                  alignment: Alignment.centerLeft,
+                                  child: const SizedBox.expand(
+                                    child: ColoredBox(color: _kAccent),
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ),
                       const SizedBox(height: 10),
                       Row(
                         children: <Widget>[

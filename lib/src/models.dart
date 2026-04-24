@@ -647,6 +647,7 @@ class PlaybackStreamInfo {
   String get selectionPolicyLabel {
     return switch (selectionPolicy) {
       'lowest-bitrate-audio-first' => 'Lowest bitrate audio first',
+      'windows-muxed-stability-first' => 'Windows stability first',
       'fallback-after-open-failure' => 'Fallback after open failure',
       'cache-hit' => 'Cached playback',
       'local-file' => 'Local file playback',
