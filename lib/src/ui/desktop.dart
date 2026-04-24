@@ -801,7 +801,9 @@ class _DesktopHomeScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           _DesktopPanel(
-            child: featured != null
+            child: controller.homeLoading && !hasRevealableContent
+                ? const _SonixHeroSkeleton()
+                : featured != null
                 ? _SonixHeroCard(
                     badge: featured.badge,
                     title: featured.title,
@@ -869,7 +871,13 @@ class _DesktopHomeScreen extends StatelessWidget {
             controller: controller,
             skipCount: 1,
           ),
-          if (jumpBackIn.isNotEmpty) ...<Widget>[
+          if (controller.homeLoading && !hasRevealableContent) ...<Widget>[
+            const SizedBox(height: 20),
+            const _DesktopPanel(
+              child: Opacity(opacity: 0.8, child: _HomeFeedSkeleton()),
+            ),
+          ],
+          if (!controller.homeLoading && jumpBackIn.isNotEmpty) ...<Widget>[
             const SizedBox(height: 20),
             _DesktopPanel(
               child: Column(
