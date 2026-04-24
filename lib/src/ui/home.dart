@@ -531,9 +531,7 @@ class _SearchGenreShelf {
   final LibrarySong? song;
 }
 
-List<_SearchGenreShelf> _buildSearchGenreShelves(
-  SonixController controller,
-) {
+List<_SearchGenreShelf> _buildSearchGenreShelves(SonixController controller) {
   final List<LibrarySong> pool = <LibrarySong>[
     ..._resolvedMayYouLikeSongs(controller),
     ...controller.recentlyAddedSongs,
@@ -596,9 +594,8 @@ List<_SearchGenreShelf> _buildSearchGenreShelves(
 }
 
 List<LibrarySong> _resolvedMayYouLikeSongs(SonixController controller) {
-  return _resolvedMayYouLikeRecommendations(
-    controller,
-  ).map((SongRecommendation item) => item.song)
+  return _resolvedMayYouLikeRecommendations(controller)
+      .map((SongRecommendation item) => item.song)
       .where((LibrarySong song) => song.isRemote)
       .toList(growable: false);
 }
@@ -827,9 +824,7 @@ Set<String> _heroVibeTokens(LibrarySong song) {
 
 bool _hasKnownHeroArtist(LibrarySong song) {
   final String artist = song.artist.trim().toLowerCase();
-  return artist.isNotEmpty &&
-      artist != 'unknown' &&
-      artist != 'unknown artist';
+  return artist.isNotEmpty && artist != 'unknown' && artist != 'unknown artist';
 }
 
 class _HeroPreferenceProfile {
@@ -899,7 +894,10 @@ _HeroPreferenceProfile _buildHeroPreferenceProfile(SonixController controller) {
 
   addSongs(controller.recentlyPlayedSongs.take(18), 7.5);
   addSongs(controller.topPlayedSongs.take(12), 5.8);
-  addSongs(controller.likedSongs.where((LibrarySong song) => song.isRemote).take(12), 5.2);
+  addSongs(
+    controller.likedSongs.where((LibrarySong song) => song.isRemote).take(12),
+    5.2,
+  );
   addSongs(controller.cachedSongs.take(10), 3.6);
 
   List<String> topKeys(Map<String, double> scores, int limit) {
@@ -1005,8 +1003,9 @@ double _heroCandidateScore(
   final String language = _heroCandidateLanguageBucket(candidate);
   final String artistKey = _normalizeHeroToken(song.artist);
   final String genreKey = _normalizeHeroToken(song.genre ?? '');
-  final int vibeMatches =
-      _heroVibeTokens(song).intersection(profile.vibeKeys).length;
+  final int vibeMatches = _heroVibeTokens(
+    song,
+  ).intersection(profile.vibeKeys).length;
   final bool hasTasteMatch =
       profile.artistKeys.contains(artistKey) ||
       (genreKey.isNotEmpty && profile.genreKeys.contains(genreKey)) ||
@@ -1021,8 +1020,7 @@ double _heroCandidateScore(
   } else {
     if (language == 'en' && profile.primaryLanguage != 'en') {
       score -= 18;
-    } else if (language != 'unknown' &&
-        profile.primaryLanguage != 'unknown') {
+    } else if (language != 'unknown' && profile.primaryLanguage != 'unknown') {
       score -= 8;
     }
   }
@@ -1063,8 +1061,9 @@ bool _heroMatchesProfile(
   final String language = _heroCandidateLanguageBucket(candidate);
   final String artistKey = _normalizeHeroToken(song.artist);
   final String genreKey = _normalizeHeroToken(song.genre ?? '');
-  final int vibeMatches =
-      _heroVibeTokens(song).intersection(profile.vibeKeys).length;
+  final int vibeMatches = _heroVibeTokens(
+    song,
+  ).intersection(profile.vibeKeys).length;
   final bool tasteMatch =
       profile.artistKeys.contains(artistKey) ||
       (genreKey.isNotEmpty && profile.genreKeys.contains(genreKey)) ||
@@ -1145,7 +1144,9 @@ LibrarySong? _pickAdvancedHeroSong({
       .where((LibrarySong song) => song.isRemote)
       .map(_heroSongKey)
       .toSet();
-  final _HeroPreferenceProfile profile = _buildHeroPreferenceProfile(controller);
+  final _HeroPreferenceProfile profile = _buildHeroPreferenceProfile(
+    controller,
+  );
   final String regionalLanguage = controller.preferredRegion.languageCode;
   final Set<String> mayYouLikeKeys = mayYouLike.map(_heroSongKey).toSet();
   final Map<String, _HeroCandidateInput> candidatesByKey =
@@ -1204,7 +1205,7 @@ LibrarySong? _pickAdvancedHeroSong({
     growable: false,
   );
   if (candidates.isEmpty) {
-    return null;
+    return _pickFallbackHeroSong(feed: feed, mayYouLike: mayYouLike);
   }
 
   final List<_HeroCandidateInput> profileMatched = candidates
@@ -1216,18 +1217,14 @@ LibrarySong? _pickAdvancedHeroSong({
         ),
       )
       .toList(growable: false);
-  if (profileMatched.isEmpty) {
-    return null;
-  }
-
   final List<_HeroCandidateInput> languageMatched = profileMatched
       .where(
         (_HeroCandidateInput candidate) =>
             _heroCandidateLanguageBucket(candidate) == profile.primaryLanguage,
       )
       .toList(growable: false);
-  final List<_HeroCandidateInput> regionalLanguageMatched = regionalLanguage ==
-          'en'
+  final List<_HeroCandidateInput> regionalLanguageMatched =
+      regionalLanguage == 'en'
       ? const <_HeroCandidateInput>[]
       : profileMatched
             .where(
@@ -1241,14 +1238,15 @@ LibrarySong? _pickAdvancedHeroSong({
         return language != 'en' && language != 'unknown';
       })
       .toList(growable: false);
-  final List<_HeroCandidateInput> rankingPool =
-      languageMatched.isNotEmpty
+  final List<_HeroCandidateInput> rankingPool = languageMatched.isNotEmpty
       ? languageMatched
       : regionalLanguageMatched.isNotEmpty
       ? regionalLanguageMatched
       : explicitNonEnglishMatches.isNotEmpty
       ? explicitNonEnglishMatches
-      : profileMatched;
+      : profileMatched.isNotEmpty
+      ? profileMatched
+      : candidates;
 
   final List<_HeroCandidateScore> ranked =
       rankingPool
@@ -1266,11 +1264,89 @@ LibrarySong? _pickAdvancedHeroSong({
           if (scoreCompare != 0) {
             return scoreCompare;
           }
+          final int mayYouLikeCompare = candidateFromMayYouLike(
+            b.song,
+            mayYouLike,
+          ).compareTo(candidateFromMayYouLike(a.song, mayYouLike));
+          if (mayYouLikeCompare != 0) {
+            return mayYouLikeCompare;
+          }
           return a.song.title.toLowerCase().compareTo(
             b.song.title.toLowerCase(),
           );
         });
-  return ranked.firstOrNull?.song;
+  return ranked.firstOrNull?.song ??
+      _pickFallbackHeroSong(feed: feed, mayYouLike: mayYouLike);
+}
+
+int candidateFromMayYouLike(LibrarySong song, List<LibrarySong> mayYouLike) {
+  return mayYouLike.any((LibrarySong item) => item.id == song.id) ? 1 : 0;
+}
+
+LibrarySong? _pickFallbackHeroSong({
+  required List<HomeFeedSection> feed,
+  required List<LibrarySong> mayYouLike,
+}) {
+  final Map<String, LibrarySong> candidatesByKey = <String, LibrarySong>{};
+
+  void addSong(LibrarySong song) {
+    if (!song.isRemote) {
+      return;
+    }
+    if (_isFilteredSuggestion(song)) {
+      return;
+    }
+    if (!_hasKnownHeroArtist(song)) {
+      return;
+    }
+    if (_durationScore(song) <= 0) {
+      return;
+    }
+    candidatesByKey.putIfAbsent(_heroSongKey(song), () => song);
+  }
+
+  for (final LibrarySong song in mayYouLike) {
+    addSong(song);
+  }
+  for (final HomeFeedSection section in feed) {
+    for (final LibrarySong song in section.songs) {
+      addSong(song);
+    }
+  }
+
+  final List<LibrarySong> ranked =
+      candidatesByKey.values.toList(growable: false)
+        ..sort((LibrarySong a, LibrarySong b) {
+          final int mayYouLikeCompare = candidateFromMayYouLike(
+            b,
+            mayYouLike,
+          ).compareTo(candidateFromMayYouLike(a, mayYouLike));
+          if (mayYouLikeCompare != 0) {
+            return mayYouLikeCompare;
+          }
+          final int artworkCompare = _hasArtwork(b).compareTo(_hasArtwork(a));
+          if (artworkCompare != 0) {
+            return artworkCompare;
+          }
+          final int sourceCompare = (b.sourceLabel == 'YouTube Music' ? 1 : 0)
+              .compareTo(a.sourceLabel == 'YouTube Music' ? 1 : 0);
+          if (sourceCompare != 0) {
+            return sourceCompare;
+          }
+          final int durationCompare = _durationScore(
+            b,
+          ).compareTo(_durationScore(a));
+          if (durationCompare != 0) {
+            return durationCompare;
+          }
+          final int titleCompare = _titleScore(b).compareTo(_titleScore(a));
+          if (titleCompare != 0) {
+            return titleCompare;
+          }
+          return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+        });
+
+  return ranked.firstOrNull;
 }
 
 class _HeroCandidateScore {
@@ -1285,9 +1361,9 @@ class _SonixTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-      return const _HomeStyleHeader(
-        title: 'SONIX',
-        leading: _HomeStyleProfileBadge(),
+    return const _HomeStyleHeader(
+      title: 'SONIX',
+      leading: _HomeStyleProfileBadge(),
       trailing: _HomeStyleNotificationIcon(),
     );
   }
@@ -1821,7 +1897,8 @@ class _RecentPlaysScreen extends StatelessWidget {
           onPressed: songs.isEmpty
               ? null
               : () async {
-                  final bool confirmed = await showDialog<bool>(
+                  final bool confirmed =
+                      await showDialog<bool>(
                         context: context,
                         builder: (BuildContext context) {
                           return AlertDialog(
@@ -1846,11 +1923,13 @@ class _RecentPlaysScreen extends StatelessWidget {
                             ),
                             actions: <Widget>[
                               TextButton(
-                                onPressed: () => Navigator.of(context).pop(false),
+                                onPressed: () =>
+                                    Navigator.of(context).pop(false),
                                 child: const Text('Cancel'),
                               ),
                               FilledButton(
-                                onPressed: () => Navigator.of(context).pop(true),
+                                onPressed: () =>
+                                    Navigator.of(context).pop(true),
                                 style: FilledButton.styleFrom(
                                   backgroundColor: const Color(0xFFDE6B48),
                                   foregroundColor: Colors.white,

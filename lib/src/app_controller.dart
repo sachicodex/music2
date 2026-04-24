@@ -311,17 +311,21 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   bool get miniPlayerSelectionLoading {
-    if (_offlineQueueWaitingSongId != null) {
+    final LibrarySong? active = currentSong;
+    final String? waitingSongId = _offlineQueueWaitingSongId;
+    if (waitingSongId != null &&
+        (active == null || active.id != waitingSongId)) {
       return true;
     }
-    if (_transitioningSongId != null) {
+    final String? transitioningSongId = _transitioningSongId;
+    if (transitioningSongId != null &&
+        (active == null || active.id != transitioningSongId)) {
       return true;
     }
     final LibrarySong? pending = _pendingSelectionSong;
     if (pending == null) {
       return false;
     }
-    final LibrarySong? active = currentSong;
     return active == null || active.id != pending.id;
   }
 
@@ -5134,6 +5138,11 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       await _reopenQueueAtIndex(index, forcePlay: shouldBootstrapPlayback);
       return;
     }
+    final LibrarySong? targetSong = songById(_queueSongIds[index]);
+    if (targetSong != null && _queueSongNeedsPreparedMediaSource(targetSong)) {
+      await _reopenQueueAtIndex(index, forcePlay: shouldBootstrapPlayback);
+      return;
+    }
     _primePendingTrackTransition(index);
     try {
       await _player.jump(index);
@@ -5248,6 +5257,14 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       await _resumeMiniPlayerPlaybackFallback();
       return;
     }
+    final LibrarySong? activeSong = currentSong;
+    if (activeSong != null && _queueSongNeedsPreparedMediaSource(activeSong)) {
+      await _reopenQueueAtIndex(_queueIndex);
+      if (!_isPlaying) {
+        await _player.play();
+      }
+      return;
+    }
     if (!_playerQueueMatchesControllerState()) {
       await _reopenQueueAtIndex(_queueIndex);
       if (!_isPlaying) {
@@ -5266,6 +5283,12 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       if (await _resumeMiniPlayerPlaybackFallback()) {
         return;
       }
+    }
+    final LibrarySong? activeSong = currentSong;
+    if (activeSong != null && _queueSongNeedsPreparedMediaSource(activeSong)) {
+      await _reopenQueueAtIndex(_queueIndex);
+      await _player.play();
+      return;
     }
     if (!_playerQueueMatchesControllerState()) {
       await _reopenQueueAtIndex(_queueIndex);
@@ -5312,6 +5335,14 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       );
       return;
     }
+    final LibrarySong? targetSong = songById(_queueSongIds[targetIndex]);
+    if (targetSong != null && _queueSongNeedsPreparedMediaSource(targetSong)) {
+      await _reopenQueueAtIndex(
+        targetIndex,
+        forcePlay: shouldBootstrapPlayback,
+      );
+      return;
+    }
     _primePendingTrackTransition(targetIndex);
     try {
       await _player.next();
@@ -5350,6 +5381,14 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     if (await _shouldUseOfflineQueueTransition(targetIndex)) {
+      await _reopenQueueAtIndex(
+        targetIndex,
+        forcePlay: shouldBootstrapPlayback,
+      );
+      return;
+    }
+    final LibrarySong? targetSong = songById(_queueSongIds[targetIndex]);
+    if (targetSong != null && _queueSongNeedsPreparedMediaSource(targetSong)) {
       await _reopenQueueAtIndex(
         targetIndex,
         forcePlay: shouldBootstrapPlayback,
@@ -5751,31 +5790,16 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     final bool openDetachedQueue = _isOffline || offlineMusicMode;
-    final bool prepareEntireQueue =
-        !openDetachedQueue && queue.any(_queueSongNeedsPreparedMediaSource);
+    final LibrarySong target = await _preparePlayableSong(queue[index]);
     final List<LibrarySong> preparedQueue = <LibrarySong>[];
     for (int i = 0; i < queue.length; i += 1) {
       final LibrarySong song = queue[i];
-      final bool shouldPrepare =
-          i == index || (prepareEntireQueue && song.isRemote);
-      if (!shouldPrepare) {
-        preparedQueue.add(song);
+      if (i == index) {
+        preparedQueue.add(target);
         continue;
       }
-      try {
-        preparedQueue.add(await _preparePlayableSong(song));
-      } catch (error) {
-        if (i == index) {
-          rethrow;
-        }
-        _debugPlayback(
-          'queue.reopen prepare skipped '
-          'index=$i song=${_debugSongLabel(song)} error=$error',
-        );
-        preparedQueue.add(song);
-      }
+      preparedQueue.add(song);
     }
-    final LibrarySong target = preparedQueue[index];
 
     _primePendingTrackTransition(index);
     try {
@@ -5785,7 +5809,6 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
         'target=${_debugSongLabel(target)} '
         'shouldResume=$shouldResume '
         'forcePlay=$forcePlay '
-        'prepareAll=$prepareEntireQueue '
         'currentIndex=$_queueIndex '
         'playerIndex=${_player.state.playlist.index} '
         'detached=$openDetachedQueue',
