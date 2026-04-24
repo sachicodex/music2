@@ -4514,9 +4514,7 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   bool _looksLikeYouTube(String value) {
-    return value.contains('youtube.com/') ||
-        value.contains('youtu.be/') ||
-        value.startsWith('yt:');
+    return looksLikeYouTubePlaybackSource(value);
   }
 
   _FallbackTitle _fallbackFromFilename(String baseName) {
@@ -5790,16 +5788,18 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     final bool openDetachedQueue = _isOffline || offlineMusicMode;
-    final LibrarySong target = await _preparePlayableSong(queue[index]);
-    final List<LibrarySong> preparedQueue = <LibrarySong>[];
-    for (int i = 0; i < queue.length; i += 1) {
-      final LibrarySong song = queue[i];
-      if (i == index) {
-        preparedQueue.add(target);
+    final List<LibrarySong> preparedQueue = List<LibrarySong>.from(queue);
+    final List<int> preparationIndexes = openDetachedQueue
+        ? <int>[index]
+        : queueReopenPreparationIndexes(queue: queue, targetIndex: index);
+    for (final int queueIndex in preparationIndexes) {
+      final LibrarySong song = queue[queueIndex];
+      if (queueIndex != index && !_queueSongNeedsPreparedMediaSource(song)) {
         continue;
       }
-      preparedQueue.add(song);
+      preparedQueue[queueIndex] = await _preparePlayableSong(song);
     }
+    final LibrarySong target = preparedQueue[index];
 
     _primePendingTrackTransition(index);
     try {
@@ -5859,13 +5859,10 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   bool _queueSongNeedsPreparedMediaSource(LibrarySong song) {
-    if (!song.isRemote) {
+    if (!songNeedsResolvedPlaybackUrl(song)) {
       return false;
     }
     if (_offlinePlaybackCachePathForSong(song.id) != null) {
-      return false;
-    }
-    if (!_looksLikeYouTube(song.path)) {
       return false;
     }
     final String? prepared = _preparedMediaUrlsBySongId[song.id];

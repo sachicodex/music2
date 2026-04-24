@@ -215,6 +215,32 @@ PlaybackStreamInfo buildCachedPlaybackStreamInfo({
   );
 }
 
+bool looksLikeYouTubePlaybackSource(String value) {
+  return value.contains('youtube.com/') ||
+      value.contains('youtu.be/') ||
+      value.startsWith('yt:');
+}
+
+bool songNeedsResolvedPlaybackUrl(LibrarySong song) {
+  return song.isRemote && looksLikeYouTubePlaybackSource(song.path);
+}
+
+List<int> queueReopenPreparationIndexes({
+  required List<LibrarySong> queue,
+  required int targetIndex,
+}) {
+  if (targetIndex < 0 || targetIndex >= queue.length) {
+    return const <int>[];
+  }
+  final List<int> result = <int>[targetIndex];
+  for (int index = targetIndex + 1; index < queue.length; index += 1) {
+    if (songNeedsResolvedPlaybackUrl(queue[index])) {
+      result.add(index);
+    }
+  }
+  return result;
+}
+
 int _comparePlaybackStreamCandidates(
   PlaybackStreamCandidate a,
   PlaybackStreamCandidate b,

@@ -143,6 +143,85 @@ void main() {
     });
   });
 
+  group('queueReopenPreparationIndexes', () {
+    LibrarySong song({
+      required String id,
+      required String path,
+      required bool isRemote,
+    }) {
+      return LibrarySong(
+        id: id,
+        path: path,
+        title: id,
+        artist: 'Artist',
+        album: 'Album',
+        albumArtist: 'Artist',
+        folderName: 'Folder',
+        folderPath: '/music',
+        sourceLabel: isRemote ? 'YouTube' : 'Library',
+        addedAt: DateTime(2026, 4, 24),
+        durationMs: 180000,
+        isRemote: isRemote,
+      );
+    }
+
+    test('prepares the restored target and later YouTube queue items', () {
+      final List<LibrarySong> queue = <LibrarySong>[
+        song(id: 'local', path: r'C:\music\local.mp3', isRemote: false),
+        song(
+          id: 'current',
+          path: 'https://www.youtube.com/watch?v=current',
+          isRemote: true,
+        ),
+        song(
+          id: 'direct',
+          path: 'https://cdn.example.com/audio.mp3',
+          isRemote: true,
+        ),
+        song(
+          id: 'next-yt',
+          path: 'https://music.youtube.com/watch?v=next',
+          isRemote: true,
+        ),
+        song(id: 'later-yt', path: 'yt:later', isRemote: true),
+      ];
+
+      expect(
+        queueReopenPreparationIndexes(queue: queue, targetIndex: 1),
+        <int>[1, 3, 4],
+      );
+    });
+
+    test('songNeedsResolvedPlaybackUrl only flags remote YouTube sources', () {
+      expect(
+        songNeedsResolvedPlaybackUrl(
+          song(
+            id: 'yt',
+            path: 'https://www.youtube.com/watch?v=test',
+            isRemote: true,
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        songNeedsResolvedPlaybackUrl(
+          song(
+            id: 'direct',
+            path: 'https://cdn.example.com/audio.mp3',
+            isRemote: true,
+          ),
+        ),
+        isFalse,
+      );
+      expect(
+        songNeedsResolvedPlaybackUrl(
+          song(id: 'local', path: r'C:\music\local.mp3', isRemote: false),
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('AppDataUsageStats', () {
     test('serializes and formats usage totals', () {
       final AppDataUsageStats usage = AppDataUsageStats(
