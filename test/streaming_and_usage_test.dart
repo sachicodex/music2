@@ -75,8 +75,8 @@ void main() {
             );
 
         expect(resolved.url, 'https://example.com/muxed-low');
-      expect(resolved.info.transport, PlaybackStreamTransport.muxed);
-      expect(resolved.info.bitrateBitsPerSecond, 64000);
+        expect(resolved.info.transport, PlaybackStreamTransport.muxed);
+        expect(resolved.info.bitrateBitsPerSecond, 64000);
       },
     );
 
@@ -146,9 +146,13 @@ void main() {
   group('AppDataUsageStats', () {
     test('serializes and formats usage totals', () {
       final AppDataUsageStats usage = AppDataUsageStats(
-        totalBytes: 41943040,
+        totalBytes: 45875200,
         streamBytes: 31457280,
         cacheBytes: 10485760,
+        searchBytes: 1048576,
+        loadBytes: 2097152,
+        artworkBytes: 524288,
+        metadataBytes: 262144,
         currentSongBytes: 5242880,
         currentSongId: 'song-1',
         lastUpdatedAt: DateTime(2026, 4, 23, 14, 24),
@@ -159,9 +163,14 @@ void main() {
       );
 
       expect(roundTrip, usage);
-      expect(roundTrip.totalLabel, '40 MB');
+      expect(roundTrip.totalLabel, '43.8 MB');
       expect(roundTrip.streamLabel, '30 MB');
       expect(roundTrip.cacheLabel, '10 MB');
+      expect(roundTrip.otherLabel, '3.8 MB');
+      expect(roundTrip.searchLabel, '1 MB');
+      expect(roundTrip.loadLabel, '2 MB');
+      expect(roundTrip.artworkLabel, '512 KB');
+      expect(roundTrip.metadataLabel, '256 KB');
       expect(roundTrip.currentSongLabel, '5 MB');
       expect(formatDataSize(512), '512 B');
     });

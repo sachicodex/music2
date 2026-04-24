@@ -684,7 +684,7 @@ class _ProfileDataUsageCard extends StatelessWidget {
             context,
             title: 'Reset data usage?',
             message:
-                'This clears streaming and warm-cache transfer totals shown on your profile.',
+                'This clears streaming, cache, search, discovery, artwork, and metadata totals shown on your profile.',
             confirmLabel: 'Reset Usage',
             confirmColor: accent,
           );
@@ -757,6 +757,13 @@ class _ProfileDataUsageCard extends StatelessWidget {
                     subtitleColor: subtitleColor,
                   ),
                   _UsageChip(
+                    label: 'Other',
+                    value: usage.otherLabel,
+                    accent: accent,
+                    titleColor: titleColor,
+                    subtitleColor: subtitleColor,
+                  ),
+                  _UsageChip(
                     label: 'Current Song',
                     value: usage.currentSongLabel,
                     accent: accent,
@@ -764,6 +771,76 @@ class _ProfileDataUsageCard extends StatelessWidget {
                     subtitleColor: subtitleColor,
                   ),
                 ],
+              ),
+              const SizedBox(height: 14),
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1C0904),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFF3A170C)),
+                ),
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Row(
+                      children: <Widget>[
+                        const Icon(
+                          Icons.tune_rounded,
+                          color: Color(0xFFC89373),
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Other',
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(
+                                color: titleColor,
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Searches, discovery loads, artwork lookups, and metadata requests are grouped here.',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: subtitleColor),
+                    ),
+                    const SizedBox(height: 12),
+                    _ProfileDetailRow(
+                      title: 'Searches',
+                      value: usage.searchLabel,
+                      titleColor: titleColor,
+                      valueColor: accent,
+                    ),
+                    _ProfileDetailRow(
+                      title: 'Loads',
+                      value: usage.loadLabel,
+                      titleColor: titleColor,
+                      valueColor: titleColor,
+                    ),
+                    _ProfileDetailRow(
+                      title: 'Artwork',
+                      value: usage.artworkLabel,
+                      titleColor: titleColor,
+                      valueColor: titleColor,
+                    ),
+                    _ProfileDetailRow(
+                      title: 'Metadata',
+                      value: usage.metadataLabel,
+                      titleColor: titleColor,
+                      valueColor: titleColor,
+                    ),
+                    _ProfileDetailRow(
+                      title: 'Total',
+                      value: usage.otherLabel,
+                      titleColor: titleColor,
+                      valueColor: accent,
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 14),
               Wrap(
@@ -1061,7 +1138,8 @@ class _UsageChip extends StatelessWidget {
           Text(
             value,
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: label == 'Total' || label == 'Streaming'
+              color:
+                  label == 'Total' || label == 'Streaming' || label == 'Other'
                   ? accent
                   : titleColor,
               fontWeight: FontWeight.w800,

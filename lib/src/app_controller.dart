@@ -25,6 +25,8 @@ import 'playback_proxy.dart';
 import 'streaming.dart';
 import 'windows_media_controls_bridge.dart';
 
+enum _AppNetworkUsageBucket { search, load, artwork, metadata }
+
 class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
   OuterTuneController() : _player = Player(), _yt = YoutubeExplode() {
     WidgetsBinding.instance.addObserver(this);
@@ -438,6 +440,115 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
     );
     _syncDataUsageState();
     _scheduleSnapshotSave();
+  }
+
+  void _recordOtherUsage({
+    int searchBytes = 0,
+    int loadBytes = 0,
+    int artworkBytes = 0,
+    int metadataBytes = 0,
+  }) {
+    final int safeSearchBytes = math.max(0, searchBytes);
+    final int safeLoadBytes = math.max(0, loadBytes);
+    final int safeArtworkBytes = math.max(0, artworkBytes);
+    final int safeMetadataBytes = math.max(0, metadataBytes);
+    final int totalIncrement =
+        safeSearchBytes + safeLoadBytes + safeArtworkBytes + safeMetadataBytes;
+    if (totalIncrement <= 0) {
+      return;
+    }
+    _dataUsage = _dataUsage.copyWith(
+      totalBytes: _dataUsage.totalBytes + totalIncrement,
+      searchBytes: _dataUsage.searchBytes + safeSearchBytes,
+      loadBytes: _dataUsage.loadBytes + safeLoadBytes,
+      artworkBytes: _dataUsage.artworkBytes + safeArtworkBytes,
+      metadataBytes: _dataUsage.metadataBytes + safeMetadataBytes,
+      lastUpdatedAt: DateTime.now(),
+    );
+    _syncDataUsageState();
+    _scheduleSnapshotSave();
+  }
+
+  int _estimateUsagePayloadBytes(Object? payload) {
+    final Object? normalized = _normalizeUsagePayload(payload);
+    return utf8.encode(jsonEncode(normalized)).length;
+  }
+
+  Object? _normalizeUsagePayload(Object? payload) {
+    if (payload == null ||
+        payload is num ||
+        payload is bool ||
+        payload is String) {
+      return payload;
+    }
+    if (payload is DateTime) {
+      return payload.toIso8601String();
+    }
+    if (payload is LibrarySong) {
+      return payload.toJson();
+    }
+    if (payload is PlaybackStreamCandidate) {
+      return <String, dynamic>{
+        'transport': payload.transport.name,
+        'url': payload.url,
+        'bitrateBitsPerSecond': payload.bitrateBitsPerSecond,
+        'streamTag': payload.streamTag,
+        'videoHeight': payload.videoHeight,
+        'qualityLabel': payload.qualityLabel,
+        'containerName': payload.containerName,
+        'codecDescription': payload.codecDescription,
+        'audioCodec': payload.audioCodec,
+        'videoCodec': payload.videoCodec,
+      };
+    }
+    if (payload is Map<Object?, Object?>) {
+      return <String, Object?>{
+        for (final MapEntry<Object?, Object?> entry in payload.entries)
+          '${entry.key}': _normalizeUsagePayload(entry.value),
+      };
+    }
+    if (payload is Iterable<Object?>) {
+      return payload.map(_normalizeUsagePayload).toList(growable: false);
+    }
+    return '$payload';
+  }
+
+  int _estimateArtworkUsageBytesFromSongs(Iterable<LibrarySong> songs) {
+    final List<String> artworkUrls = songs
+        .map((LibrarySong song) => (song.artworkUrl ?? '').trim())
+        .where((String url) => url.isNotEmpty)
+        .toList(growable: false);
+    if (artworkUrls.isEmpty) {
+      return 0;
+    }
+    return _estimateUsagePayloadBytes(artworkUrls);
+  }
+
+  void _recordSongCollectionUsage(
+    Iterable<LibrarySong> songs, {
+    required _AppNetworkUsageBucket bucket,
+    String? query,
+  }) {
+    final List<LibrarySong> materialized = songs.toList(growable: false);
+    if (materialized.isEmpty) {
+      return;
+    }
+    final int artworkBytes = _estimateArtworkUsageBytesFromSongs(materialized);
+    final int totalBytes = _estimateUsagePayloadBytes(<String, Object?>{
+      'query': query,
+      'songs': materialized.map((LibrarySong song) => song.toJson()).toList(),
+    });
+    final int bucketBytes = math.max(0, totalBytes - artworkBytes);
+    switch (bucket) {
+      case _AppNetworkUsageBucket.search:
+        _recordOtherUsage(searchBytes: bucketBytes, artworkBytes: artworkBytes);
+      case _AppNetworkUsageBucket.load:
+        _recordOtherUsage(loadBytes: bucketBytes, artworkBytes: artworkBytes);
+      case _AppNetworkUsageBucket.artwork:
+        _recordOtherUsage(artworkBytes: totalBytes);
+      case _AppNetworkUsageBucket.metadata:
+        _recordOtherUsage(metadataBytes: totalBytes);
+    }
   }
 
   void _handlePlaybackProxyTransfer(PlaybackProxyTransfer transfer) {
@@ -1063,6 +1174,7 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
         query,
         limit: limit,
         force: true,
+        usageBucket: _AppNetworkUsageBucket.search,
       );
       if (requestId != _onlineSearchRequestId) {
         return;
@@ -1153,6 +1265,7 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
           queries[index],
           limit: 24,
           force: force || index > 0,
+          usageBucket: _AppNetworkUsageBucket.load,
         );
         candidates.addAll(results);
       }
@@ -1361,6 +1474,7 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
         query.query,
         limit: 22,
         force: force || recycledQueries,
+        usageBucket: _AppNetworkUsageBucket.load,
       );
       final List<LibrarySong> ranked = _rankRecommendedSongs(
         rawResults,
@@ -1412,6 +1526,7 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
     String query, {
     int limit = 12,
     bool force = false,
+    required _AppNetworkUsageBucket usageBucket,
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) {
@@ -1428,6 +1543,7 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
         trimmed,
         limit: limit,
         force: force,
+        usageBucket: usageBucket,
       );
       _searchCache[cacheKey] = songs;
       return songs;
@@ -1440,6 +1556,7 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
           trimmed,
           limit: limit,
           force: force,
+          usageBucket: usageBucket,
         );
         _searchCache[cacheKey] = fallback;
         return fallback;
@@ -1456,6 +1573,7 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
     String query, {
     int limit = 12,
     bool force = false,
+    required _AppNetworkUsageBucket usageBucket,
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty || limit <= 0) {
@@ -1475,6 +1593,7 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
       trimmed,
       limit: math.max(limit, ytMusicTarget + 4),
       force: force,
+      usageBucket: usageBucket,
     );
 
     final List<LibrarySong> youtubeSongs = ytMusicSongs.length >= limit
@@ -1483,6 +1602,7 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
             trimmed,
             limit: math.max(youtubeTarget + 4, limit ~/ 2),
             force: force,
+            usageBucket: usageBucket,
           );
 
     final List<LibrarySong> blended = _blendOnlineResults(
@@ -1504,6 +1624,7 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
     String query, {
     int limit = 12,
     bool force = false,
+    required _AppNetworkUsageBucket usageBucket,
   }) async {
     final YTMusic? client = _ytMusic;
     final String trimmed = query.trim();
@@ -1555,6 +1676,11 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
     for (final LibrarySong song in _ytMusicSearchCache[cacheKey]!) {
       _rememberTransientSong(song);
     }
+    _recordSongCollectionUsage(
+      _ytMusicSearchCache[cacheKey]!,
+      bucket: usageBucket,
+      query: trimmed,
+    );
     return _ytMusicSearchCache[cacheKey]!;
   }
 
@@ -1562,6 +1688,7 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
     String query, {
     int limit = 12,
     bool force = false,
+    required _AppNetworkUsageBucket usageBucket,
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty || limit <= 0) {
@@ -1590,6 +1717,7 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
         _rememberTransientSong(song);
       }
       _searchCache[cacheKey] = ranked;
+      _recordSongCollectionUsage(ranked, bucket: usageBucket, query: trimmed);
       return ranked;
     } catch (_) {
       _searchCache[cacheKey] = <LibrarySong>[];
@@ -1661,8 +1789,14 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
     String query, {
     int limit = 12,
     bool force = false,
+    _AppNetworkUsageBucket usageBucket = _AppNetworkUsageBucket.metadata,
   }) async {
-    return _searchYouTubeMusicOnly(query, limit: limit, force: force);
+    return _searchYouTubeMusicOnly(
+      query,
+      limit: limit,
+      force: force,
+      usageBucket: usageBucket,
+    );
   }
 
   Future<HomeFeedSection?> _buildYtMusicRadioSection(
@@ -1722,6 +1856,11 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
         .whereType<LibrarySong>()
         .where((LibrarySong song) => !_sameSong(song, anchor))
         .toList(growable: false);
+    _recordSongCollectionUsage(
+      songs,
+      bucket: _AppNetworkUsageBucket.load,
+      query: '${anchor.artist} ${anchor.title} radio',
+    );
 
     for (final LibrarySong song in songs) {
       _rememberTransientSong(song);
@@ -2400,6 +2539,7 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
           'top songs',
           limit: limit * 2,
           force: true,
+          usageBucket: _AppNetworkUsageBucket.load,
         );
         predictions = _dedupeSongs(
           fallback,
@@ -2484,6 +2624,7 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
       final List<LibrarySong> results = await _searchSongs(
         query.query,
         limit: 12,
+        usageBucket: _AppNetworkUsageBucket.load,
       );
       collected.addAll(results);
       if (collected.length >= 36) {
@@ -3585,6 +3726,16 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
     try {
       if (_looksLikeYouTube(value)) {
         final Video video = await _yt.videos.get(value);
+        _recordOtherUsage(
+          metadataBytes: _estimateUsagePayloadBytes(<String, Object?>{
+            'sourceUrl': value,
+            'videoId': video.id.value,
+            'title': video.title,
+            'author': video.author,
+            'durationMs': video.duration?.inMilliseconds,
+            'thumbnail': video.thumbnails.highResUrl,
+          }),
+        );
         final LibrarySong song = _videoToSong(video);
         await playOnlineSong(song);
         return;
@@ -4416,12 +4567,24 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
         filter: ytm.SearchFilter.artists,
         limit: 5,
       );
+      _recordOtherUsage(
+        artworkBytes: _estimateUsagePayloadBytes(<String, Object?>{
+          'artistName': artistName,
+          'results': artistResults,
+        }),
+      );
       resolved = _pickArtistImageUrl(artistResults, artistName: artistName);
       if ((resolved ?? '').trim().isEmpty) {
         final List<dynamic> profileResults = await client.search(
           artistName.trim(),
           filter: ytm.SearchFilter.profiles,
           limit: 5,
+        );
+        _recordOtherUsage(
+          artworkBytes: _estimateUsagePayloadBytes(<String, Object?>{
+            'artistName': artistName,
+            'results': profileResults,
+          }),
         );
         resolved = _pickArtistImageUrl(profileResults, artistName: artistName);
       }
@@ -4651,6 +4814,15 @@ class OuterTuneController extends ChangeNotifier with WidgetsBindingObserver {
       );
       rankedCandidates = rankPlaybackStreamCandidates(
         _buildPlaybackStreamCandidates(manifest),
+      );
+      _recordOtherUsage(
+        metadataBytes: _estimateUsagePayloadBytes(<String, Object?>{
+          'songId': song.id,
+          'source': song.path,
+          'candidates': rankedCandidates
+              .map(_normalizeUsagePayload)
+              .toList(growable: false),
+        }),
       );
       _rankedPlaybackCandidatesBySongId[song.id] = rankedCandidates;
     }

@@ -749,6 +749,10 @@ class AppDataUsageStats {
     this.totalBytes = 0,
     this.streamBytes = 0,
     this.cacheBytes = 0,
+    this.searchBytes = 0,
+    this.loadBytes = 0,
+    this.artworkBytes = 0,
+    this.metadataBytes = 0,
     this.currentSongBytes = 0,
     this.currentSongId,
     this.lastUpdatedAt,
@@ -757,6 +761,10 @@ class AppDataUsageStats {
   final int totalBytes;
   final int streamBytes;
   final int cacheBytes;
+  final int searchBytes;
+  final int loadBytes;
+  final int artworkBytes;
+  final int metadataBytes;
   final int currentSongBytes;
   final String? currentSongId;
   final DateTime? lastUpdatedAt;
@@ -764,6 +772,12 @@ class AppDataUsageStats {
   String get totalLabel => formatDataSize(totalBytes);
   String get streamLabel => formatDataSize(streamBytes);
   String get cacheLabel => formatDataSize(cacheBytes);
+  int get otherBytes => searchBytes + loadBytes + artworkBytes + metadataBytes;
+  String get otherLabel => formatDataSize(otherBytes);
+  String get searchLabel => formatDataSize(searchBytes);
+  String get loadLabel => formatDataSize(loadBytes);
+  String get artworkLabel => formatDataSize(artworkBytes);
+  String get metadataLabel => formatDataSize(metadataBytes);
   String get currentSongLabel => formatDataSize(currentSongBytes);
   bool get hasCurrentSongUsage =>
       (currentSongId?.trim().isNotEmpty ?? false) && currentSongBytes > 0;
@@ -772,6 +786,10 @@ class AppDataUsageStats {
     int? totalBytes,
     int? streamBytes,
     int? cacheBytes,
+    int? searchBytes,
+    int? loadBytes,
+    int? artworkBytes,
+    int? metadataBytes,
     int? currentSongBytes,
     String? currentSongId,
     bool clearCurrentSongId = false,
@@ -781,6 +799,10 @@ class AppDataUsageStats {
       totalBytes: totalBytes ?? this.totalBytes,
       streamBytes: streamBytes ?? this.streamBytes,
       cacheBytes: cacheBytes ?? this.cacheBytes,
+      searchBytes: searchBytes ?? this.searchBytes,
+      loadBytes: loadBytes ?? this.loadBytes,
+      artworkBytes: artworkBytes ?? this.artworkBytes,
+      metadataBytes: metadataBytes ?? this.metadataBytes,
       currentSongBytes: currentSongBytes ?? this.currentSongBytes,
       currentSongId: clearCurrentSongId
           ? null
@@ -794,6 +816,10 @@ class AppDataUsageStats {
       'totalBytes': totalBytes,
       'streamBytes': streamBytes,
       'cacheBytes': cacheBytes,
+      'searchBytes': searchBytes,
+      'loadBytes': loadBytes,
+      'artworkBytes': artworkBytes,
+      'metadataBytes': metadataBytes,
       'currentSongBytes': currentSongBytes,
       'currentSongId': currentSongId,
       'lastUpdatedAt': lastUpdatedAt?.toIso8601String(),
@@ -809,6 +835,10 @@ class AppDataUsageStats {
       totalBytes: (json['totalBytes'] as num?)?.toInt() ?? 0,
       streamBytes: (json['streamBytes'] as num?)?.toInt() ?? 0,
       cacheBytes: (json['cacheBytes'] as num?)?.toInt() ?? 0,
+      searchBytes: (json['searchBytes'] as num?)?.toInt() ?? 0,
+      loadBytes: (json['loadBytes'] as num?)?.toInt() ?? 0,
+      artworkBytes: (json['artworkBytes'] as num?)?.toInt() ?? 0,
+      metadataBytes: (json['metadataBytes'] as num?)?.toInt() ?? 0,
       currentSongBytes: (json['currentSongBytes'] as num?)?.toInt() ?? 0,
       currentSongId: json['currentSongId'] as String?,
       lastUpdatedAt: DateTime.tryParse(json['lastUpdatedAt'] as String? ?? ''),
@@ -823,6 +853,10 @@ class AppDataUsageStats {
             totalBytes == other.totalBytes &&
             streamBytes == other.streamBytes &&
             cacheBytes == other.cacheBytes &&
+            searchBytes == other.searchBytes &&
+            loadBytes == other.loadBytes &&
+            artworkBytes == other.artworkBytes &&
+            metadataBytes == other.metadataBytes &&
             currentSongBytes == other.currentSongBytes &&
             currentSongId == other.currentSongId &&
             lastUpdatedAt == other.lastUpdatedAt;
@@ -833,6 +867,10 @@ class AppDataUsageStats {
     totalBytes,
     streamBytes,
     cacheBytes,
+    searchBytes,
+    loadBytes,
+    artworkBytes,
+    metadataBytes,
     currentSongBytes,
     currentSongId,
     lastUpdatedAt,
