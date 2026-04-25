@@ -48,7 +48,7 @@ class _MusixStartupGate extends StatefulWidget {
 }
 
 class _MusixStartupGateState extends State<_MusixStartupGate> {
-  static const Duration _targetStartupDuration = Duration(seconds: 2);
+  static const Duration _targetStartupDuration = Duration(seconds: 5);
   static const bool _debugInfiniteStartup = false;
 
   int _bootAttempt = 0;
@@ -241,7 +241,10 @@ class _MusixStartupScreenState extends State<_MusixStartupScreen>
 
   @override
   Widget build(BuildContext context) {
-    final Listenable animation = Listenable.merge(<Listenable>[_intro, _timeline]);
+    final Listenable animation = Listenable.merge(<Listenable>[
+      _intro,
+      _timeline,
+    ]);
     return Scaffold(
       backgroundColor: const Color(0xFF080808),
       body: AnimatedBuilder(
@@ -289,7 +292,7 @@ class _MusixStartupScreenState extends State<_MusixStartupScreen>
                                 'MUSIX',
                                 style: GoogleFonts.spaceGrotesk(
                                   color: Colors.white.withValues(alpha: 0.82),
-                                  fontSize: 40,
+                                  fontSize: 30,
                                   fontWeight: FontWeight.w700,
                                   letterSpacing: 1.0,
                                 ),
@@ -367,7 +370,7 @@ class _MusixSplashLogoBadge extends StatelessWidget {
       height: 100,
       child: Center(
         child: Image.asset(
-          'assets/icons/Musix - Android.png',
+          'assets/icons/Musix - Full.png',
           width: 100,
           height: 100,
           fit: BoxFit.contain,

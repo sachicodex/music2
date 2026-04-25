@@ -17,9 +17,11 @@ Future<void> main() async {
           defaultTargetPlatform == TargetPlatform.macOS ||
           defaultTargetPlatform == TargetPlatform.linux)) {
     await windowManager.ensureInitialized();
-    const WindowOptions windowOptions = WindowOptions(
-      size: Size(1280, 720),
-      center: true,
+    final bool isWindows = defaultTargetPlatform == TargetPlatform.windows;
+    final WindowOptions windowOptions = WindowOptions(
+      size: isWindows ? null : const Size(1280, 720),
+      minimumSize: const Size(960, 640),
+      center: !isWindows,
       backgroundColor: Colors.transparent,
       skipTaskbar: false,
       title: 'Musix',
@@ -28,7 +30,6 @@ Future<void> main() async {
     );
     unawaited(
       windowManager.waitUntilReadyToShow(windowOptions, () async {
-        await windowManager.maximize();
         await windowManager.show();
         await windowManager.focus();
       }),

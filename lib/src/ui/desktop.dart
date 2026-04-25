@@ -326,7 +326,13 @@ class _DesktopTitleBarActionButtonState
             ),
           ),
           child: Center(
-            child: Icon(widget.icon, color: Colors.white, size: 18),
+            child: Icon(
+              widget.icon,
+              color: _hovering
+                  ? const Color(0xFFD7D0CA)
+                  : const Color(0xFFAAA39D),
+              size: 18,
+            ),
           ),
         ),
       ),
@@ -658,8 +664,10 @@ class _DesktopNowPlayingRail extends StatelessWidget {
         return LayoutBuilder(
           builder: (BuildContext context, BoxConstraints constraints) {
             final bool compactHeight = constraints.maxHeight < 760;
-            final double artworkExtent =
-                constraints.maxWidth - (compactHeight ? 44 : 52);
+            final double artworkExtent = math.max(
+              0,
+              constraints.maxWidth - (compactHeight ? 44 : 52),
+            );
 
             return _DesktopPanel(
               padding: EdgeInsets.fromLTRB(

@@ -1362,10 +1362,19 @@ class _PlaybackLoadingBar extends StatelessWidget {
       child: SizedBox(
         height: height,
         width: double.infinity,
-        child: LinearProgressIndicator(
-          minHeight: height,
-          backgroundColor: trackColor,
-          valueColor: AlwaysStoppedAnimation<Color>(accent),
+        child: ColoredBox(
+          color: trackColor,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: FractionallySizedBox(
+              widthFactor: 0.12,
+              alignment: Alignment.centerLeft,
+              child: SizedBox(
+                height: height,
+                child: ColoredBox(color: accent),
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -1773,10 +1782,7 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
                             }
                             await controller.removeFromQueue(queueIndex);
                             if (context.mounted) {
-                              _showMusixSnackBar(
-                                context,
-                                'Removed from queue',
-                              );
+                              _showMusixSnackBar(context, 'Removed from queue');
                             }
                           },
                           child: Material(
@@ -1928,7 +1934,9 @@ class _AlbumScreen extends StatelessWidget {
                           style: Theme.of(context).textTheme.headlineSmall,
                         ),
                         const SizedBox(height: 8),
-                        Text('${album.artist} Ã¢â‚¬Â¢ ${album.songCount} tracks'),
+                        Text(
+                          '${album.artist} Ã¢â‚¬Â¢ ${album.songCount} tracks',
+                        ),
                         const SizedBox(height: 8),
                         Text(_formatDuration(album.totalDuration)),
                       ],
@@ -3716,11 +3724,12 @@ class _MiniPlayer extends StatelessWidget {
                                                     widthFactor: safeProgress,
                                                     alignment:
                                                         Alignment.centerLeft,
-                                                    child: const SizedBox.expand(
-                                                      child: ColoredBox(
-                                                        color: accent,
-                                                      ),
-                                                    ),
+                                                    child:
+                                                        const SizedBox.expand(
+                                                          child: ColoredBox(
+                                                            color: accent,
+                                                          ),
+                                                        ),
                                                   ),
                                                 ),
                                               ),
