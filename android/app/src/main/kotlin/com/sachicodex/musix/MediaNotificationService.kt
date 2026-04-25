@@ -1,4 +1,4 @@
-package com.sachicodex.sonix
+package com.sachicodex.musix
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -335,12 +335,12 @@ class MediaNotificationService : Service() {
     }
 
     companion object {
-        const val ACTION_UPDATE_NOTIFICATION = "com.sachicodex.sonix.action.UPDATE_NOTIFICATION"
-        const val ACTION_STOP_NOTIFICATION = "com.sachicodex.sonix.action.STOP_NOTIFICATION"
-        const val ACTION_PLAY = "com.sachicodex.sonix.action.PLAY"
-        const val ACTION_PAUSE = "com.sachicodex.sonix.action.PAUSE"
-        const val ACTION_NEXT = "com.sachicodex.sonix.action.NEXT"
-        const val ACTION_PREVIOUS = "com.sachicodex.sonix.action.PREVIOUS"
+        const val ACTION_UPDATE_NOTIFICATION = "com.sachicodex.musix.action.UPDATE_NOTIFICATION"
+        const val ACTION_STOP_NOTIFICATION = "com.sachicodex.musix.action.STOP_NOTIFICATION"
+        const val ACTION_PLAY = "com.sachicodex.musix.action.PLAY"
+        const val ACTION_PAUSE = "com.sachicodex.musix.action.PAUSE"
+        const val ACTION_NEXT = "com.sachicodex.musix.action.NEXT"
+        const val ACTION_PREVIOUS = "com.sachicodex.musix.action.PREVIOUS"
 
         const val EXTRA_TITLE = "extra_title"
         const val EXTRA_ARTIST = "extra_artist"
@@ -354,7 +354,7 @@ class MediaNotificationService : Service() {
         const val COMMAND_NEXT = "next"
         const val COMMAND_PREVIOUS = "previous"
 
-        private const val CHANNEL_ID = "com.sachicodex.sonix.playback"
+        private const val CHANNEL_ID = "com.sachicodex.musix.playback"
         private const val SESSION_TAG = "music_media_session"
         private const val NOTIFICATION_ID = 1001
 

@@ -25,7 +25,7 @@ class _DesktopShellScaffold extends StatelessWidget {
     required this.onOpenPlayer,
   });
 
-  final SonixController controller;
+  final MusixController controller;
   final AppDestination destination;
   final List<AppDestination> destinations;
   final int pageIndex;
@@ -40,7 +40,9 @@ class _DesktopShellScaffold extends StatelessWidget {
         final bool showPlayerRail =
             controller.nowPlayingState.value.song != null;
         final bool compactSidebar = constraints.maxWidth < 1100;
-        final double playerRailWidth = constraints.maxWidth >= 1400 ? 360 : 320;
+        final bool windowsDesktop =
+            !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+        final double playerRailWidth = constraints.maxWidth >= 1500 ? 360 : 320;
 
         return CallbackShortcuts(
           bindings: <ShortcutActivator, VoidCallback>{
@@ -84,58 +86,71 @@ class _DesktopShellScaffold extends StatelessWidget {
                 ),
               ),
               child: SafeArea(
+                bottom: false,
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                  padding: const EdgeInsets.fromLTRB(18, 10, 18, 20),
+                  child: Column(
                     children: <Widget>[
-                      _DesktopSidebar(
-                        controller: controller,
-                        destination: destination,
-                        destinations: destinations,
-                        compact: compactSidebar,
-                        onDestinationChanged: onDestinationChanged,
-                      ),
-                      const SizedBox(width: 18),
+                      if (windowsDesktop) ...<Widget>[
+                        const _DesktopWindowTitleBar(),
+                        const SizedBox(height: 12),
+                      ],
                       Expanded(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: const Color(
-                              0xFF140805,
-                            ).withValues(alpha: 0.9),
-                            borderRadius: BorderRadius.circular(32),
-                            border: Border.all(
-                              color: const Color(
-                                0xFF3A1C11,
-                              ).withValues(alpha: 0.9),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            _DesktopSidebar(
+                              controller: controller,
+                              destination: destination,
+                              destinations: destinations,
+                              compact: compactSidebar,
+                              onDestinationChanged: onDestinationChanged,
                             ),
-                            boxShadow: <BoxShadow>[
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.14),
-                                blurRadius: 24,
-                                offset: const Offset(0, 16),
+                            const SizedBox(width: 18),
+                            Expanded(
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: const Color(
+                                    0xFF140805,
+                                  ).withValues(alpha: 0.9),
+                                  borderRadius: BorderRadius.circular(32),
+                                  border: Border.all(
+                                    color: const Color(
+                                      0xFF3A1C11,
+                                    ).withValues(alpha: 0.9),
+                                  ),
+                                  boxShadow: <BoxShadow>[
+                                    BoxShadow(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.14,
+                                      ),
+                                      blurRadius: 24,
+                                      offset: const Offset(0, 16),
+                                    ),
+                                  ],
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(32),
+                                  child: IndexedStack(
+                                    index: pageIndex,
+                                    children: children,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            if (showPlayerRail) ...<Widget>[
+                              const SizedBox(width: 18),
+                              SizedBox(
+                                width: playerRailWidth,
+                                child: _DesktopNowPlayingRail(
+                                  controller: controller,
+                                  onOpenPlayer: onOpenPlayer,
+                                ),
                               ),
                             ],
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(32),
-                            child: IndexedStack(
-                              index: pageIndex,
-                              children: children,
-                            ),
-                          ),
+                          ],
                         ),
                       ),
-                      if (showPlayerRail) ...<Widget>[
-                        const SizedBox(width: 18),
-                        SizedBox(
-                          width: playerRailWidth,
-                          child: _DesktopNowPlayingRail(
-                            controller: controller,
-                            onOpenPlayer: onOpenPlayer,
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                 ),
@@ -144,6 +159,177 @@ class _DesktopShellScaffold extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _DesktopWindowTitleBar extends StatefulWidget {
+  const _DesktopWindowTitleBar();
+
+  @override
+  State<_DesktopWindowTitleBar> createState() => _DesktopWindowTitleBarState();
+}
+
+class _DesktopWindowTitleBarState extends State<_DesktopWindowTitleBar>
+    with WindowListener {
+  bool _isMaximized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    windowManager.addListener(this);
+    unawaited(_syncMaximizedState());
+  }
+
+  @override
+  void dispose() {
+    windowManager.removeListener(this);
+    super.dispose();
+  }
+
+  Future<void> _syncMaximizedState() async {
+    final bool maximized = await windowManager.isMaximized();
+    if (!mounted) {
+      return;
+    }
+    setState(() => _isMaximized = maximized);
+  }
+
+  Future<void> _toggleMaximize() async {
+    if (_isMaximized) {
+      await windowManager.unmaximize();
+    } else {
+      await windowManager.maximize();
+    }
+    await _syncMaximizedState();
+  }
+
+  @override
+  void onWindowMaximize() {
+    if (mounted) {
+      setState(() => _isMaximized = true);
+    }
+  }
+
+  @override
+  void onWindowUnmaximize() {
+    if (mounted) {
+      setState(() => _isMaximized = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 44,
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: GestureDetector(
+              onDoubleTap: _toggleMaximize,
+              child: DragToMoveArea(
+                child: Container(
+                  height: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF130806).withValues(alpha: 0.94),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFF3A1C11)),
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(7),
+                        child: Image.asset(
+                          'assets/icons/Musix - Windows.png',
+                          width: 20,
+                          height: 20,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Musix',
+                        style: GoogleFonts.spaceGrotesk(
+                          color: _kTextPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          _DesktopTitleBarActionButton(
+            icon: _isMaximized
+                ? Icons.filter_none_rounded
+                : Icons.crop_square_rounded,
+            onTap: _toggleMaximize,
+          ),
+          const SizedBox(width: 10),
+          _DesktopTitleBarActionButton(
+            icon: Icons.close_rounded,
+            onTap: () => windowManager.close(),
+            hoverColor: const Color(0xFFC94D2C),
+            hoverBorderColor: const Color(0xFFE58E72),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DesktopTitleBarActionButton extends StatefulWidget {
+  const _DesktopTitleBarActionButton({
+    required this.icon,
+    required this.onTap,
+    this.hoverColor = const Color(0xFF3A1B10),
+    this.hoverBorderColor = const Color(0xFF6A341D),
+  });
+
+  final IconData icon;
+  final VoidCallback onTap;
+  final Color hoverColor;
+  final Color hoverBorderColor;
+
+  @override
+  State<_DesktopTitleBarActionButton> createState() =>
+      _DesktopTitleBarActionButtonState();
+}
+
+class _DesktopTitleBarActionButtonState
+    extends State<_DesktopTitleBarActionButton> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          width: 52,
+          height: 44,
+          decoration: BoxDecoration(
+            color: _hovering ? widget.hoverColor : const Color(0xFF2B130C),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: _hovering
+                  ? widget.hoverBorderColor
+                  : const Color(0xFF4A2416),
+            ),
+          ),
+          child: Center(
+            child: Icon(widget.icon, color: Colors.white, size: 18),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -157,7 +343,7 @@ class _DesktopSidebar extends StatelessWidget {
     required this.onDestinationChanged,
   });
 
-  final SonixController controller;
+  final MusixController controller;
   final AppDestination destination;
   final List<AppDestination> destinations;
   final bool compact;
@@ -202,20 +388,9 @@ class _DesktopSidebar extends StatelessWidget {
                   )
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        'SONIX',
-                        style: GoogleFonts.spaceGrotesk(
-                          color: _kTextPrimary,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.0,
-                        ),
-                      ),
-                    ],
+                    children: <Widget>[],
                   ),
           ),
-          const SizedBox(height: 18),
           for (int index = 0; index < destinations.length; index++) ...<Widget>[
             _DesktopSidebarButton(
               item: destinations[index],
@@ -329,7 +504,7 @@ class _DesktopSidebarButtonState extends State<_DesktopSidebarButton> {
 class _DesktopSidebarStatus extends StatelessWidget {
   const _DesktopSidebarStatus({required this.controller});
 
-  final SonixController controller;
+  final MusixController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -467,7 +642,7 @@ class _DesktopNowPlayingRail extends StatelessWidget {
     required this.onOpenPlayer,
   });
 
-  final SonixController controller;
+  final MusixController controller;
   final VoidCallback onOpenPlayer;
 
   @override
@@ -480,212 +655,245 @@ class _DesktopNowPlayingRail extends StatelessWidget {
           return const SizedBox.shrink();
         }
 
-        return _DesktopPanel(
-          child: ValueListenableBuilder<PlaybackProgressState>(
-            valueListenable: controller.playbackProgressState,
-            builder:
-                (
-                  BuildContext context,
-                  PlaybackProgressState progress,
-                  Widget? child,
-                ) {
-                  final Duration duration = progress.duration == Duration.zero
-                      ? song.duration
-                      : progress.duration;
-                  final Duration position = nowPlaying.isLoading
-                      ? Duration.zero
-                      : progress.position;
-                  final double progressValue = duration.inMilliseconds <= 0
-                      ? 0
-                      : position.inMilliseconds / duration.inMilliseconds;
-                  final double safeProgress = progressValue.isFinite
-                      ? progressValue.clamp(0.0, 1.0)
-                      : 0.0;
-                  final bool showPauseIcon =
-                      progress.isPlaying && !nowPlaying.isLoading;
+        return LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final bool compactHeight = constraints.maxHeight < 760;
+            final double artworkExtent =
+                constraints.maxWidth - (compactHeight ? 44 : 52);
 
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      const _DesktopPanelTitle(
-                        eyebrow: 'NOW PLAYING',
-                        title: 'Session controls',
-                      ),
-                      const SizedBox(height: 18),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(28),
-                        child: AspectRatio(
-                          aspectRatio: 1,
-                          child:
-                              song.artworkUrl != null &&
-                                  song.artworkUrl!.trim().isNotEmpty
-                              ? _CachedArtworkImage(
-                                  imageUrl: song.artworkUrl!,
-                                  dimension: 320,
-                                  placeholder: const _PlayerArtFallback(),
-                                  errorWidget: const _PlayerArtFallback(),
-                                )
-                              : const _PlayerArtFallback(),
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      Text(
-                        song.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.spaceGrotesk(
-                          color: _kTextPrimary,
-                          fontSize: 26,
-                          fontWeight: FontWeight.w700,
-                          height: 0.95,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        _songArtistLabel(song),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.ibmPlexSans(
-                          color: _kTextSecondary,
-                          fontSize: 14,
-                          height: 1.35,
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      if (nowPlaying.isLoading)
-                        const _PlaybackLoadingBar(
-                          accent: _kAccent,
-                          trackColor: Color(0xFF4D2A1D),
-                          height: 6,
-                        )
-                      else
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(999),
-                          child: SizedBox(
-                            height: 6,
-                            child: ColoredBox(
-                              color: const Color(0xFF4D2A1D),
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: FractionallySizedBox(
-                                  widthFactor: safeProgress,
-                                  alignment: Alignment.centerLeft,
-                                  child: const SizedBox.expand(
-                                    child: ColoredBox(color: _kAccent),
+            return _DesktopPanel(
+              padding: EdgeInsets.fromLTRB(
+                compactHeight ? 22 : 26,
+                compactHeight ? 22 : 28,
+                compactHeight ? 22 : 26,
+                compactHeight ? 22 : 26,
+              ),
+              child: ValueListenableBuilder<PlaybackProgressState>(
+                valueListenable: controller.playbackProgressState,
+                builder:
+                    (
+                      BuildContext context,
+                      PlaybackProgressState progress,
+                      Widget? child,
+                    ) {
+                      final Duration duration =
+                          progress.duration == Duration.zero
+                          ? song.duration
+                          : progress.duration;
+                      final Duration position = nowPlaying.isLoading
+                          ? Duration.zero
+                          : progress.position;
+                      final double progressValue = duration.inMilliseconds <= 0
+                          ? 0
+                          : position.inMilliseconds / duration.inMilliseconds;
+                      final double safeProgress = progressValue.isFinite
+                          ? progressValue.clamp(0.0, 1.0)
+                          : 0.0;
+                      final bool showPauseIcon =
+                          progress.isPlaying && !nowPlaying.isLoading;
+
+                      return SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            const _DesktopPanelTitle(
+                              eyebrow: 'NOW PLAYING',
+                              title: 'Session controls',
+                            ),
+                            SizedBox(height: compactHeight ? 18 : 22),
+                            Center(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(34),
+                                child: SizedBox(
+                                  width: artworkExtent,
+                                  height: artworkExtent,
+                                  child:
+                                      song.artworkUrl != null &&
+                                          song.artworkUrl!.trim().isNotEmpty
+                                      ? _CachedArtworkImage(
+                                          imageUrl: song.artworkUrl!,
+                                          dimension: artworkExtent,
+                                          placeholder:
+                                              const _PlayerArtFallback(),
+                                          errorWidget:
+                                              const _PlayerArtFallback(),
+                                        )
+                                      : const _PlayerArtFallback(),
+                                ),
+                              ),
+                            ),
+                            SizedBox(height: compactHeight ? 18 : 22),
+                            Text(
+                              song.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.spaceGrotesk(
+                                color: _kTextPrimary,
+                                fontSize: compactHeight ? 24 : 28,
+                                fontWeight: FontWeight.w700,
+                                height: 1.0,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              _songArtistLabel(song),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.ibmPlexSans(
+                                color: _kTextSecondary,
+                                fontSize: compactHeight ? 15 : 16,
+                                height: 1.35,
+                              ),
+                            ),
+                            SizedBox(height: compactHeight ? 18 : 22),
+                            if (nowPlaying.isLoading)
+                              const _PlaybackLoadingBar(
+                                accent: _kAccent,
+                                trackColor: Color(0xFF73432C),
+                                height: 6,
+                              )
+                            else
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(999),
+                                child: SizedBox(
+                                  height: 6,
+                                  child: ColoredBox(
+                                    color: const Color(0xFF73432C),
+                                    child: Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: FractionallySizedBox(
+                                        widthFactor: safeProgress,
+                                        alignment: Alignment.centerLeft,
+                                        child: const SizedBox.expand(
+                                          child: ColoredBox(color: _kAccent),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: <Widget>[
+                                Text(
+                                  _formatClock(position),
+                                  style: GoogleFonts.ibmPlexSans(
+                                    color: _kTextPrimary.withValues(
+                                      alpha: 0.92,
+                                    ),
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Text(
+                                  _formatClock(duration),
+                                  style: GoogleFonts.ibmPlexSans(
+                                    color: _kTextPrimary.withValues(
+                                      alpha: 0.92,
+                                    ),
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: compactHeight ? 18 : 22),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: <Widget>[
+                                _MiniPlayerIcon(
+                                  icon: Icons.shuffle_rounded,
+                                  onPressed: controller.toggleShuffle,
+                                  color: nowPlaying.isShuffleEnabled
+                                      ? _kAccent
+                                      : _kTextSecondary.withValues(alpha: 0.7),
+                                ),
+                                _MiniPlayerIcon(
+                                  icon: Icons.skip_previous_rounded,
+                                  onPressed: controller.previousTrack,
+                                  color: _kTextPrimary,
+                                ),
+                                InkWell(
+                                  onTap: controller.togglePlayback,
+                                  borderRadius: BorderRadius.circular(999),
+                                  child: Container(
+                                    width: compactHeight ? 72 : 80,
+                                    height: compactHeight ? 72 : 80,
+                                    decoration: const BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: _kAccent,
+                                    ),
+                                    child: Center(
+                                      child: nowPlaying.isLoading
+                                          ? const SizedBox(
+                                              width: 22,
+                                              height: 22,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2.6,
+                                                valueColor:
+                                                    AlwaysStoppedAnimation<
+                                                      Color
+                                                    >(Colors.black),
+                                              ),
+                                            )
+                                          : Icon(
+                                              showPauseIcon
+                                                  ? Icons.pause_rounded
+                                                  : Icons.play_arrow_rounded,
+                                              color: Colors.black,
+                                              size: showPauseIcon ? 34 : 38,
+                                            ),
+                                    ),
+                                  ),
+                                ),
+                                _MiniPlayerIcon(
+                                  icon: Icons.skip_next_rounded,
+                                  onPressed: controller.nextTrack,
+                                  color: _kTextPrimary,
+                                ),
+                                _MiniPlayerIcon(
+                                  icon: _repeatIcon(nowPlaying.repeatMode),
+                                  onPressed: controller.cycleRepeatMode,
+                                  color: _kTextSecondary.withValues(alpha: 0.7),
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: compactHeight ? 22 : 26),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                onPressed: onOpenPlayer,
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: const Color(0xFF572812),
+                                  foregroundColor: _kTextPrimary,
+                                  padding: EdgeInsets.symmetric(
+                                    vertical: compactHeight ? 16 : 18,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(999),
+                                    side: const BorderSide(
+                                      color: Color(0xFF8C4C27),
+                                    ),
+                                  ),
+                                ),
+                                icon: const Icon(Icons.open_in_full_rounded),
+                                label: Text(
+                                  'Open Full Player',
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.splineSans(
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
                               ),
                             ),
-                          ),
+                          ],
                         ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: <Widget>[
-                          Text(
-                            _formatClock(position),
-                            style: GoogleFonts.ibmPlexSans(
-                              color: _kTextSecondary,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const Spacer(),
-                          Text(
-                            _formatClock(duration),
-                            style: GoogleFonts.ibmPlexSans(
-                              color: _kTextSecondary,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: <Widget>[
-                          _MiniPlayerIcon(
-                            icon: Icons.shuffle_rounded,
-                            onPressed: controller.toggleShuffle,
-                            color: nowPlaying.isShuffleEnabled
-                                ? _kAccent
-                                : _kTextSecondary.withValues(alpha: 0.7),
-                          ),
-                          _MiniPlayerIcon(
-                            icon: Icons.skip_previous_rounded,
-                            onPressed: controller.previousTrack,
-                            color: _kTextPrimary,
-                          ),
-                          InkWell(
-                            onTap: controller.togglePlayback,
-                            borderRadius: BorderRadius.circular(999),
-                            child: Container(
-                              width: 62,
-                              height: 62,
-                              decoration: const BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: _kAccent,
-                              ),
-                              child: Center(
-                                child: nowPlaying.isLoading
-                                    ? const SizedBox(
-                                        width: 22,
-                                        height: 22,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2.6,
-                                          valueColor:
-                                              AlwaysStoppedAnimation<Color>(
-                                                Colors.black,
-                                              ),
-                                        ),
-                                      )
-                                    : Icon(
-                                        showPauseIcon
-                                            ? Icons.pause_rounded
-                                            : Icons.play_arrow_rounded,
-                                        color: Colors.black,
-                                        size: showPauseIcon ? 30 : 34,
-                                      ),
-                              ),
-                            ),
-                          ),
-                          _MiniPlayerIcon(
-                            icon: Icons.skip_next_rounded,
-                            onPressed: controller.nextTrack,
-                            color: _kTextPrimary,
-                          ),
-                          _MiniPlayerIcon(
-                            icon: _repeatIcon(nowPlaying.repeatMode),
-                            onPressed: controller.cycleRepeatMode,
-                            color: _kTextSecondary.withValues(alpha: 0.7),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 18),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed: onOpenPlayer,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0x22FF8A2A),
-                            foregroundColor: _kTextPrimary,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(18),
-                              side: const BorderSide(color: Color(0x33FFB37D)),
-                            ),
-                          ),
-                          icon: const Icon(Icons.open_in_full_rounded),
-                          label: Text(
-                            'Open Full Player',
-                            style: GoogleFonts.splineSans(
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-          ),
+                      );
+                    },
+              ),
+            );
+          },
         );
       },
     );
@@ -698,7 +906,7 @@ class _DesktopHomeScreen extends StatelessWidget {
     required this.onOpenSearch,
   });
 
-  final SonixController controller;
+  final MusixController controller;
   final VoidCallback onOpenSearch;
 
   @override
@@ -761,7 +969,7 @@ class _DesktopHomeScreen extends StatelessWidget {
                   else
                     ...localSongs.asMap().entries.map(
                       (MapEntry<int, LibrarySong> entry) =>
-                          _SonixPopularTrackTile(
+                          _MusixPopularTrackTile(
                             index: entry.key + 1,
                             song: entry.value,
                             onTap: () => controller.playSongs(
@@ -809,9 +1017,9 @@ class _DesktopHomeScreen extends StatelessWidget {
         children: <Widget>[
           _DesktopPanel(
             child: controller.homeLoading && !hasRevealableContent
-                ? const _SonixHeroSkeleton()
+                ? const _MusixHeroSkeleton()
                 : featured != null
-                ? _SonixHeroCard(
+                ? _MusixHeroCard(
                     badge: featured.badge,
                     title: featured.title,
                     subtitle: featured.subtitle,
@@ -828,7 +1036,7 @@ class _DesktopHomeScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                _SonixSectionHeader(
+                _MusixSectionHeader(
                   title: 'MAY YOU LIKE',
                   onViewAll: () {
                     if (mayYouLikeFull.isEmpty) {
@@ -845,7 +1053,7 @@ class _DesktopHomeScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 if (controller.homeLoading && !hasRevealableContent)
-                  const _SonixListSkeleton(count: 4)
+                  const _MusixListSkeleton(count: 4)
                 else if (mayYouLike.isEmpty)
                   const _PersonalizationHintCard(
                     message:
@@ -857,7 +1065,7 @@ class _DesktopHomeScreen extends StatelessWidget {
                       int index,
                     ) {
                       final LibrarySong song = mayYouLike[index];
-                      return _SonixPopularTrackTile(
+                      return _MusixPopularTrackTile(
                         index: index + 1,
                         song: song,
                         onTap: () {
@@ -930,7 +1138,7 @@ class _DesktopHomeScreen extends StatelessWidget {
                             spacing: 20,
                             runSpacing: 20,
                             children: jumpBackIn.map((LibrarySong song) {
-                              return _SonixJumpBackCard(
+                              return _MusixJumpBackCard(
                                 width: width.clamp(220.0, 420.0),
                                 title: song.title,
                                 subtitle: _songArtistLabel(song),
@@ -973,7 +1181,7 @@ class _DesktopSearchScreen extends StatelessWidget {
     required this.onRemoveSearch,
   });
 
-  final SonixController controller;
+  final MusixController controller;
   final TextEditingController searchController;
   final ScrollController scrollController;
   final List<String> recentSearches;
@@ -1098,9 +1306,15 @@ class _DesktopSearchScreen extends StatelessWidget {
                         builder:
                             (BuildContext context, BoxConstraints constraints) {
                               final double totalWidth = constraints.maxWidth;
-                              final int columns = totalWidth >= 1180 ? 3 : 2;
-                              final double itemWidth =
-                                  (totalWidth - ((columns - 1) * 16)) / columns;
+                              final int columns = totalWidth >= 1180
+                                  ? 3
+                                  : totalWidth >= 520
+                                  ? 2
+                                  : 1;
+                              final double itemWidth = math.max(
+                                0,
+                                (totalWidth - ((columns - 1) * 16)) / columns,
+                              );
                               return Wrap(
                                 spacing: 16,
                                 runSpacing: 16,
@@ -1258,7 +1472,7 @@ class _DesktopSearchScreen extends StatelessWidget {
 class _DesktopLibraryScreen extends StatelessWidget {
   const _DesktopLibraryScreen({required this.controller});
 
-  final SonixController controller;
+  final MusixController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -1317,7 +1531,7 @@ class _DesktopLibraryScreen extends StatelessWidget {
                   onTap: () {
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                        builder: (BuildContext context) => _SonixPlaylistScreen(
+                        builder: (BuildContext context) => _MusixPlaylistScreen(
                           controller: controller,
                           title: 'Liked Songs',
                           songs: likedSongs,
@@ -1340,7 +1554,7 @@ class _DesktopLibraryScreen extends StatelessWidget {
                   onTap: () {
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                        builder: (BuildContext context) => _SonixPlaylistScreen(
+                        builder: (BuildContext context) => _MusixPlaylistScreen(
                           controller: controller,
                           title: 'Offline',
                           songs: controller.songs,
@@ -1459,7 +1673,7 @@ class _DesktopPlaylistBox extends StatelessWidget {
     this.subtitle,
   });
 
-  final SonixController controller;
+  final MusixController controller;
   final String title;
   final String seed;
   final List<LibrarySong> songs;
@@ -1503,7 +1717,7 @@ class _DesktopPlaylistBox extends StatelessWidget {
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute<void>(
-            builder: (BuildContext context) => _SonixPlaylistScreen(
+            builder: (BuildContext context) => _MusixPlaylistScreen(
               controller: controller,
               title: title,
               songs: songs,
@@ -1624,6 +1838,70 @@ class _DesktopLibraryPlaylistEntry {
   final String? subtitle;
 }
 
+class _DesktopSettingsActionRow extends StatelessWidget {
+  const _DesktopSettingsActionRow({
+    required this.title,
+    required this.subtitle,
+    required this.trailing,
+    this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final Widget trailing;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget content = Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: <Widget>[
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: const Color(0xFFFFE6D5),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: const Color(0xFFC89373)),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 120),
+          child: Align(alignment: Alignment.centerRight, child: trailing),
+        ),
+      ],
+    );
+
+    if (onTap == null) {
+      return content;
+    }
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: content,
+      ),
+    );
+  }
+}
+
 class _DesktopSettingsScreen extends StatelessWidget {
   const _DesktopSettingsScreen({
     required this.controller,
@@ -1631,7 +1909,7 @@ class _DesktopSettingsScreen extends StatelessWidget {
     required this.onPickRegion,
   });
 
-  final SonixController controller;
+  final MusixController controller;
   final Future<void> Function() onPickNextChanceSongCount;
   final Future<void> Function() onPickRegion;
 
@@ -1789,21 +2067,9 @@ class _DesktopSettingsScreen extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(
-                            'Gapless Playback',
-                            style: Theme.of(context).textTheme.titleSmall
-                                ?.copyWith(
-                                  color: titleColor,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                          ),
-                          subtitle: Text(
-                            'Remove silence between album tracks',
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: subtitleColor),
-                          ),
+                        _DesktopSettingsActionRow(
+                          title: 'Gapless Playback',
+                          subtitle: 'Remove silence between album tracks',
                           trailing: Switch(
                             value: gapless,
                             activeThumbColor: accent,
@@ -1814,36 +2080,28 @@ class _DesktopSettingsScreen extends StatelessWidget {
                           ),
                         ),
                         const Divider(color: cardEdge, height: 24),
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
+                        _DesktopSettingsActionRow(
+                          title: 'Upcoming Offline Songs',
+                          subtitle: nextChanceSongCount == 0
+                              ? 'Off'
+                              : 'Keep the next $nextChanceSongCount song${nextChanceSongCount == 1 ? '' : 's'} ready offline',
                           onTap: onPickNextChanceSongCount,
-                          title: Text(
-                            'Upcoming Offline Songs',
-                            style: Theme.of(context).textTheme.titleSmall
-                                ?.copyWith(
-                                  color: titleColor,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                          ),
-                          subtitle: Text(
-                            nextChanceSongCount == 0
-                                ? 'Off'
-                                : 'Keep the next $nextChanceSongCount song${nextChanceSongCount == 1 ? '' : 's'} ready offline',
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: subtitleColor),
-                          ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: <Widget>[
-                              Text(
-                                nextChanceSongCount == 0
-                                    ? 'Off'
-                                    : '$nextChanceSongCount',
-                                style: Theme.of(context).textTheme.titleSmall
-                                    ?.copyWith(
-                                      color: accent,
-                                      fontWeight: FontWeight.w800,
-                                    ),
+                              Flexible(
+                                child: Text(
+                                  nextChanceSongCount == 0
+                                      ? 'Off'
+                                      : '$nextChanceSongCount',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.titleSmall
+                                      ?.copyWith(
+                                        color: accent,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                ),
                               ),
                               const SizedBox(width: 8),
                               const Icon(
@@ -1889,24 +2147,16 @@ class _DesktopSettingsScreen extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
+                        _DesktopSettingsActionRow(
+                          title: 'Region',
+                          subtitle:
+                              'Controls Trending Now and regional chart shelves',
                           onTap: onPickRegion,
-                          title: Text(
-                            'Region',
-                            style: Theme.of(context).textTheme.titleSmall
-                                ?.copyWith(
-                                  color: titleColor,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                          ),
-                          subtitle: Text(
-                            'Controls Trending Now and regional chart shelves',
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: subtitleColor),
-                          ),
                           trailing: Text(
                             controller.preferredRegionLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.right,
                             style: Theme.of(context).textTheme.titleSmall
                                 ?.copyWith(
                                   color: accent,

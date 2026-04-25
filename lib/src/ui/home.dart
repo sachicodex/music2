@@ -103,7 +103,7 @@ class _HomeScreen extends StatefulWidget {
     required this.onOpenSearch,
   });
 
-  final SonixController controller;
+  final MusixController controller;
   final VoidCallback onOpenSearch;
 
   @override
@@ -137,7 +137,7 @@ class _HomeScreenState extends State<_HomeScreen>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final SonixController controller = widget.controller;
+    final MusixController controller = widget.controller;
     if (_isDesktopPlatform()) {
       return _DesktopHomeScreen(
         controller: controller,
@@ -201,12 +201,12 @@ class _HomeScreenState extends State<_HomeScreen>
                   hasMiniPlayer: controller.miniPlayerSong != null,
                 ),
                 children: <Widget>[
-                  const _SonixTopBar(),
+                  const _MusixTopBar(),
                   const SizedBox(height: 14),
                   if (controller.homeLoading && !hasRevealableContent)
-                    const _SonixHeroSkeleton()
+                    const _MusixHeroSkeleton()
                   else if (featured != null)
-                    _SonixHeroCard(
+                    _MusixHeroCard(
                       badge: featured.badge,
                       title: featured.title,
                       subtitle: featured.subtitle,
@@ -219,7 +219,7 @@ class _HomeScreenState extends State<_HomeScreen>
                           'Play local songs, like tracks, or reconnect to load personalized recommendations here.',
                     ),
                   const SizedBox(height: 18),
-                  _SonixSectionHeader(
+                  _MusixSectionHeader(
                     title: 'MAY YOU LIKE',
                     onViewAll: () {
                       if (mayYouLikeFull.isEmpty) {
@@ -236,7 +236,7 @@ class _HomeScreenState extends State<_HomeScreen>
                   ),
                   const SizedBox(height: 10),
                   if (controller.homeLoading && !hasRevealableContent)
-                    const _SonixListSkeleton(count: 4)
+                    const _MusixListSkeleton(count: 4)
                   else if (mayYouLike.isEmpty)
                     const _PersonalizationHintCard(
                       message:
@@ -248,7 +248,7 @@ class _HomeScreenState extends State<_HomeScreen>
                         int index,
                       ) {
                         final LibrarySong song = mayYouLike[index];
-                        return _SonixPopularTrackTile(
+                        return _MusixPopularTrackTile(
                           index: index + 1,
                           song: song,
                           onTap: () {
@@ -269,7 +269,7 @@ class _HomeScreenState extends State<_HomeScreen>
                   if (!controller.homeLoading &&
                       jumpBackIn.isNotEmpty) ...<Widget>[
                     const SizedBox(height: 18),
-                    _SonixSectionHeader(
+                    _MusixSectionHeader(
                       title: 'JUMP BACK IN',
                       onViewAll: () {
                         Navigator.of(context).push(
@@ -281,7 +281,7 @@ class _HomeScreenState extends State<_HomeScreen>
                       },
                     ),
                     const SizedBox(height: 10),
-                    _SonixJumpBackGrid(
+                    _MusixJumpBackGrid(
                       items: jumpBackIn,
                       onTapItem: (LibrarySong song) {
                         if (song.isRemote) {
@@ -337,7 +337,7 @@ class _PersonalizationHintCard extends StatelessWidget {
 class _HomeOfflineState extends StatelessWidget {
   const _HomeOfflineState({required this.controller});
 
-  final SonixController controller;
+  final MusixController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -365,7 +365,7 @@ class _HomeOfflineState extends StatelessWidget {
             hasMiniPlayer: controller.miniPlayerSong != null,
           ),
           children: <Widget>[
-            const _SonixTopBar(),
+            const _MusixTopBar(),
             const SizedBox(height: 18),
             _NetworkUnavailablePanel(
               title: controller.offlineMusicMode
@@ -403,7 +403,7 @@ class _HomeOfflineState extends StatelessWidget {
               )
             else
               ...localSongs.asMap().entries.map((MapEntry<int, LibrarySong> e) {
-                return _SonixPopularTrackTile(
+                return _MusixPopularTrackTile(
                   index: e.key + 1,
                   song: e.value,
                   onTap: () => controller.playSongs(
@@ -422,7 +422,7 @@ class _HomeOfflineState extends StatelessWidget {
 
 List<Widget> _buildMoreShelves({
   required BuildContext context,
-  required SonixController controller,
+  required MusixController controller,
   int skipCount = 0,
 }) {
   final List<HomeFeedSection> sections = controller.homeFeed
@@ -455,7 +455,7 @@ List<Widget> _buildMoreShelves({
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              _SonixSectionHeader(
+              _MusixSectionHeader(
                 title: section.title.toUpperCase(),
                 onViewAll: () {
                   Navigator.of(context).push(
@@ -472,7 +472,7 @@ List<Widget> _buildMoreShelves({
               const SizedBox(height: 8),
               ...songs.asMap().entries.map((MapEntry<int, LibrarySong> e) {
                 final LibrarySong song = e.value;
-                return _SonixPopularTrackTile(
+                return _MusixPopularTrackTile(
                   index: e.key + 1,
                   song: song,
                   onTap: () {
@@ -531,7 +531,7 @@ class _SearchGenreShelf {
   final LibrarySong? song;
 }
 
-List<_SearchGenreShelf> _buildSearchGenreShelves(SonixController controller) {
+List<_SearchGenreShelf> _buildSearchGenreShelves(MusixController controller) {
   final List<LibrarySong> pool = <LibrarySong>[
     ..._resolvedMayYouLikeSongs(controller),
     ...controller.recentlyAddedSongs,
@@ -593,7 +593,7 @@ List<_SearchGenreShelf> _buildSearchGenreShelves(SonixController controller) {
   ];
 }
 
-List<LibrarySong> _resolvedMayYouLikeSongs(SonixController controller) {
+List<LibrarySong> _resolvedMayYouLikeSongs(MusixController controller) {
   return _resolvedMayYouLikeRecommendations(controller)
       .map((SongRecommendation item) => item.song)
       .where((LibrarySong song) => song.isRemote)
@@ -601,7 +601,7 @@ List<LibrarySong> _resolvedMayYouLikeSongs(SonixController controller) {
 }
 
 List<SongRecommendation> _resolvedMayYouLikeRecommendations(
-  SonixController controller,
+  MusixController controller,
 ) {
   if (controller.personalizedHomeRecommendations.isNotEmpty) {
     return controller.personalizedHomeRecommendations;
@@ -658,7 +658,7 @@ List<LibrarySong> _buildMayYouLike(List<HomeFeedSection> feed) {
 }
 
 List<LibrarySong> _buildMonthlyTrendingNow({
-  required SonixController controller,
+  required MusixController controller,
 }) {
   final List<LibrarySong> seed = List<LibrarySong>.from(
     controller.trendingNowSongs,
@@ -683,7 +683,7 @@ int _hasArtwork(LibrarySong song) {
 
 int _durationScore(LibrarySong song) {
   final int seconds = song.duration.inSeconds;
-  // Prefer typical music-length tracks (avoid 1h ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œmixÃƒÂ¢Ã¢â€šÂ¬Ã‚Â style dominating).
+  // Prefer typical music-length tracks (avoid 1h ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“mixÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â style dominating).
   if (seconds == 0) return 1;
   if (seconds >= 120 && seconds <= 360) return 5; // 2-6 minutes
   if (seconds >= 60 && seconds < 120) return 3;
@@ -859,7 +859,7 @@ class _HeroCandidateInput {
   final String sectionTitle;
 }
 
-_HeroPreferenceProfile _buildHeroPreferenceProfile(SonixController controller) {
+_HeroPreferenceProfile _buildHeroPreferenceProfile(MusixController controller) {
   final Map<String, double> languageScores = <String, double>{};
   final Map<String, double> artistScores = <String, double>{};
   final Map<String, double> genreScores = <String, double>{};
@@ -1100,7 +1100,7 @@ class _FeaturedHeroData {
 
 _FeaturedHeroData? _pickFeaturedHero({
   required BuildContext context,
-  required SonixController controller,
+  required MusixController controller,
   required List<HomeFeedSection> feed,
   required List<LibrarySong> mayYouLike,
 }) {
@@ -1128,7 +1128,7 @@ _FeaturedHeroData? _pickFeaturedHero({
 }
 
 LibrarySong? _pickAdvancedHeroSong({
-  required SonixController controller,
+  required MusixController controller,
   required List<HomeFeedSection> feed,
   required List<LibrarySong> mayYouLike,
 }) {
@@ -1356,21 +1356,21 @@ class _HeroCandidateScore {
   final double score;
 }
 
-class _SonixTopBar extends StatelessWidget {
-  const _SonixTopBar();
+class _MusixTopBar extends StatelessWidget {
+  const _MusixTopBar();
 
   @override
   Widget build(BuildContext context) {
     return const _HomeStyleHeader(
-      title: 'SONIX',
+      title: 'MUSIX',
       leading: _HomeStyleProfileBadge(),
       trailing: _HomeStyleNotificationIcon(),
     );
   }
 }
 
-class _SonixHeroCard extends StatelessWidget {
-  const _SonixHeroCard({
+class _MusixHeroCard extends StatelessWidget {
+  const _MusixHeroCard({
     required this.badge,
     required this.title,
     required this.subtitle,
@@ -1524,13 +1524,14 @@ class _SonixHeroCard extends StatelessWidget {
                             borderRadius: BorderRadius.circular(18),
                           ),
                         ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: <Widget>[
-                            const Icon(Icons.play_circle, size: 18),
-                            const SizedBox(width: 6),
-                            Flexible(
-                              child: Text(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              const Icon(Icons.play_circle, size: 18),
+                              const SizedBox(width: 6),
+                              Text(
                                 'LISTEN NOW',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -1541,8 +1542,8 @@ class _SonixHeroCard extends StatelessWidget {
                                       fontWeight: FontWeight.w800,
                                     ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ],
@@ -1557,30 +1558,17 @@ class _SonixHeroCard extends StatelessWidget {
   }
 }
 
-class _SonixSectionHeader extends StatelessWidget {
-  const _SonixSectionHeader({required this.title, required this.onViewAll});
+class _MusixSectionHeader extends StatelessWidget {
+  const _MusixSectionHeader({required this.title, required this.onViewAll});
 
   final String title;
   final VoidCallback onViewAll;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        Expanded(
-          child: Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.1,
-              color: Colors.white.withValues(alpha: 0.92),
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        TextButton(
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final Widget action = TextButton(
           onPressed: onViewAll,
           style: TextButton.styleFrom(
             foregroundColor: Colors.white.withValues(alpha: 0.55),
@@ -1590,18 +1578,59 @@ class _SonixSectionHeader extends StatelessWidget {
           ),
           child: Text(
             'VIEW ALL',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: Theme.of(
               context,
             ).textTheme.labelSmall?.copyWith(letterSpacing: 1.4),
           ),
-        ),
-      ],
+        );
+
+        if (constraints.maxWidth < 230) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.1,
+                  color: Colors.white.withValues(alpha: 0.92),
+                ),
+              ),
+              const SizedBox(height: 6),
+              action,
+            ],
+          );
+        }
+
+        return Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.1,
+                  color: Colors.white.withValues(alpha: 0.92),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Flexible(child: action),
+          ],
+        );
+      },
     );
   }
 }
 
-class _SonixPopularTrackTile extends StatelessWidget {
-  const _SonixPopularTrackTile({
+class _MusixPopularTrackTile extends StatelessWidget {
+  const _MusixPopularTrackTile({
     required this.index,
     required this.song,
     required this.onTap,
@@ -1666,11 +1695,18 @@ class _SonixPopularTrackTile extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: 10),
-              Text(
-                durationText,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: Colors.white.withValues(alpha: 0.45),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 40,
+                child: Text(
+                  durationText,
+                  textAlign: TextAlign.right,
+                  maxLines: 1,
+                  overflow: TextOverflow.fade,
+                  softWrap: false,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: Colors.white.withValues(alpha: 0.45),
+                  ),
                 ),
               ),
             ],
@@ -1681,8 +1717,8 @@ class _SonixPopularTrackTile extends StatelessWidget {
   }
 }
 
-class _SonixJumpBackGrid extends StatelessWidget {
-  const _SonixJumpBackGrid({required this.items, required this.onTapItem});
+class _MusixJumpBackGrid extends StatelessWidget {
+  const _MusixJumpBackGrid({required this.items, required this.onTapItem});
 
   final List<LibrarySong> items;
   final ValueChanged<LibrarySong> onTapItem;
@@ -1691,7 +1727,7 @@ class _SonixJumpBackGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     if (items.isEmpty) {
       return Text(
-        'Play something and itÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ll show up here.',
+        'Play something and itÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ll show up here.',
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
           color: Colors.white.withValues(alpha: 0.55),
         ),
@@ -1707,7 +1743,7 @@ class _SonixJumpBackGrid extends StatelessWidget {
       spacing: gap,
       runSpacing: gap,
       children: items.take(4).map((LibrarySong song) {
-        return _SonixJumpBackCard(
+        return _MusixJumpBackCard(
           width: cardWidth,
           title: song.title,
           subtitle: _songArtistLabel(song),
@@ -1720,8 +1756,8 @@ class _SonixJumpBackGrid extends StatelessWidget {
   }
 }
 
-class _SonixJumpBackCard extends StatelessWidget {
-  const _SonixJumpBackCard({
+class _MusixJumpBackCard extends StatelessWidget {
+  const _MusixJumpBackCard({
     required this.width,
     required this.title,
     required this.subtitle,
@@ -1851,19 +1887,19 @@ class _PopularTracksScreen extends StatelessWidget {
     required this.songs,
   });
 
-  final SonixController controller;
+  final MusixController controller;
   final String title;
   final List<LibrarySong> songs;
 
   @override
   Widget build(BuildContext context) {
-    return _SonixSubscreenScaffold(
+    return _MusixSubscreenScaffold(
       title: title,
       child: _ProgressiveListReveal(
         itemCount: songs.length,
         itemBuilder: (BuildContext context, int index) {
           final LibrarySong song = songs[index];
-          return _SonixPopularTrackTile(
+          return _MusixPopularTrackTile(
             index: index + 1,
             song: song,
             onTap: () {
@@ -1883,14 +1919,14 @@ class _PopularTracksScreen extends StatelessWidget {
 class _RecentPlaysScreen extends StatelessWidget {
   const _RecentPlaysScreen({required this.controller});
 
-  final SonixController controller;
+  final MusixController controller;
 
   @override
   Widget build(BuildContext context) {
-    final SonixController liveController = context.watch<SonixController>();
+    final MusixController liveController = context.watch<MusixController>();
     final List<LibrarySong> songs = liveController.recentlyPlayedSongs;
 
-    return _SonixSubscreenScaffold(
+    return _MusixSubscreenScaffold(
       title: 'JUMP BACK IN',
       actions: <Widget>[
         TextButton.icon(
@@ -1946,7 +1982,7 @@ class _RecentPlaysScreen extends StatelessWidget {
                   }
                   await liveController.clearPlaybackHistory();
                   if (context.mounted) {
-                    _showSonixSnackBar(context, 'Playback history cleared');
+                    _showMusixSnackBar(context, 'Playback history cleared');
                   }
                 },
           icon: const Icon(Icons.history_toggle_off_rounded),
@@ -1993,8 +2029,8 @@ class _RecentPlaysScreen extends StatelessWidget {
   }
 }
 
-class _SonixSubscreenScaffold extends StatelessWidget {
-  const _SonixSubscreenScaffold({
+class _MusixSubscreenScaffold extends StatelessWidget {
+  const _MusixSubscreenScaffold({
     required this.title,
     required this.child,
     this.actions = const <Widget>[],
@@ -2006,7 +2042,7 @@ class _SonixSubscreenScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final SonixController controller = context.watch<SonixController>();
+    final MusixController controller = context.watch<MusixController>();
     final bool desktop = _isDesktopPlatform();
     final Widget content = ListView(
       padding: EdgeInsets.fromLTRB(
@@ -2019,7 +2055,7 @@ class _SonixSubscreenScaffold extends StatelessWidget {
                 : 0),
       ),
       children: <Widget>[
-        _SonixSubscreenHeader(title: title, actions: actions),
+        _MusixSubscreenHeader(title: title, actions: actions),
         const SizedBox(height: 10),
         child,
       ],
@@ -2028,7 +2064,7 @@ class _SonixSubscreenScaffold extends StatelessWidget {
     return Scaffold(
       backgroundColor: const Color(0xFF120503),
       body: DecoratedBox(
-        decoration: _sonixPageDecoration(),
+        decoration: _musixPageDecoration(),
         child: SafeArea(
           child: desktop
               ? Padding(
@@ -2082,8 +2118,8 @@ class _SonixSubscreenScaffold extends StatelessWidget {
   }
 }
 
-class _SonixSubscreenHeader extends StatelessWidget {
-  const _SonixSubscreenHeader({
+class _MusixSubscreenHeader extends StatelessWidget {
+  const _MusixSubscreenHeader({
     required this.title,
     this.actions = const <Widget>[],
   });
@@ -2124,7 +2160,7 @@ class _SonixSubscreenHeader extends StatelessWidget {
 class _MayYouLikeScreen extends StatefulWidget {
   const _MayYouLikeScreen({required this.controller});
 
-  final SonixController controller;
+  final MusixController controller;
 
   @override
   State<_MayYouLikeScreen> createState() => _MayYouLikeScreenState();
@@ -2139,10 +2175,10 @@ class _MayYouLikeScreenState extends State<_MayYouLikeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final SonixController controller = widget.controller;
+    final MusixController controller = widget.controller;
     final List<SongRecommendation> items = _allItems;
 
-    return _SonixSubscreenScaffold(
+    return _MusixSubscreenScaffold(
       title: 'MAY YOU LIKE',
       child: Column(
         children: <Widget>[
@@ -2159,7 +2195,7 @@ class _MayYouLikeScreenState extends State<_MayYouLikeScreen> {
               itemBuilder: (BuildContext context, int index) {
                 final SongRecommendation recommendation = items[index];
                 final LibrarySong song = recommendation.song;
-                return _SonixPopularTrackTile(
+                return _MusixPopularTrackTile(
                   index: index + 1,
                   song: song,
                   onTap: () {
@@ -2195,15 +2231,15 @@ class _ProgressiveSkeletonList extends StatelessWidget {
         return Padding(
           key: ValueKey<String>('skeleton-$index'),
           padding: EdgeInsets.zero,
-          child: _SonixPopularTrackTileSkeleton(index: index + 1),
+          child: _MusixPopularTrackTileSkeleton(index: index + 1),
         );
       },
     );
   }
 }
 
-class _SonixListSkeleton extends StatelessWidget {
-  const _SonixListSkeleton({required this.count});
+class _MusixListSkeleton extends StatelessWidget {
+  const _MusixListSkeleton({required this.count});
 
   final int count;
 
@@ -2213,7 +2249,7 @@ class _SonixListSkeleton extends StatelessWidget {
       children: List<Widget>.generate(count, (int index) {
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),
-          child: _SonixPopularTrackTileSkeleton(index: index + 1),
+          child: _MusixPopularTrackTileSkeleton(index: index + 1),
         );
       }),
     );
@@ -2340,8 +2376,8 @@ class _RevealIn extends StatelessWidget {
   }
 }
 
-class _SonixHeroSkeleton extends StatelessWidget {
-  const _SonixHeroSkeleton();
+class _MusixHeroSkeleton extends StatelessWidget {
+  const _MusixHeroSkeleton();
 
   @override
   Widget build(BuildContext context) {

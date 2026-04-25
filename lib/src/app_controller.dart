@@ -27,8 +27,8 @@ import 'windows_media_controls_bridge.dart';
 
 enum _AppNetworkUsageBucket { search, load, artwork, metadata }
 
-class SonixController extends ChangeNotifier with WidgetsBindingObserver {
-  SonixController() : _player = Player(), _yt = YoutubeExplode() {
+class MusixController extends ChangeNotifier with WidgetsBindingObserver {
+  MusixController() : _yt = YoutubeExplode() {
     WidgetsBinding.instance.addObserver(this);
   }
   static const int _smartQueueBatchSize = 7;
@@ -46,7 +46,8 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     'alac',
   ];
 
-  final Player _player;
+  Player? _playerInstance;
+  bool _playerBound = false;
   final YoutubeExplode _yt;
   late final PlaybackProxyServer _playbackProxy = PlaybackProxyServer(
     onBytesTransferred: _handlePlaybackProxyTransfer,
@@ -168,6 +169,17 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
 
   String? _lastTrackedSongId;
 
+  Player get _player {
+    final Player player = _playerInstance ??= Player();
+    if (!_playerBound) {
+      _playerBound = true;
+      _attachPlayerListeners(player);
+      _syncPlaybackNotifiers();
+      unawaited(player.setRate(_settings.playbackRate));
+    }
+    return player;
+  }
+
   bool get initialized => _initialized;
   bool get scanning => _scanning;
   bool get onlineLoading => _onlineLoading;
@@ -254,10 +266,16 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       .whereType<LibrarySong>()
       .toList(growable: false);
 
-  List<String> get _playerQueueSongIds => _player.state.playlist.medias
-      .map((Media media) => media.extras?['songId'] as String?)
-      .whereType<String>()
-      .toList(growable: false);
+  List<String> get _playerQueueSongIds {
+    final Player? player = _playerInstance;
+    if (player == null) {
+      return const <String>[];
+    }
+    return player.state.playlist.medias
+        .map((Media media) => media.extras?['songId'] as String?)
+        .whereType<String>()
+        .toList(growable: false);
+  }
 
   LibrarySong? get currentSong {
     if (_queueSongIds.isEmpty ||
@@ -1026,12 +1044,9 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     await _loadSnapshot();
-    await _player.setRate(_settings.playbackRate);
     // Never block app startup on Android runtime permission UI.
     unawaited(_ensureNotificationPermission());
     _bindNotificationActions();
-    _attachPlayerListeners();
-    _syncPlaybackNotifiers();
     _initialized = true;
     unawaited(AndroidMediaNotificationBridge.stop());
     unawaited(WindowsMediaControlsBridge.stop());
@@ -3929,9 +3944,10 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  void _attachPlayerListeners() {
+  void _attachPlayerListeners([Player? playerInstance]) {
+    final Player player = playerInstance ?? _player;
     _subscriptions.add(
-      _player.stream.playing.listen((dynamic value) {
+      player.stream.playing.listen((dynamic value) {
         if (_isDisposing || _isDisposed) {
           return;
         }
@@ -3943,7 +3959,7 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     );
 
     _subscriptions.add(
-      _player.stream.position.listen((dynamic value) {
+      player.stream.position.listen((dynamic value) {
         if (_isDisposing || _isDisposed) {
           return;
         }
@@ -3961,7 +3977,7 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     );
 
     _subscriptions.add(
-      _player.stream.duration.listen((dynamic value) {
+      player.stream.duration.listen((dynamic value) {
         if (_isDisposing || _isDisposed) {
           return;
         }
@@ -3976,7 +3992,7 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     );
 
     _subscriptions.add(
-      _player.stream.shuffle.listen((dynamic value) {
+      player.stream.shuffle.listen((dynamic value) {
         if (_isDisposing || _isDisposed) {
           return;
         }
@@ -3986,7 +4002,7 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     );
 
     _subscriptions.add(
-      _player.stream.playlistMode.listen((dynamic value) {
+      player.stream.playlistMode.listen((dynamic value) {
         if (_isDisposing || _isDisposed) {
           return;
         }
@@ -3996,7 +4012,7 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     );
 
     _subscriptions.add(
-      _player.stream.error.listen((dynamic value) {
+      player.stream.error.listen((dynamic value) {
         if (_isDisposing || _isDisposed) {
           return;
         }
@@ -4008,7 +4024,7 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
           'transitionSong=$_transitioningSongId '
           'transitionIndex=$_transitioningQueueIndex '
           'queueIndex=$_queueIndex '
-          'playerIndex=${_player.state.playlist.index}',
+          'playerIndex=${player.state.playlist.index}',
         );
         final LibrarySong? failedSong = currentSong ?? _pendingSelectionSong;
         if (_isPlayableOpenFailure(_errorMessage!) &&
@@ -4051,7 +4067,7 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     );
 
     _subscriptions.add(
-      _player.stream.playlist.listen((dynamic value) {
+      player.stream.playlist.listen((dynamic value) {
         if (_isDisposing || _isDisposed) {
           return;
         }
@@ -6834,7 +6850,7 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<File> _snapshotFile() async {
     final Directory root = await getApplicationSupportDirectory();
-    return File(p.join(root.path, 'sonix_flutter_state.json'));
+    return File(p.join(root.path, 'musix_flutter_state.json'));
   }
 
   @override
@@ -6876,8 +6892,12 @@ class SonixController extends ChangeNotifier with WidgetsBindingObserver {
     nowPlayingState.dispose();
     playbackProgressState.dispose();
     dataUsageState.dispose();
-    unawaited(_player.stop());
-    unawaited(_player.dispose());
+    final Player? player = _playerInstance;
+    if (player != null) {
+      unawaited(player.stop());
+      unawaited(player.dispose());
+      _playerInstance = null;
+    }
     super.dispose();
   }
 }

@@ -11,7 +11,7 @@ namespace {
 using EncodableValue = flutter::EncodableValue;
 using EncodableMap = flutter::EncodableMap;
 
-constexpr char kChannelName[] = "com.sachicodex.sonix/windows_media_controls";
+constexpr char kChannelName[] = "com.sachicodex.musix/windows_media_controls";
 
 std::string ButtonToAction(
     winrt::Windows::Media::SystemMediaTransportControlsButton button) {

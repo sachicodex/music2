@@ -2,7 +2,7 @@ part of '../ui.dart';
 
 Future<void> _showCreatePlaylistDialog(
   BuildContext context,
-  SonixController controller,
+  MusixController controller,
 ) async {
   final String? name = await showDialog<String>(
     context: context,
@@ -154,7 +154,7 @@ class _CreatePlaylistDialogState extends State<_CreatePlaylistDialog> {
 
 Future<void> _showAddToPlaylistDialog(
   BuildContext context,
-  SonixController controller,
+  MusixController controller,
   LibrarySong song,
 ) async {
   if (controller.playlists.isEmpty) {
@@ -204,7 +204,7 @@ Future<void> _showAddToPlaylistDialog(
                       await controller.addSongToPlaylist(playlist.id, song.id);
                       if (context.mounted) {
                         Navigator.of(context).pop();
-                        _showSonixSnackBar(
+                        _showMusixSnackBar(
                           context,
                           'Added to ${playlist.name}',
                         );

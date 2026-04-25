@@ -1,7 +1,7 @@
 part of '../ui.dart';
 
-class _SonixBottomNav extends StatelessWidget {
-  const _SonixBottomNav({
+class _MusixBottomNav extends StatelessWidget {
+  const _MusixBottomNav({
     required this.destination,
     required this.onDestinationChanged,
   });
@@ -40,7 +40,7 @@ class _SonixBottomNav extends StatelessWidget {
         children: items.map((_BottomItem item) {
           final bool selected = destination == item.destination;
           return Expanded(
-            child: _SonixBottomNavItem(
+            child: _MusixBottomNavItem(
               icon: item.icon,
               label: item.label,
               selected: selected,
@@ -60,7 +60,7 @@ class _MobileBottomChrome extends StatelessWidget {
     required this.child,
   });
 
-  final SonixController controller;
+  final MusixController controller;
   final VoidCallback onOpenPlayer;
   final Widget child;
 
@@ -87,8 +87,8 @@ class _BottomItem {
   final IconData icon;
 }
 
-class _SonixBottomNavItem extends StatelessWidget {
-  const _SonixBottomNavItem({
+class _MusixBottomNavItem extends StatelessWidget {
+  const _MusixBottomNavItem({
     required this.icon,
     required this.label,
     required this.selected,

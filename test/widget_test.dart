@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:sonix/src/models.dart';
+import 'package:musix/src/models.dart';
 
 void main() {
   test('app settings deserialize and preserve theme mode', () {

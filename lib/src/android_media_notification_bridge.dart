@@ -8,10 +8,10 @@ import 'models.dart';
 
 class AndroidMediaNotificationBridge {
   static const MethodChannel _methodChannel = MethodChannel(
-    'com.sachicodex.sonix/media_notification',
+    'com.sachicodex.musix/media_notification',
   );
   static const EventChannel _eventChannel = EventChannel(
-    'com.sachicodex.sonix/media_notification_actions',
+    'com.sachicodex.musix/media_notification_actions',
   );
 
   static const String _actionPlayPause = 'play_pause';

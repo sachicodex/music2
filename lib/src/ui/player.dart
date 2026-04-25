@@ -3,7 +3,7 @@ part of '../ui.dart';
 class _PlayerScreen extends StatefulWidget {
   const _PlayerScreen({required this.controller});
 
-  final SonixController controller;
+  final MusixController controller;
 
   @override
   State<_PlayerScreen> createState() => _PlayerScreenState();
@@ -38,7 +38,7 @@ class _PlayerScreenState extends State<_PlayerScreen>
   }
 
   Future<void> _showQueueSheet() async {
-    final SonixController controller = widget.controller;
+    final MusixController controller = widget.controller;
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -58,7 +58,7 @@ class _PlayerScreenState extends State<_PlayerScreen>
     String value,
     LibrarySong song,
   ) async {
-    final SonixController controller = widget.controller;
+    final MusixController controller = widget.controller;
     switch (value) {
       case 'save':
         await _showAddToPlaylistDialog(context, controller, song);
@@ -143,7 +143,7 @@ class _PlayerScreenState extends State<_PlayerScreen>
 
   @override
   Widget build(BuildContext context) {
-    final SonixController controller = widget.controller;
+    final MusixController controller = widget.controller;
     return ValueListenableBuilder<NowPlayingState>(
       valueListenable: controller.nowPlayingState,
       builder: (BuildContext context, NowPlayingState nowPlaying, Widget? child) {
@@ -270,20 +270,20 @@ class _PlayerScreenState extends State<_PlayerScreen>
                                 },
                                 itemBuilder: (BuildContext context) =>
                                     <PopupMenuEntry<String>>[
-                                      _sonixPopupMenuItem('save', 'Save'),
-                                      _sonixPopupMenuItem(
+                                      _musixPopupMenuItem('save', 'Save'),
+                                      _musixPopupMenuItem(
                                         'like',
                                         song.isLiked
                                             ? 'Unlike song'
                                             : 'Like song',
                                       ),
-                                      _sonixPopupMenuItem(
+                                      _musixPopupMenuItem(
                                         'dislike',
                                         song.isDisliked
                                             ? 'Remove dislike'
                                             : 'Dislike song',
                                       ),
-                                      _sonixPopupMenuItem(
+                                      _musixPopupMenuItem(
                                         'queue',
                                         'Add to queue',
                                       ),
@@ -575,7 +575,7 @@ class _DesktopPlayerScreen extends StatelessWidget {
     required this.trackInactive,
   });
 
-  final SonixController controller;
+  final MusixController controller;
   final LibrarySong song;
   final NowPlayingState nowPlaying;
   final AnimationController tapFeedbackController;
@@ -706,7 +706,7 @@ class _DesktopPlayerArtworkPanel extends StatelessWidget {
     required this.trackInactive,
   });
 
-  final SonixController controller;
+  final MusixController controller;
   final LibrarySong song;
   final NowPlayingState nowPlaying;
   final AnimationController tapFeedbackController;
@@ -768,16 +768,16 @@ class _DesktopPlayerArtworkPanel extends StatelessWidget {
                   await onHandlePlayerMenuSelection(value, song);
                 },
                 itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                  _sonixPopupMenuItem('save', 'Save'),
-                  _sonixPopupMenuItem(
+                  _musixPopupMenuItem('save', 'Save'),
+                  _musixPopupMenuItem(
                     'like',
                     song.isLiked ? 'Unlike song' : 'Like song',
                   ),
-                  _sonixPopupMenuItem(
+                  _musixPopupMenuItem(
                     'dislike',
                     song.isDisliked ? 'Remove dislike' : 'Dislike song',
                   ),
-                  _sonixPopupMenuItem('queue', 'Add to queue'),
+                  _musixPopupMenuItem('queue', 'Add to queue'),
                 ],
               ),
             ],
@@ -985,7 +985,7 @@ class _DesktopPlayerQueuePanel extends StatelessWidget {
     required this.onShowQueueSheet,
   });
 
-  final SonixController controller;
+  final MusixController controller;
   final Color accent;
   final Color textPrimary;
   final Color textSecondary;
@@ -1534,7 +1534,7 @@ class _PlayerIconButton extends StatelessWidget {
 class _PlayerQueueSheet extends StatefulWidget {
   const _PlayerQueueSheet({required this.controller});
 
-  final SonixController controller;
+  final MusixController controller;
 
   @override
   State<_PlayerQueueSheet> createState() => _PlayerQueueSheetState();
@@ -1548,7 +1548,7 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
   bool _loadingMore = false;
   bool _initialPositioned = false;
 
-  SonixController get controller => widget.controller;
+  MusixController get controller => widget.controller;
 
   @override
   void initState() {
@@ -1773,7 +1773,7 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
                             }
                             await controller.removeFromQueue(queueIndex);
                             if (context.mounted) {
-                              _showSonixSnackBar(
+                              _showMusixSnackBar(
                                 context,
                                 'Removed from queue',
                               );
@@ -1892,7 +1892,7 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
 class _AlbumScreen extends StatelessWidget {
   const _AlbumScreen({required this.controller, required this.album});
 
-  final SonixController controller;
+  final MusixController controller;
   final AlbumCollection album;
 
   @override
@@ -1928,7 +1928,7 @@ class _AlbumScreen extends StatelessWidget {
                           style: Theme.of(context).textTheme.headlineSmall,
                         ),
                         const SizedBox(height: 8),
-                        Text('${album.artist} â€¢ ${album.songCount} tracks'),
+                        Text('${album.artist} Ã¢â‚¬Â¢ ${album.songCount} tracks'),
                         const SizedBox(height: 8),
                         Text(_formatDuration(album.totalDuration)),
                       ],
@@ -1955,7 +1955,7 @@ class _AlbumScreen extends StatelessWidget {
 class _ArtistScreen extends StatelessWidget {
   const _ArtistScreen({required this.controller, required this.artist});
 
-  final SonixController controller;
+  final MusixController controller;
   final ArtistCollection artist;
 
   @override
@@ -1988,7 +1988,7 @@ class _ArtistScreen extends StatelessWidget {
                   const SizedBox(width: 16),
                   Expanded(
                     child: Text(
-                      '${artist.songs.length} tracks â€¢ ${artist.albumCount} albums',
+                      '${artist.songs.length} tracks Ã¢â‚¬Â¢ ${artist.albumCount} albums',
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
@@ -2011,7 +2011,7 @@ class _ArtistScreen extends StatelessWidget {
 class _FolderScreen extends StatelessWidget {
   const _FolderScreen({required this.controller, required this.folder});
 
-  final SonixController controller;
+  final MusixController controller;
   final FolderCollection folder;
 
   @override
@@ -2059,7 +2059,7 @@ class _PlaylistScreen extends StatelessWidget {
     required this.playlist,
   });
 
-  final SonixController controller;
+  final MusixController controller;
   final String title;
   final List<LibrarySong> songs;
   final UserPlaylist? playlist;
@@ -2098,8 +2098,8 @@ class _PlaylistScreen extends StatelessWidget {
   }
 }
 
-class _SonixCollectionSummary extends StatelessWidget {
-  const _SonixCollectionSummary({
+class _MusixCollectionSummary extends StatelessWidget {
+  const _MusixCollectionSummary({
     required this.leading,
     required this.title,
     required this.lines,
@@ -2168,15 +2168,15 @@ class _SonixCollectionSummary extends StatelessWidget {
   }
 }
 
-class _SonixAlbumScreen extends StatelessWidget {
-  const _SonixAlbumScreen({required this.controller, required this.album});
+class _MusixAlbumScreen extends StatelessWidget {
+  const _MusixAlbumScreen({required this.controller, required this.album});
 
-  final SonixController controller;
+  final MusixController controller;
   final AlbumCollection album;
 
   @override
   Widget build(BuildContext context) {
-    return _SonixSubscreenScaffold(
+    return _MusixSubscreenScaffold(
       title: album.title,
       actions: <Widget>[
         IconButton(
@@ -2186,11 +2186,11 @@ class _SonixAlbumScreen extends StatelessWidget {
       ],
       child: Column(
         children: <Widget>[
-          _SonixCollectionSummary(
+          _MusixCollectionSummary(
             leading: _Artwork(seed: album.id, title: album.title, size: 120),
             title: album.title,
             lines: <String>[
-              '${album.artist} â€¢ ${album.songCount} tracks',
+              '${album.artist} Ã¢â‚¬Â¢ ${album.songCount} tracks',
               _formatDuration(album.totalDuration),
             ],
           ),
@@ -2208,15 +2208,15 @@ class _SonixAlbumScreen extends StatelessWidget {
   }
 }
 
-class _SonixArtistScreen extends StatelessWidget {
-  const _SonixArtistScreen({required this.controller, required this.artist});
+class _MusixArtistScreen extends StatelessWidget {
+  const _MusixArtistScreen({required this.controller, required this.artist});
 
-  final SonixController controller;
+  final MusixController controller;
   final ArtistCollection artist;
 
   @override
   Widget build(BuildContext context) {
-    return _SonixSubscreenScaffold(
+    return _MusixSubscreenScaffold(
       title: artist.name,
       actions: <Widget>[
         IconButton(
@@ -2226,7 +2226,7 @@ class _SonixArtistScreen extends StatelessWidget {
       ],
       child: Column(
         children: <Widget>[
-          _SonixCollectionSummary(
+          _MusixCollectionSummary(
             leading: _ResolvedArtistAvatar(
               controller: controller,
               artistName: artist.name,
@@ -2235,7 +2235,7 @@ class _SonixArtistScreen extends StatelessWidget {
             ),
             title: artist.name,
             lines: <String>[
-              '${artist.songs.length} tracks â€¢ ${artist.albumCount} albums',
+              '${artist.songs.length} tracks Ã¢â‚¬Â¢ ${artist.albumCount} albums',
             ],
           ),
           const SizedBox(height: 20),
@@ -2248,15 +2248,15 @@ class _SonixArtistScreen extends StatelessWidget {
   }
 }
 
-class _SonixFolderScreen extends StatelessWidget {
-  const _SonixFolderScreen({required this.controller, required this.folder});
+class _MusixFolderScreen extends StatelessWidget {
+  const _MusixFolderScreen({required this.controller, required this.folder});
 
-  final SonixController controller;
+  final MusixController controller;
   final FolderCollection folder;
 
   @override
   Widget build(BuildContext context) {
-    return _SonixSubscreenScaffold(
+    return _MusixSubscreenScaffold(
       title: folder.name,
       actions: <Widget>[
         IconButton(
@@ -2266,7 +2266,7 @@ class _SonixFolderScreen extends StatelessWidget {
       ],
       child: Column(
         children: <Widget>[
-          _SonixCollectionSummary(
+          _MusixCollectionSummary(
             leading: _Artwork(
               seed: folder.id,
               title: folder.name,
@@ -2286,8 +2286,8 @@ class _SonixFolderScreen extends StatelessWidget {
   }
 }
 
-class _SonixPlaylistScreen extends StatefulWidget {
-  const _SonixPlaylistScreen({
+class _MusixPlaylistScreen extends StatefulWidget {
+  const _MusixPlaylistScreen({
     required this.controller,
     required this.title,
     required this.songs,
@@ -2295,17 +2295,17 @@ class _SonixPlaylistScreen extends StatefulWidget {
     this.localPlaybackOnly = false,
   });
 
-  final SonixController controller;
+  final MusixController controller;
   final String title;
   final List<LibrarySong> songs;
   final UserPlaylist? playlist;
   final bool localPlaybackOnly;
 
   @override
-  State<_SonixPlaylistScreen> createState() => _SonixPlaylistScreenState();
+  State<_MusixPlaylistScreen> createState() => _MusixPlaylistScreenState();
 }
 
-class _SonixPlaylistScreenState extends State<_SonixPlaylistScreen> {
+class _MusixPlaylistScreenState extends State<_MusixPlaylistScreen> {
   final Set<String> _selectedSongIds = <String>{};
 
   bool get _selectionMode => _selectedSongIds.isNotEmpty;
@@ -2373,7 +2373,7 @@ class _SonixPlaylistScreenState extends State<_SonixPlaylistScreen> {
     if (!mounted) {
       return;
     }
-    _showSonixSnackBar(
+    _showMusixSnackBar(
       context,
       '${selectedSongs.length} song${selectedSongs.length == 1 ? '' : 's'} added to queue',
     );
@@ -2393,7 +2393,7 @@ class _SonixPlaylistScreenState extends State<_SonixPlaylistScreen> {
     if (!mounted) {
       return;
     }
-    _showSonixSnackBar(
+    _showMusixSnackBar(
       context,
       '${songIds.length} song${songIds.length == 1 ? '' : 's'} removed from playlist',
     );
@@ -2415,7 +2415,7 @@ class _SonixPlaylistScreenState extends State<_SonixPlaylistScreen> {
           return songs.every((LibrarySong song) => song.id != id);
         });
 
-        return _SonixSubscreenScaffold(
+        return _MusixSubscreenScaffold(
           title: _selectionMode ? '${_selectedSongIds.length} Selected' : title,
           actions: <Widget>[
             if (_selectionMode) ...<Widget>[
@@ -2454,7 +2454,7 @@ class _SonixPlaylistScreenState extends State<_SonixPlaylistScreen> {
           ],
           child: Column(
             children: <Widget>[
-              _SonixCollectionSummary(
+              _MusixCollectionSummary(
                 leading: songs.isNotEmpty
                     ? _Artwork(
                         seed: playlist?.id ?? title,
@@ -2505,13 +2505,13 @@ class _HomeFeedSkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: const <Widget>[
-        _SonixSectionHeaderSkeleton(),
+        _MusixSectionHeaderSkeleton(),
         SizedBox(height: 8),
-        _SonixListSkeleton(count: 4),
+        _MusixListSkeleton(count: 4),
         SizedBox(height: 22),
-        _SonixSectionHeaderSkeleton(),
+        _MusixSectionHeaderSkeleton(),
         SizedBox(height: 8),
-        _SonixListSkeleton(count: 4),
+        _MusixListSkeleton(count: 4),
       ],
     );
   }
@@ -2869,7 +2869,7 @@ class _LibraryPlaylistRow extends StatelessWidget {
     this.forceEnabled = false,
   });
 
-  final SonixController controller;
+  final MusixController controller;
   final String title;
   final String seed;
   final List<LibrarySong> songs;
@@ -2888,7 +2888,7 @@ class _LibraryPlaylistRow extends StatelessWidget {
           : () {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (BuildContext context) => _SonixPlaylistScreen(
+                  builder: (BuildContext context) => _MusixPlaylistScreen(
                     controller: controller,
                     title: title,
                     songs: songs,
@@ -3023,7 +3023,7 @@ class _SongTile extends StatelessWidget {
   });
 
   final LibrarySong song;
-  final SonixController controller;
+  final MusixController controller;
   final VoidCallback? onTap;
   final String? extraPlaylistId;
   final bool selectionMode;
@@ -3037,14 +3037,14 @@ class _SongTile extends StatelessWidget {
     final bool active = controller.currentSong?.id == song.id;
     final List<PopupMenuEntry<String>> menuItems = <PopupMenuEntry<String>>[
       if (!song.isRemote)
-        _sonixPopupMenuItem(
+        _musixPopupMenuItem(
           'favorite',
           song.isFavorite ? 'Unfavorite' : 'Favorite',
         ),
-      _sonixPopupMenuItem('enqueue', 'Add to queue'),
-      if (!song.isRemote) _sonixPopupMenuItem('playlist', 'Add to playlist'),
+      _musixPopupMenuItem('enqueue', 'Add to queue'),
+      if (!song.isRemote) _musixPopupMenuItem('playlist', 'Add to playlist'),
       if (extraPlaylistId != null)
-        _sonixPopupMenuItem('remove_playlist', 'Remove from playlist'),
+        _musixPopupMenuItem('remove_playlist', 'Remove from playlist'),
     ];
     final VoidCallback resolvedTap =
         onTap ??
@@ -3201,7 +3201,7 @@ class _SongTile extends StatelessWidget {
           await HapticFeedback.selectionClick();
           await controller.enqueueSong(song);
           if (context.mounted) {
-            _showSonixSnackBar(context, 'Added to queue');
+            _showMusixSnackBar(context, 'Added to queue');
           }
           return false;
         }
@@ -3217,7 +3217,7 @@ class _SongTile extends StatelessWidget {
             extraPlaylistId != null) {
           await controller.removeSongFromPlaylist(extraPlaylistId!, song.id);
           if (context.mounted) {
-            _showSonixSnackBar(context, 'Removed from playlist');
+            _showMusixSnackBar(context, 'Removed from playlist');
           }
         }
       },
@@ -3235,7 +3235,7 @@ String _songArtistLabel(LibrarySong song) {
 class _AlbumGrid extends StatelessWidget {
   const _AlbumGrid({required this.controller, required this.albums});
 
-  final SonixController controller;
+  final MusixController controller;
   final List<AlbumCollection> albums;
 
   @override
@@ -3248,14 +3248,14 @@ class _AlbumGrid extends StatelessWidget {
           width: 200,
           child: _CollectionCard(
             title: album.title,
-            subtitle: '${album.artist} â€¢ ${album.songCount} tracks',
+            subtitle: '${album.artist} Ã¢â‚¬Â¢ ${album.songCount} tracks',
             seed: album.id,
             icon: Icons.album_rounded,
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
                   builder: (BuildContext context) =>
-                      _SonixAlbumScreen(controller: controller, album: album),
+                      _MusixAlbumScreen(controller: controller, album: album),
                 ),
               );
             },
@@ -3270,7 +3270,7 @@ class _AlbumGrid extends StatelessWidget {
 class _ArtistGrid extends StatelessWidget {
   const _ArtistGrid({required this.controller, required this.artists});
 
-  final SonixController controller;
+  final MusixController controller;
   final List<ArtistCollection> artists;
 
   @override
@@ -3284,13 +3284,13 @@ class _ArtistGrid extends StatelessWidget {
           child: _CollectionCard(
             title: artist.name,
             subtitle:
-                '${artist.songs.length} tracks â€¢ ${artist.albumCount} albums',
+                '${artist.songs.length} tracks Ã¢â‚¬Â¢ ${artist.albumCount} albums',
             seed: artist.id,
             icon: Icons.person_rounded,
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (BuildContext context) => _SonixArtistScreen(
+                  builder: (BuildContext context) => _MusixArtistScreen(
                     controller: controller,
                     artist: artist,
                   ),
@@ -3309,7 +3309,7 @@ class _FolderTile extends StatelessWidget {
   const _FolderTile({required this.folder, required this.controller});
 
   final FolderCollection folder;
-  final SonixController controller;
+  final MusixController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -3331,7 +3331,7 @@ class _FolderTile extends StatelessWidget {
         Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (BuildContext context) =>
-                _SonixFolderScreen(controller: controller, folder: folder),
+                _MusixFolderScreen(controller: controller, folder: folder),
           ),
         );
       },
@@ -3343,7 +3343,7 @@ class _FolderTile extends StatelessWidget {
 class _PlaylistGrid extends StatelessWidget {
   const _PlaylistGrid({required this.controller});
 
-  final SonixController controller;
+  final MusixController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -3391,7 +3391,7 @@ class _PlaylistGrid extends StatelessWidget {
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (BuildContext context) => _SonixPlaylistScreen(
+                  builder: (BuildContext context) => _MusixPlaylistScreen(
                     controller: controller,
                     title: shelf.title,
                     songs: shelf.songs,
@@ -3429,7 +3429,7 @@ class _MiniPlayer extends StatelessWidget {
 
   static const double _kMiniPlayerExpandVelocity = 360;
 
-  final SonixController controller;
+  final MusixController controller;
   final VoidCallback onOpenPlayer;
 
   @override
@@ -3998,7 +3998,7 @@ class _ResolvedArtistAvatar extends StatelessWidget {
     required this.size,
   });
 
-  final SonixController controller;
+  final MusixController controller;
   final String artistName;
   final String seed;
   final double size;

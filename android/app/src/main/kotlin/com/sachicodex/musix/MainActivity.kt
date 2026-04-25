@@ -1,4 +1,4 @@
-package com.sachicodex.sonix
+package com.sachicodex.musix
 
 import android.content.Intent
 import android.os.Build
@@ -79,7 +79,7 @@ class MainActivity : FlutterActivity() {
     }
 
     companion object {
-        private const val METHOD_CHANNEL = "com.sachicodex.sonix/media_notification"
-        private const val EVENT_CHANNEL = "com.sachicodex.sonix/media_notification_actions"
+        private const val METHOD_CHANNEL = "com.sachicodex.musix/media_notification"
+        private const val EVENT_CHANNEL = "com.sachicodex.musix/media_notification_actions"
     }
 }

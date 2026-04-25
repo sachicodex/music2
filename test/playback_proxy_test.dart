@@ -4,13 +4,13 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:sonix/src/playback_proxy.dart';
+import 'package:musix/src/playback_proxy.dart';
 
 void main() {
   test(
     'PlaybackProxyServer forwards bytes and reports transferred totals',
     () async {
-      final List<int> payload = utf8.encode('sonix-low-bitrate-audio');
+      final List<int> payload = utf8.encode('musix-low-bitrate-audio');
       final Directory tempDir = await Directory.systemTemp.createTemp(
         'playback-proxy-test-',
       );

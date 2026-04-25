@@ -1,4 +1,4 @@
-name: sonix
+name: musix
 description: "SONIX is a modern music app built for Gen Z and Gen Alpha, offering a powerful, ad-free, low-data, and user-friendly listening experience."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -52,6 +52,7 @@ dependencies:
   ytmusicapi_dart: ^2.3.0
   permission_handler: ^12.0.1
   connectivity_plus: ^6.1.5
+  window_manager: ^0.5.1
 
 dev_dependencies:
   flutter_test:
@@ -69,8 +70,8 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: false
-  image_path_android: assets/icons/Sonix - Android.png
-  adaptive_icon_foreground: assets/icons/Sonix - Android.png
+  image_path_android: assets/icons/Musix - Android.png
+  adaptive_icon_foreground: assets/icons/Musix - Android.png
   adaptive_icon_background: "#050000"
 
 # For information on the generic Dart part of this file, see the
@@ -89,15 +90,15 @@ flutter:
     - assets/icons/
 
 msix_config:
-  display_name: Sonix
+  display_name: Musix
   publisher_display_name: Sachi Codex
-  identity_name: com.sachicodex.sonix
+  identity_name: com.sachicodex.musix
   msix_version: 1.0.0.0
-  logo_path: assets/icons/Sonix - Windows.png
-  start_menu_icon_path: assets/icons/Sonix - Windows.png
-  tile_icon_path: assets/icons/Sonix - Windows.png
+  logo_path: assets/icons/Musix - Windows.png
+  start_menu_icon_path: assets/icons/Musix - Windows.png
+  tile_icon_path: assets/icons/Musix - Windows.png
   trim_logo: false
-  output_name: Sonix
+  output_name: Musix
 
   # To add assets to your application, add an assets section, like this:
   # assets:

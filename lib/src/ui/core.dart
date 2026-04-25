@@ -1,15 +1,15 @@
 part of '../ui.dart';
 
-class SonixApp extends StatelessWidget {
-  const SonixApp({super.key});
+class MusixApp extends StatelessWidget {
+  const MusixApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final SonixController controller = context.watch<SonixController>();
+    final MusixController controller = context.watch<MusixController>();
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'SONIX',
+      title: 'Musix',
       themeMode: controller.settings.themeMode,
       builder: (BuildContext context, Widget? child) {
         return Focus(
@@ -22,7 +22,7 @@ class SonixApp extends StatelessWidget {
             if (_focusedWidgetAcceptsTextInput()) {
               return KeyEventResult.ignored;
             }
-            unawaited(context.read<SonixController>().togglePlayback());
+            unawaited(context.read<MusixController>().togglePlayback());
             return KeyEventResult.handled;
           },
           child: child ?? const SizedBox.shrink(),
@@ -33,7 +33,388 @@ class SonixApp extends StatelessWidget {
       ),
       theme: _buildTheme(Brightness.light),
       darkTheme: _buildTheme(Brightness.dark),
-      home: const SonixShell(),
+      home: _MusixStartupGate(controller: controller),
+    );
+  }
+}
+
+class _MusixStartupGate extends StatefulWidget {
+  const _MusixStartupGate({required this.controller});
+
+  final MusixController controller;
+
+  @override
+  State<_MusixStartupGate> createState() => _MusixStartupGateState();
+}
+
+class _MusixStartupGateState extends State<_MusixStartupGate> {
+  static const Duration _targetStartupDuration = Duration(seconds: 2);
+  static const bool _debugInfiniteStartup = false;
+
+  int _bootAttempt = 0;
+  Object? _bootError;
+  bool _ready = false;
+  Duration _measuredBootDuration = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _beginBoot();
+  }
+
+  @override
+  void didUpdateWidget(covariant _MusixStartupGate oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller)) {
+      _beginBoot();
+    }
+  }
+
+  Future<void> _beginBoot() async {
+    final int attempt = ++_bootAttempt;
+    setState(() {
+      _bootError = null;
+      _ready = false;
+      _measuredBootDuration = Duration.zero;
+    });
+
+    try {
+      final Stopwatch stopwatch = Stopwatch()..start();
+      await widget.controller.initialize();
+      stopwatch.stop();
+      final Duration bootDuration = stopwatch.elapsed;
+      final Duration holdDuration = _remainingStartupHold(bootDuration);
+      if (holdDuration > Duration.zero) {
+        await Future<void>.delayed(holdDuration);
+      }
+      if (!mounted || attempt != _bootAttempt) {
+        return;
+      }
+      setState(() {
+        _measuredBootDuration = bootDuration;
+        _ready = !_debugInfiniteStartup;
+      });
+    } catch (error, stackTrace) {
+      debugPrint('Boot failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted || attempt != _bootAttempt) {
+        return;
+      }
+      setState(() {
+        _bootError = error;
+        _measuredBootDuration = Duration.zero;
+      });
+    }
+  }
+
+  Duration _remainingStartupHold(Duration bootDuration) {
+    if (bootDuration >= _targetStartupDuration) {
+      return Duration.zero;
+    }
+    return _targetStartupDuration - bootDuration;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 520),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (Widget child, Animation<double> animation) {
+        final Animation<Offset> offset =
+            Tween<Offset>(
+              begin: const Offset(0, 0.03),
+              end: Offset.zero,
+            ).animate(
+              CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+            );
+
+        return FadeTransition(
+          opacity: animation,
+          child: SlideTransition(position: offset, child: child),
+        );
+      },
+      child: _ready
+          ? const MusixShell(key: ValueKey<String>('shell'))
+          : _MusixStartupScreen(
+              key: const ValueKey<String>('startup'),
+              bootAttempt: _bootAttempt,
+              controller: widget.controller,
+              error: _bootError,
+              measuredBootDuration: _measuredBootDuration,
+              targetStartupDuration: _targetStartupDuration,
+              onRetry: _beginBoot,
+            ),
+    );
+  }
+}
+
+class _MusixStartupScreen extends StatefulWidget {
+  const _MusixStartupScreen({
+    super.key,
+    required this.bootAttempt,
+    required this.controller,
+    required this.onRetry,
+    required this.measuredBootDuration,
+    required this.targetStartupDuration,
+    this.error,
+  });
+
+  final int bootAttempt;
+  final MusixController controller;
+  final Object? error;
+  final Duration measuredBootDuration;
+  final Duration targetStartupDuration;
+  final VoidCallback onRetry;
+
+  @override
+  State<_MusixStartupScreen> createState() => _MusixStartupScreenState();
+}
+
+class _MusixStartupScreenState extends State<_MusixStartupScreen>
+    with TickerProviderStateMixin {
+  late final AnimationController _intro = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 500),
+  );
+  late final AnimationController _timeline = AnimationController(
+    vsync: this,
+    duration: widget.targetStartupDuration,
+  );
+  late final Animation<double> _progressValue = CurvedAnimation(
+    parent: _timeline,
+    curve: Curves.easeOutCubic,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _intro.forward();
+    _timeline.forward();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncMotionPreference();
+  }
+
+  @override
+  void didUpdateWidget(covariant _MusixStartupScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.targetStartupDuration != widget.targetStartupDuration) {
+      _timeline.duration = widget.targetStartupDuration;
+    }
+    if (oldWidget.bootAttempt != widget.bootAttempt) {
+      _timeline
+        ..stop()
+        ..value = 0
+        ..forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _intro.dispose();
+    _timeline.dispose();
+    super.dispose();
+  }
+
+  void _syncMotionPreference() {
+    final bool reduceMotion =
+        MediaQuery.maybeOf(context)?.disableAnimations ??
+        WidgetsBinding
+            .instance
+            .platformDispatcher
+            .accessibilityFeatures
+            .disableAnimations;
+    if (reduceMotion) {
+      _intro
+        ..stop()
+        ..value = 1.0;
+      return;
+    }
+    if (!_intro.isCompleted && !_intro.isAnimating) {
+      _intro.forward();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Listenable animation = Listenable.merge(<Listenable>[_intro, _timeline]);
+    return Scaffold(
+      backgroundColor: const Color(0xFF080808),
+      body: AnimatedBuilder(
+        animation: animation,
+        builder: (BuildContext context, Widget? child) {
+          final double wordOpacity = Curves.easeOutCubic.transform(
+            (_displayedProgress * 1.1).clamp(0.0, 1.0),
+          );
+          return DecoratedBox(
+            decoration: const BoxDecoration(
+              gradient: RadialGradient(
+                center: Alignment(0.0, -0.2),
+                radius: 1.05,
+                colors: <Color>[Color(0xFF161616), Color(0xFF080808)],
+              ),
+            ),
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: <Color>[Color(0xFF121212), Color(0xFF050505)],
+                    ),
+                  ),
+                ),
+                SafeArea(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Transform.scale(
+                        scale: Tween<double>(begin: 0.98, end: 1.0).transform(
+                          Curves.easeOutCubic.transform(_intro.value),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            const _MusixSplashLogoBadge(),
+                            const SizedBox(height: 16),
+                            Opacity(
+                              opacity: wordOpacity,
+                              child: Text(
+                                'MUSIX',
+                                style: GoogleFonts.spaceGrotesk(
+                                  color: Colors.white.withValues(alpha: 0.82),
+                                  fontSize: 40,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 1.0,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            _MusixSplashProgressBar(
+                              width: 128,
+                              height: 3,
+                              progress: _progressValue,
+                              baseColor: const Color(0xFF1E1E1E),
+                              fillColor: _kAccent,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                if (widget.error != null)
+                  Align(
+                    alignment: Alignment.bottomCenter,
+                    child: SafeArea(
+                      minimum: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+                      child: FilledButton.icon(
+                        onPressed: widget.onRetry,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF1E0D07),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 14,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18),
+                            side: const BorderSide(color: Color(0xFF6D3928)),
+                          ),
+                        ),
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: Text(
+                          'Try again',
+                          style: GoogleFonts.ibmPlexSans(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  double get _displayedProgress {
+    if (widget.error != null) {
+      return _timeline.value.clamp(0.0, 1.0);
+    }
+    if (!widget.controller.initialized && _timeline.isCompleted) {
+      return 0.94;
+    }
+    return _timeline.value.clamp(0.0, 1.0);
+  }
+}
+
+class _MusixSplashLogoBadge extends StatelessWidget {
+  const _MusixSplashLogoBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 100,
+      height: 100,
+      child: Center(
+        child: Image.asset(
+          'assets/icons/Musix - Android.png',
+          width: 100,
+          height: 100,
+          fit: BoxFit.contain,
+        ),
+      ),
+    );
+  }
+}
+
+class _MusixSplashProgressBar extends StatelessWidget {
+  const _MusixSplashProgressBar({
+    required this.width,
+    required this.height,
+    required this.progress,
+    required this.baseColor,
+    required this.fillColor,
+  });
+
+  final double width;
+  final double height;
+  final Animation<double> progress;
+  final Color baseColor;
+  final Color fillColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      height: height,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(999),
+        child: AnimatedBuilder(
+          animation: progress,
+          builder: (BuildContext context, _) {
+            final double value = (0.08 + (0.92 * progress.value)).clamp(
+              0.0,
+              1.0,
+            );
+            return LinearProgressIndicator(
+              value: value,
+              minHeight: height,
+              color: fillColor,
+              backgroundColor: baseColor,
+            );
+          },
+        ),
+      ),
     );
   }
 }
@@ -100,14 +481,14 @@ ThemeData _buildTheme(Brightness brightness) {
   );
 }
 
-class SonixShell extends StatefulWidget {
-  const SonixShell({super.key});
+class MusixShell extends StatefulWidget {
+  const MusixShell({super.key});
 
   @override
-  State<SonixShell> createState() => _SonixShellState();
+  State<MusixShell> createState() => _MusixShellState();
 }
 
-class _SonixShellState extends State<SonixShell> {
+class _MusixShellState extends State<MusixShell> {
   static const List<AppDestination> _mainDestinations = <AppDestination>[
     AppDestination.home,
     AppDestination.search,
@@ -129,9 +510,7 @@ class _SonixShellState extends State<SonixShell> {
         return;
       }
       unawaited(
-        context
-            .read<SonixController>()
-            .ensureNotificationPermissionIfNeeded(),
+        context.read<MusixController>().ensureNotificationPermissionIfNeeded(),
       );
     });
   }
@@ -144,7 +523,7 @@ class _SonixShellState extends State<SonixShell> {
 
   @override
   Widget build(BuildContext context) {
-    final SonixController controller = context.watch<SonixController>();
+    final MusixController controller = context.watch<MusixController>();
     final bool desktop = _isDesktopPlatform();
     final bool wide = MediaQuery.sizeOf(context).width >= 960;
     final List<Widget> pages = _mainDestinations
@@ -228,7 +607,7 @@ class _SonixShellState extends State<SonixShell> {
           : _MobileBottomChrome(
               controller: controller,
               onOpenPlayer: () => _openPlayer(context, controller),
-              child: _SonixBottomNav(
+              child: _MusixBottomNav(
                 destination: _destination,
                 onDestinationChanged: (AppDestination value) {
                   _setDestination(value);
@@ -262,13 +641,13 @@ class _SonixShellState extends State<SonixShell> {
   void _clearSearchIfNeeded(AppDestination nextDestination) {
     if (_destination == AppDestination.search &&
         nextDestination != AppDestination.search) {
-      context.read<SonixController>().clearSearchState();
+      context.read<MusixController>().clearSearchState();
     }
   }
 
   Widget _buildPageForDestination(
     BuildContext context,
-    SonixController controller,
+    MusixController controller,
     AppDestination destination,
   ) {
     return switch (destination) {
@@ -299,7 +678,7 @@ class _SonixShellState extends State<SonixShell> {
 
   Future<void> _openPlayer(
     BuildContext context,
-    SonixController controller,
+    MusixController controller,
   ) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -348,7 +727,7 @@ EdgeInsets _rootScreenContentPadding(
   );
 }
 
-BoxDecoration _sonixPageDecoration() {
+BoxDecoration _musixPageDecoration() {
   return const BoxDecoration(
     gradient: LinearGradient(
       colors: <Color>[_kPageTop, _kPageMiddle, _kPageBottom],
@@ -358,7 +737,7 @@ BoxDecoration _sonixPageDecoration() {
   );
 }
 
-void _showSonixSnackBar(BuildContext context, String message) {
+void _showMusixSnackBar(BuildContext context, String message) {
   final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
   messenger.hideCurrentSnackBar();
   messenger.showSnackBar(
@@ -380,7 +759,7 @@ void _showSonixSnackBar(BuildContext context, String message) {
   );
 }
 
-PopupMenuItem<String> _sonixPopupMenuItem(String value, String label) {
+PopupMenuItem<String> _musixPopupMenuItem(String value, String label) {
   return PopupMenuItem<String>(
     value: value,
     child: Text(

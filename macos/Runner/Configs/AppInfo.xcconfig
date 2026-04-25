@@ -8,7 +8,7 @@
 PRODUCT_NAME = SONIX
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.sachicodex.sonix
+PRODUCT_BUNDLE_IDENTIFIER = com.sachicodex.musix
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright (C) 2026 Sachi Codex. All rights reserved.
