@@ -16,7 +16,7 @@
 			dependencies = (
 			);
 			name = "Flutter Assemble";
-			productName = SONIX;
+			productName = Musix;
 		};
 /* End PBXAggregateTarget section */
 
@@ -42,7 +42,7 @@
 			containerPortal = 33CC10E52044A3C60003C045 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 33CC111A2044C6BA0003C045;
-			remoteInfo = SONIX;
+			remoteInfo = Musix;
 		};
 /* End PBXContainerItemProxy section */
 
