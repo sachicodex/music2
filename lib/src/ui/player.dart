@@ -3629,40 +3629,33 @@ class _MiniPlayer extends StatelessWidget {
                                           ],
                                         ),
                                         const SizedBox(height: 8),
-                                        if (isMiniLoading)
-                                          const _PlaybackLoadingBar(
-                                            accent: accent,
-                                            trackColor: track,
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                          child: SizedBox(
                                             height: 5,
-                                          )
-                                        else
-                                          ClipRRect(
-                                            borderRadius: BorderRadius.circular(
-                                              999,
-                                            ),
-                                            child: SizedBox(
-                                              height: 5,
-                                              width: double.infinity,
-                                              child: ColoredBox(
-                                                color: track,
-                                                child: Align(
+                                            width: double.infinity,
+                                            child: ColoredBox(
+                                              color: track,
+                                              child: Align(
+                                                alignment: Alignment.centerLeft,
+                                                child: FractionallySizedBox(
+                                                  widthFactor: isMiniLoading
+                                                      ? 0.0
+                                                      : safeProgress,
                                                   alignment:
                                                       Alignment.centerLeft,
-                                                  child: FractionallySizedBox(
-                                                    widthFactor: safeProgress,
-                                                    alignment:
-                                                        Alignment.centerLeft,
-                                                    child:
-                                                        const SizedBox.expand(
-                                                          child: ColoredBox(
-                                                            color: accent,
-                                                          ),
-                                                        ),
+                                                  child: const SizedBox.expand(
+                                                    child: ColoredBox(
+                                                      color: accent,
+                                                    ),
                                                   ),
                                                 ),
                                               ),
                                             ),
                                           ),
+                                        ),
                                       ],
                                     );
                                   },
