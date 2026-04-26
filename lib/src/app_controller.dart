@@ -1249,7 +1249,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     if (remaining > const Duration(milliseconds: 1200)) {
       return;
     }
-    final int? targetIndex = _nextQueueIndex();
+    final int? targetIndex = _nextQueueIndex(respectSingleRepeat: false);
     if (targetIndex == null) {
       return;
     }
@@ -5771,7 +5771,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     _queueNavigationInFlight = true;
     try {
       _syncControllerQueueIndexToPlayer();
-      final int? targetIndex = _nextQueueIndex();
+      final int? targetIndex = _nextQueueIndex(respectSingleRepeat: false);
       if (targetIndex == null) {
         return;
       }
@@ -5841,7 +5841,9 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     _queueNavigationInFlight = true;
     try {
       _syncControllerQueueIndexToPlayer();
-      final int? targetIndex = _previousQueueIndex();
+      final int? targetIndex = _previousQueueIndex(
+        respectSingleRepeat: false,
+      );
       if (targetIndex == null) {
         return;
       }
@@ -6002,6 +6004,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     if (normalized > 0) {
       unawaited(_maybeExtendSmartQueue(force: true));
     }
+    unawaited(_refreshOfflinePlaybackCache(anchor: currentSong));
     notifyListeners();
   }
 
@@ -6425,22 +6428,71 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  int? _offlinePlaybackCacheAnchorQueueIndex({LibrarySong? anchor}) {
+    if (_queueSongIds.isEmpty) {
+      return null;
+    }
+    if (anchor != null) {
+      final int anchorIndex = _queueSongIds.indexOf(anchor.id);
+      if (anchorIndex >= 0) {
+        return anchorIndex;
+      }
+    }
+    final int? playerIndex = _activePlayerQueueIndex();
+    if (playerIndex != null) {
+      return playerIndex;
+    }
+    if (_queueIndex < 0 || _queueIndex >= _queueSongIds.length) {
+      return null;
+    }
+    return _queueIndex;
+  }
+
   List<LibrarySong> _offlinePlaybackCacheCandidates({LibrarySong? anchor}) {
     if (!offlinePlaybackCacheEnabled) {
       return <LibrarySong>[];
     }
     final LibrarySong? target = anchor ?? currentSong;
-    if (target == null || !target.isRemote) {
-      _debugPlayback(
-        'cache.refresh candidates current-only count=0 '
-        'anchor=${_debugSongLabel(anchor)} current=${_debugSongLabel(currentSong)}',
-      );
-      return const <LibrarySong>[];
+    final int upcomingWindow = _settings.nextChanceSongCount.clamp(0, 5);
+    final int? queueIndex = _offlinePlaybackCacheAnchorQueueIndex(
+      anchor: target,
+    );
+    final List<LibrarySong> result = <LibrarySong>[];
+    final Set<String> seenSongIds = <String>{};
+
+    void addCandidate(LibrarySong? song) {
+      if (song == null || !song.isRemote || !seenSongIds.add(song.id)) {
+        return;
+      }
+      result.add(song);
     }
-    final List<LibrarySong> result = <LibrarySong>[target];
+
+    addCandidate(target);
+
+    if (queueIndex != null && upcomingWindow > 0) {
+      final int queueLength = _queueSongIds.length;
+      int nextIndex = queueIndex;
+      final Set<int> visitedIndexes = <int>{queueIndex};
+      for (int offset = 0; offset < upcomingWindow; offset += 1) {
+        nextIndex += 1;
+        if (nextIndex >= queueLength) {
+          if (_repeatMode != PlaylistMode.loop || queueLength <= 1) {
+            break;
+          }
+          nextIndex = 0;
+        }
+        if (!visitedIndexes.add(nextIndex)) {
+          break;
+        }
+        addCandidate(songById(_queueSongIds[nextIndex]));
+      }
+    }
+
     _debugPlayback(
       'cache.refresh candidates '
-      'current-only '
+      'anchor=${_debugSongLabel(target)} '
+      'queueIndex=${queueIndex ?? -1} '
+      'upcomingWindow=$upcomingWindow '
       'count=${result.length} '
       'songs=${result.map((LibrarySong song) => song.id).join(', ')}',
     );
@@ -6857,12 +6909,30 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     return '${song.id}("${song.title}" by "${song.artist}")';
   }
 
-  int? _nextQueueIndex() {
+  int? _queueProgressIndex() {
     if (_queueSongIds.isEmpty) {
       return null;
     }
-    final int currentIndex = _activePlayerQueueIndex() ?? _queueIndex;
-    if (_repeatMode == PlaylistMode.single) {
+    if (_offlineDetachedQueueMode ||
+        _offlineQueueWaitingSongId != null ||
+        !_playerQueueHasControllerPlaylist()) {
+      if (_queueIndex < 0 || _queueIndex >= _queueSongIds.length) {
+        return null;
+      }
+      return _queueIndex;
+    }
+    return _activePlayerQueueIndex() ?? _queueIndex;
+  }
+
+  int? _nextQueueIndex({bool respectSingleRepeat = true}) {
+    if (_queueSongIds.isEmpty) {
+      return null;
+    }
+    final int? currentIndex = _queueProgressIndex();
+    if (currentIndex == null) {
+      return null;
+    }
+    if (respectSingleRepeat && _repeatMode == PlaylistMode.single) {
       return currentIndex;
     }
     if (currentIndex < _queueSongIds.length - 1) {
@@ -6874,12 +6944,15 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     return null;
   }
 
-  int? _previousQueueIndex() {
+  int? _previousQueueIndex({bool respectSingleRepeat = true}) {
     if (_queueSongIds.isEmpty) {
       return null;
     }
-    final int currentIndex = _activePlayerQueueIndex() ?? _queueIndex;
-    if (_repeatMode == PlaylistMode.single) {
+    final int? currentIndex = _queueProgressIndex();
+    if (currentIndex == null) {
+      return null;
+    }
+    if (respectSingleRepeat && _repeatMode == PlaylistMode.single) {
       return currentIndex;
     }
     if (currentIndex > 0) {
