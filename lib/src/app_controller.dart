@@ -32,6 +32,8 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
   }
   static const int _smartQueueBatchSize = 7;
+  static const Duration _minBrowsableSongDuration = Duration(seconds: 30);
+  static const Duration _maxBrowsableSongDuration = Duration(minutes: 10);
 
   static const List<String> supportedExtensions = <String>[
     'mp3',
@@ -195,7 +197,10 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   bool get isOffline => _isOffline;
   bool get offlineMusicMode => _settings.offlineMusicMode;
   bool get offlinePlaybackCacheEnabled => true;
-  int get offlinePlaybackCacheSongCount => _offlinePlaybackCachePaths.length;
+  int get offlinePlaybackCacheSongCount => _offlinePlaybackCachePaths.keys
+      .toList(growable: false)
+      .where(_hasOfflinePlaybackCache)
+      .length;
   int get nextChanceSongCount => _settings.nextChanceSongCount;
   AppDataUsageStats get dataUsage => dataUsageState.value;
   String? get statusMessage => _statusMessage;
@@ -215,10 +220,12 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   Duration get duration => _duration;
   List<String> get sources => List<String>.unmodifiable(_sources);
   List<LibrarySong> get songs => List<LibrarySong>.unmodifiable(_songs);
+  List<LibrarySong> get browsableSongs => _filterSongsForBrowsing(_songs);
   List<LibrarySong> get onlineResults =>
       List<LibrarySong>.unmodifiable(_onlineResults);
-  List<LibrarySong> get trendingNowSongs =>
-      List<LibrarySong>.unmodifiable(_trendingNowSongs);
+  List<LibrarySong> get trendingNowSongs => List<LibrarySong>.unmodifiable(
+    _filterSongsForBrowsing(_trendingNowSongs),
+  );
   String get trendingNowRegionLabel => _trendingNowRegionLabel;
   List<AppRegion> get availableRegions =>
       List<AppRegion>.unmodifiable(kAppRegions);
@@ -236,6 +243,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
           .toList(growable: false);
   List<LibrarySong> get cachedSongs {
     final List<LibrarySong> result = _offlinePlaybackCachePaths.keys
+        .toList(growable: false)
         .where(_hasOfflinePlaybackCache)
         .map(songById)
         .whereType<LibrarySong>()
@@ -250,7 +258,11 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
 
   List<UserPlaylist> get playlists =>
       List<UserPlaylist>.unmodifiable(_playlists);
-  List<PlaybackEntry> get history => List<PlaybackEntry>.unmodifiable(_history);
+  List<PlaybackEntry> get history => List<PlaybackEntry>.unmodifiable(
+    _history.where(
+      (PlaybackEntry entry) => _shouldUseSongIdForHistorySignals(entry.songId),
+    ),
+  );
   String get searchDraft => _searchDraft;
   List<String> get recentSearchTerms =>
       List<String>.unmodifiable(_recentSearchTerms);
@@ -319,14 +331,22 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     final String? cachedSongId = _startupMiniPlayerSongId;
     if (cachedSongId != null) {
       final LibrarySong? cachedSong = songById(cachedSongId);
-      if (cachedSong != null && cachedSong.isRemote) {
+      if (cachedSong != null &&
+          cachedSong.isRemote &&
+          shouldShowSongOutsideSearch(cachedSong)) {
         return cachedSong;
       }
     }
 
     final List<LibrarySong> remoteSongs = <LibrarySong>[
-      ..._songs.where((LibrarySong song) => song.isRemote),
-      ..._transientSongsById.values.where((LibrarySong song) => song.isRemote),
+      ..._songs.where(
+        (LibrarySong song) =>
+            song.isRemote && shouldShowSongOutsideSearch(song),
+      ),
+      ..._transientSongsById.values.where(
+        (LibrarySong song) =>
+            song.isRemote && shouldShowSongOutsideSearch(song),
+      ),
     ];
     if (remoteSongs.isEmpty) {
       _startupMiniPlayerSongId = null;
@@ -337,6 +357,62 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         remoteSongs[math.Random().nextInt(remoteSongs.length)];
     _startupMiniPlayerSongId = randomSong.id;
     return randomSong;
+  }
+
+  bool shouldShowSongOutsideSearch(LibrarySong song) {
+    final int durationMs = song.durationMs;
+    if (durationMs <= 0) {
+      return true;
+    }
+    return durationMs >= _minBrowsableSongDuration.inMilliseconds &&
+        durationMs <= _maxBrowsableSongDuration.inMilliseconds;
+  }
+
+  bool _shouldCacheSongForOfflinePlayback(LibrarySong song) {
+    return song.isRemote && shouldShowSongOutsideSearch(song);
+  }
+
+  List<LibrarySong> _filterSongsForBrowsing(Iterable<LibrarySong> songs) {
+    return songs.where(shouldShowSongOutsideSearch).toList(growable: false);
+  }
+
+  List<HomeFeedSection> _filterHomeFeedSectionsForBrowsing(
+    Iterable<HomeFeedSection> sections,
+  ) {
+    final List<HomeFeedSection> result = <HomeFeedSection>[];
+    for (final HomeFeedSection section in sections) {
+      final List<LibrarySong> songs = _filterSongsForBrowsing(section.songs);
+      if (songs.isEmpty) {
+        continue;
+      }
+      result.add(
+        HomeFeedSection(
+          title: section.title,
+          subtitle: section.subtitle,
+          query: section.query,
+          songs: songs,
+        ),
+      );
+    }
+    return result;
+  }
+
+  void _dropRestrictedDurationOfflinePlaybackCacheEntry(String songId) {
+    final LibrarySong? song = songById(songId);
+    if (song == null || shouldShowSongOutsideSearch(song)) {
+      return;
+    }
+    final String? path = _offlinePlaybackCachePaths[songId];
+    _dropOfflinePlaybackCacheEntry(songId);
+    if (path != null && path.trim().isNotEmpty) {
+      unawaited(_deleteFileIfExists(path));
+    }
+  }
+
+  void _purgeRestrictedDurationOfflinePlaybackCacheEntries() {
+    for (final String songId in _offlinePlaybackCachePaths.keys.toList()) {
+      _dropRestrictedDurationOfflinePlaybackCacheEntry(songId);
+    }
   }
 
   bool get miniPlayerSelectionLoading {
@@ -782,7 +858,20 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
 
-    final LibrarySong? anchor = seed ?? queueSongs.lastOrNull ?? currentSong;
+    final LibrarySong? queuedAnchor = queueSongs.lastOrNull;
+    final LibrarySong? current = currentSong;
+    final LibrarySong? anchor =
+        (seed != null && seed.isRemote && shouldShowSongOutsideSearch(seed))
+        ? seed
+        : (queuedAnchor != null &&
+              queuedAnchor.isRemote &&
+              shouldShowSongOutsideSearch(queuedAnchor))
+        ? queuedAnchor
+        : (current != null &&
+              current.isRemote &&
+              shouldShowSongOutsideSearch(current))
+        ? current
+        : null;
     if (anchor == null) {
       return;
     }
@@ -792,6 +881,10 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
 
   bool _hasOfflinePlaybackCache(String songId) {
     if (!offlinePlaybackCacheEnabled) {
+      return false;
+    }
+    final LibrarySong? song = songById(songId);
+    if (song != null && !shouldShowSongOutsideSearch(song)) {
       return false;
     }
     final String? path = _offlinePlaybackCachePaths[songId];
@@ -807,6 +900,10 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
 
   String? _offlinePlaybackCachePathForSong(String songId) {
     if (!offlinePlaybackCacheEnabled) {
+      return null;
+    }
+    final LibrarySong? song = songById(songId);
+    if (song != null && !shouldShowSongOutsideSearch(song)) {
       return null;
     }
     final String? path = _offlinePlaybackCachePaths[songId];
@@ -843,7 +940,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   List<LibrarySong> get recentlyAddedSongs {
-    final List<LibrarySong> result = List<LibrarySong>.from(_songs);
+    final List<LibrarySong> result = _filterSongsForBrowsing(_songs);
     result.sort(
       (LibrarySong a, LibrarySong b) => b.addedAt.compareTo(a.addedAt),
     );
@@ -852,7 +949,10 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
 
   List<LibrarySong> get favoriteSongs {
     final List<LibrarySong> result = _songs
-        .where((LibrarySong song) => song.isFavorite)
+        .where(
+          (LibrarySong song) =>
+              song.isFavorite && shouldShowSongOutsideSearch(song),
+        )
         .toList();
     result.sort(
       (LibrarySong a, LibrarySong b) => b.playCount.compareTo(a.playCount),
@@ -867,7 +967,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       for (final LibrarySong song in _transientSongsById.values)
         if (song.isLiked) song.id: song,
     };
-    final List<LibrarySong> result = merged.values.toList(growable: false);
+    final List<LibrarySong> result = _filterSongsForBrowsing(merged.values);
     result.sort((LibrarySong a, LibrarySong b) {
       final int playCompare = b.playCount.compareTo(a.playCount);
       if (playCompare != 0) {
@@ -891,7 +991,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       for (final LibrarySong song in _transientSongsById.values)
         if (song.isDisliked) song.id: song,
     };
-    final List<LibrarySong> result = merged.values.toList(growable: false);
+    final List<LibrarySong> result = _filterSongsForBrowsing(merged.values);
     result.sort((LibrarySong a, LibrarySong b) {
       final DateTime left = a.lastPlayedAt ?? a.addedAt;
       final DateTime right = b.lastPlayedAt ?? b.addedAt;
@@ -1011,7 +1111,9 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       .where((LibrarySong song) => song.isRemote)
       .toList(growable: false);
 
-  bool _shouldUseSongForHistorySignals(LibrarySong song) => song.isRemote;
+  bool _shouldUseSongForHistorySignals(LibrarySong song) {
+    return song.isRemote && shouldShowSongOutsideSearch(song);
+  }
 
   bool _shouldUseSongIdForHistorySignals(String songId) {
     final LibrarySong? song = songById(songId);
@@ -1031,7 +1133,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   List<AlbumCollection> get albums {
     final Map<String, List<LibrarySong>> grouped =
         <String, List<LibrarySong>>{};
-    for (final LibrarySong song in _songs) {
+    for (final LibrarySong song in browsableSongs) {
       final String key =
           '${song.album.trim().toLowerCase()}::${song.albumArtist.trim().toLowerCase()}';
       grouped.putIfAbsent(key, () => <LibrarySong>[]).add(song);
@@ -1078,7 +1180,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   List<ArtistCollection> get artists {
     final Map<String, List<LibrarySong>> grouped =
         <String, List<LibrarySong>>{};
-    for (final LibrarySong song in _songs) {
+    for (final LibrarySong song in browsableSongs) {
       final String key = song.artist.trim().toLowerCase();
       grouped.putIfAbsent(key, () => <LibrarySong>[]).add(song);
     }
@@ -1109,7 +1211,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   List<FolderCollection> get folders {
     final Map<String, List<LibrarySong>> grouped =
         <String, List<LibrarySong>>{};
-    for (final LibrarySong song in _songs) {
+    for (final LibrarySong song in browsableSongs) {
       grouped.putIfAbsent(song.folderPath, () => <LibrarySong>[]).add(song);
     }
 
@@ -1744,7 +1846,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     required LibrarySong? seedSong,
     bool preservePersonalized = false,
   }) {
-    _homeFeed = List<HomeFeedSection>.from(sections);
+    _homeFeed = _filterHomeFeedSectionsForBrowsing(sections);
     if (!preservePersonalized || _personalizedHomeRecommendations.isEmpty) {
       _personalizedHomeRecommendations = _buildPersonalizedHomeSongs(
         sections: _homeFeed,
@@ -2518,6 +2620,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     for (final LibrarySong song in songs) {
       final String identityKey = _songIdentityKey(song);
       if (excludedIds.contains(song.id) ||
+          !shouldShowSongOutsideSearch(song) ||
           song.isDisliked ||
           dislikedKeys.contains(identityKey)) {
         continue;
@@ -2724,10 +2827,14 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
 
-    final LibrarySong? anchor = (seed != null && seed.isRemote)
+    final LibrarySong? current = currentSong;
+    final LibrarySong? anchor =
+        (seed != null && seed.isRemote && shouldShowSongOutsideSearch(seed))
         ? seed
-        : (currentSong?.isRemote ?? false)
-        ? currentSong
+        : (current != null &&
+              current.isRemote &&
+              shouldShowSongOutsideSearch(current))
+        ? current
         : null;
     if (anchor == null) {
       return;
@@ -2763,8 +2870,12 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       if (_isDisposing || _isDisposed) {
         return;
       }
-      final LibrarySong? fallbackAnchor = (currentSong?.isRemote ?? false)
-          ? currentSong
+      final LibrarySong? current = currentSong;
+      final LibrarySong? fallbackAnchor =
+          current != null &&
+              current.isRemote &&
+              shouldShowSongOutsideSearch(current)
+          ? current
           : null;
       if (predictions.isEmpty &&
           fallbackAnchor != null &&
@@ -2888,10 +2999,14 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   LibrarySong? _primaryRecommendationSeed() {
-    return (currentSong?.isRemote ?? false)
-        ? currentSong
-        : _validHistorySongs().firstOrNull ??
-              _rankedPreferenceSongs().firstOrNull;
+    final LibrarySong? current = currentSong;
+    if (current != null &&
+        current.isRemote &&
+        shouldShowSongOutsideSearch(current)) {
+      return current;
+    }
+    return _validHistorySongs().firstOrNull ??
+        _rankedPreferenceSongs().firstOrNull;
   }
 
   List<_RecommendationQuery> _buildHomeQueries(LibrarySong? seedSong) {
@@ -3070,9 +3185,12 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
 
     final List<LibrarySong> seedSongs = _dedupeSongs(
       <LibrarySong>[
-        if (currentSong case final LibrarySong current when current.isRemote)
+        if (currentSong case final LibrarySong current
+            when current.isRemote && shouldShowSongOutsideSearch(current))
           current,
-        if (seedSong case final LibrarySong seed when seed.isRemote) seed,
+        if (seedSong case final LibrarySong seed
+            when seed.isRemote && shouldShowSongOutsideSearch(seed))
+          seed,
         ...fullListenSongs.take(4),
         ..._decisionLikedSongs.take(4),
       ],
@@ -3480,6 +3598,9 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       if (blockedIds.contains(song.id)) {
         continue;
       }
+      if (!shouldShowSongOutsideSearch(song)) {
+        continue;
+      }
       if (song.isDisliked) {
         continue;
       }
@@ -3650,7 +3771,9 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     final Set<String> result = <String>{};
     for (int i = start; i < end; i += 1) {
       final LibrarySong? song = songById(_queueSongIds[i]);
-      if (song == null || !song.isRemote) {
+      if (song == null ||
+          !song.isRemote ||
+          !shouldShowSongOutsideSearch(song)) {
         continue;
       }
       result.add(_normalizeToken(song.artist));
@@ -3664,7 +3787,9 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     final Set<String> result = <String>{};
     for (int i = start; i < end; i += 1) {
       final LibrarySong? song = songById(_queueSongIds[i]);
-      if (song == null || !song.isRemote) {
+      if (song == null ||
+          !song.isRemote ||
+          !shouldShowSongOutsideSearch(song)) {
         continue;
       }
       result.add(_songIdentityKey(song));
@@ -4428,6 +4553,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     return playlist.songIds
         .map(songById)
         .whereType<LibrarySong>()
+        .where(shouldShowSongOutsideSearch)
         .toList(growable: false);
   }
 
@@ -4567,6 +4693,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
           )
           .toList();
       _prunePlaybackHistory();
+      _purgeRestrictedDurationOfflinePlaybackCacheEntries();
 
       _statusMessage = scanned.isEmpty
           ? 'No supported audio files found on this device.'
@@ -4928,6 +5055,9 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       song,
       primeOfflineCache: false,
     );
+    if (!shouldShowSongOutsideSearch(prepared)) {
+      return;
+    }
     final Set<String> dislikedKeys = dislikedSongs
         .map(_songIdentityKey)
         .toSet();
@@ -5124,12 +5254,13 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     LibrarySong song, {
     bool primeOfflineCache = false,
   }) async {
+    final bool cacheAllowed = _shouldCacheSongForOfflinePlayback(song);
     final _ResolvedRemotePlayback resolved = await _resolvePlayableRemoteStream(
       song,
       preferPlaybackCompatibility: true,
     );
     if (_playbackProxyBypassSongIds.contains(song.id)) {
-      if (primeOfflineCache) {
+      if (primeOfflineCache && cacheAllowed) {
         _maybePrimeAndroidPlaybackCache(
           song: song,
           resolvedUrl: resolved.resolvedUrl,
@@ -5143,7 +5274,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         streamInfo: resolved.streamInfo,
       );
     }
-    final String? proxyCacheFilePath = Platform.isAndroid
+    final String? proxyCacheFilePath = Platform.isAndroid || !cacheAllowed
         ? null
         : (await _offlinePlaybackCacheTargetFile(
             song,
@@ -5156,7 +5287,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         upstreamHeaders: resolved.upstreamHeaders,
         cacheFilePath: proxyCacheFilePath,
       );
-      if (primeOfflineCache) {
+      if (primeOfflineCache && cacheAllowed) {
         _maybePrimeAndroidPlaybackCache(
           song: song,
           resolvedUrl: resolved.resolvedUrl,
@@ -5173,7 +5304,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         'proxy.register failed song=${_debugSongLabel(song)} error=$error',
       );
     }
-    if (primeOfflineCache) {
+    if (primeOfflineCache && cacheAllowed) {
       _maybePrimeAndroidPlaybackCache(
         song: song,
         resolvedUrl: resolved.resolvedUrl,
@@ -5841,9 +5972,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     _queueNavigationInFlight = true;
     try {
       _syncControllerQueueIndexToPlayer();
-      final int? targetIndex = _previousQueueIndex(
-        respectSingleRepeat: false,
-      );
+      final int? targetIndex = _previousQueueIndex(respectSingleRepeat: false);
       if (targetIndex == null) {
         return;
       }
@@ -6110,7 +6239,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   }) {
     if (!Platform.isAndroid ||
         !offlinePlaybackCacheEnabled ||
-        !song.isRemote ||
+        !_shouldCacheSongForOfflinePlayback(song) ||
         _hasOfflinePlaybackCache(song.id) ||
         _offlinePlaybackPrefetchInFlight.contains(song.id) ||
         _isOffline ||
@@ -6136,7 +6265,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     bool manageInFlight = true,
   }) async {
     if (!offlinePlaybackCacheEnabled ||
-        !song.isRemote ||
+        !_shouldCacheSongForOfflinePlayback(song) ||
         _hasOfflinePlaybackCache(song.id) ||
         _isDisposing ||
         _isDisposed) {
@@ -6402,7 +6531,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _cacheSongForOfflinePlayback(LibrarySong song) async {
     if (!offlinePlaybackCacheEnabled ||
-        !song.isRemote ||
+        !_shouldCacheSongForOfflinePlayback(song) ||
         _offlinePlaybackPrefetchInFlight.contains(song.id) ||
         _hasOfflinePlaybackCache(song.id) ||
         _isDisposing ||
@@ -6461,7 +6590,9 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     final Set<String> seenSongIds = <String>{};
 
     void addCandidate(LibrarySong? song) {
-      if (song == null || !song.isRemote || !seenSongIds.add(song.id)) {
+      if (song == null ||
+          !_shouldCacheSongForOfflinePlayback(song) ||
+          !seenSongIds.add(song.id)) {
         return;
       }
       result.add(song);
@@ -6501,7 +6632,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
 
   void _enqueueOfflinePlaybackCacheSongs(List<LibrarySong> songs) {
     for (final LibrarySong song in songs) {
-      if (!song.isRemote ||
+      if (!_shouldCacheSongForOfflinePlayback(song) ||
           _hasOfflinePlaybackCache(song.id) ||
           _offlinePlaybackPrefetchInFlight.contains(song.id) ||
           !_offlinePlaybackCacheQueuedSongIds.add(song.id)) {
@@ -7439,6 +7570,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
               MapEntry<String, int>(item.key, File(item.value).lengthSync()),
         ),
       );
+    _purgeRestrictedDurationOfflinePlaybackCacheEntries();
     final List<String> restoredQueueSongIds =
         (json['queueSongIds'] as List<dynamic>? ?? <dynamic>[])
             .map((dynamic item) => item as String)

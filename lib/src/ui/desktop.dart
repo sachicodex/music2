@@ -910,7 +910,7 @@ class _DesktopHomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (controller.isOffline || controller.offlineMusicMode) {
-      final List<LibrarySong> localSongs = controller.songs
+      final List<LibrarySong> localSongs = controller.browsableSongs
           .where((LibrarySong song) => !song.isRemote)
           .take(6)
           .toList(growable: false);
@@ -1481,33 +1481,38 @@ class _DesktopLibraryScreen extends StatelessWidget {
     final List<LibrarySong> dislikedSongs = controller.dislikedSongs;
     final bool hasCachedPlaylist = cachedSongs.isNotEmpty;
     final bool hasDislikedPlaylist = dislikedSongs.isNotEmpty;
-    final bool hasAnyPlaylistEntries =
-        hasCachedPlaylist || hasDislikedPlaylist || playlists.isNotEmpty;
     final List<_DesktopLibraryPlaylistEntry> playlistEntries =
         <_DesktopLibraryPlaylistEntry>[
-          if (hasCachedPlaylist)
-            _DesktopLibraryPlaylistEntry(
-              title: 'Cached Songs',
-              seed: 'cached_songs',
-              songs: cachedSongs,
-              subtitle: '${cachedSongs.length} cached tracks',
-            ),
-          if (hasDislikedPlaylist)
-            _DesktopLibraryPlaylistEntry(
-              title: 'Disliked Songs',
-              seed: 'disliked_songs',
-              songs: dislikedSongs,
-              subtitle: '${dislikedSongs.length} disliked tracks',
-            ),
-          ...playlists.map(
-            (UserPlaylist playlist) => _DesktopLibraryPlaylistEntry(
-              title: playlist.name,
-              seed: playlist.id,
-              songs: controller.songsForPlaylist(playlist),
-              playlist: playlist,
-            ),
-          ),
-        ];
+              if (hasCachedPlaylist)
+                _DesktopLibraryPlaylistEntry(
+                  title: 'Cached Songs',
+                  seed: 'cached_songs',
+                  songs: cachedSongs,
+                  subtitle: '${cachedSongs.length} cached tracks',
+                ),
+              if (hasDislikedPlaylist)
+                _DesktopLibraryPlaylistEntry(
+                  title: 'Disliked Songs',
+                  seed: 'disliked_songs',
+                  songs: dislikedSongs,
+                  subtitle: '${dislikedSongs.length} disliked tracks',
+                ),
+              ...playlists.map((UserPlaylist playlist) {
+                final List<LibrarySong> playlistSongs = controller
+                    .songsForPlaylist(playlist);
+                return _DesktopLibraryPlaylistEntry(
+                  title: playlist.name,
+                  seed: playlist.id,
+                  songs: playlistSongs,
+                  playlist: playlist,
+                );
+              }),
+            ]
+            .where(
+              (_DesktopLibraryPlaylistEntry entry) => entry.songs.isNotEmpty,
+            )
+            .toList(growable: false);
+    final bool hasAnyPlaylistEntries = playlistEntries.isNotEmpty;
 
     return _DesktopPageScrollView(
       child: Column(
@@ -1555,7 +1560,7 @@ class _DesktopLibraryScreen extends StatelessWidget {
                         builder: (BuildContext context) => _MusixPlaylistScreen(
                           controller: controller,
                           title: 'Offline',
-                          songs: controller.songs,
+                          songs: controller.browsableSongs,
                           localPlaybackOnly: true,
                         ),
                       ),

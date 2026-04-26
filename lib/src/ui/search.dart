@@ -241,6 +241,7 @@ class _SearchTrendingTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String subtitle = _songArtistLabel(song);
+    final bool canQueue = controller.shouldShowSongOutsideSearch(song);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -320,14 +321,16 @@ class _SearchTrendingTile extends StatelessWidget {
                         controller.playSong(song, label: 'Search trending');
                       }
                     case 'queue':
-                      controller.enqueueSong(song);
+                      if (canQueue) {
+                        controller.enqueueSong(song);
+                      }
                     case 'favorite':
                       controller.toggleFavorite(song.id);
                   }
                 },
                 itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
                   _musixPopupMenuItem('play', 'Play now'),
-                  _musixPopupMenuItem('queue', 'Add to queue'),
+                  if (canQueue) _musixPopupMenuItem('queue', 'Add to queue'),
                   _musixPopupMenuItem(
                     'favorite',
                     song.isFavorite ? 'Remove favorite' : 'Add favorite',

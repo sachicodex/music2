@@ -341,7 +341,7 @@ class _HomeOfflineState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final List<LibrarySong> localSongs = controller.songs
+    final List<LibrarySong> localSongs = controller.browsableSongs
         .where((LibrarySong song) => !song.isRemote)
         .take(6)
         .toList(growable: false);
@@ -535,7 +535,7 @@ List<_SearchGenreShelf> _buildSearchGenreShelves(MusixController controller) {
   final List<LibrarySong> pool = <LibrarySong>[
     ..._resolvedMayYouLikeSongs(controller),
     ...controller.recentlyAddedSongs,
-    ...controller.songs,
+    ...controller.browsableSongs,
   ];
 
   LibrarySong? pickSong(List<String> tokens) {

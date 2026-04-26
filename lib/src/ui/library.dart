@@ -18,6 +18,19 @@ class _LibraryScreen extends StatelessWidget {
       return _DesktopLibraryScreen(controller: controller);
     }
     final List<UserPlaylist> playlists = controller.playlists;
+    final List<MapEntry<UserPlaylist, List<LibrarySong>>> visiblePlaylists =
+        playlists
+            .map((UserPlaylist playlist) {
+              return MapEntry<UserPlaylist, List<LibrarySong>>(
+                playlist,
+                controller.songsForPlaylist(playlist),
+              );
+            })
+            .where(
+              (MapEntry<UserPlaylist, List<LibrarySong>> entry) =>
+                  entry.value.isNotEmpty,
+            )
+            .toList(growable: false);
     final List<LibrarySong> cachedSongs = controller.cachedSongs;
     final List<LibrarySong> likedSongs = controller.likedSongs;
     final List<LibrarySong> dislikedSongs = controller.dislikedSongs;
@@ -25,7 +38,7 @@ class _LibraryScreen extends StatelessWidget {
     final bool hasCachedPlaylist = cachedSongs.isNotEmpty;
     final bool hasDislikedPlaylist = dislikedSongs.isNotEmpty;
     final bool hasAnyPlaylistEntries =
-        hasCachedPlaylist || hasDislikedPlaylist || playlists.isNotEmpty;
+        hasCachedPlaylist || hasDislikedPlaylist || visiblePlaylists.isNotEmpty;
 
     return DecoratedBox(
       decoration: _musixPageDecoration(),
@@ -53,11 +66,12 @@ class _LibraryScreen extends StatelessWidget {
                     onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute<void>(
-                          builder: (BuildContext context) => _MusixPlaylistScreen(
-                            controller: controller,
-                            title: 'Liked Songs',
-                            songs: likedSongs,
-                          ),
+                          builder: (BuildContext context) =>
+                              _MusixPlaylistScreen(
+                                controller: controller,
+                                title: 'Liked Songs',
+                                songs: likedSongs,
+                              ),
                         ),
                       );
                     },
@@ -80,7 +94,7 @@ class _LibraryScreen extends StatelessWidget {
                               _MusixPlaylistScreen(
                                 controller: controller,
                                 title: 'Offline',
-                                songs: controller.songs,
+                                songs: controller.browsableSongs,
                                 localPlaybackOnly: true,
                               ),
                         ),
@@ -153,19 +167,23 @@ class _LibraryScreen extends StatelessWidget {
               _LibraryEmptyPlaylistCard(
                 onCreate: () => _showCreatePlaylistDialog(context, controller),
               )
-            else if (playlists.isNotEmpty)
-              ...playlists.map(
-                (UserPlaylist playlist) => Padding(
+            else if (visiblePlaylists.isNotEmpty)
+              ...visiblePlaylists.map((
+                MapEntry<UserPlaylist, List<LibrarySong>> entry,
+              ) {
+                final UserPlaylist playlist = entry.key;
+                final List<LibrarySong> playlistSongs = entry.value;
+                return Padding(
                   padding: const EdgeInsets.only(bottom: 18),
                   child: _LibraryPlaylistRow(
                     controller: controller,
                     title: playlist.name,
                     seed: playlist.id,
-                    songs: controller.songsForPlaylist(playlist),
+                    songs: playlistSongs,
                     playlist: playlist,
                   ),
-                ),
-              )
+                );
+              })
             else if (!hasCachedPlaylist && !hasDislikedPlaylist)
               const _LibraryBlockedCard(
                 title: 'Cloud Playlists',

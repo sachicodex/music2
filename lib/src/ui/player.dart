@@ -908,6 +908,26 @@ class _DesktopPlayerArtworkPanel extends StatelessWidget {
   }
 }
 
+class _VisibleQueueSong {
+  const _VisibleQueueSong({required this.queueIndex, required this.song});
+
+  final int queueIndex;
+  final LibrarySong song;
+}
+
+List<_VisibleQueueSong> _visibleQueueSongs(MusixController controller) {
+  final List<LibrarySong> queue = controller.queueSongs;
+  final List<_VisibleQueueSong> result = <_VisibleQueueSong>[];
+  for (int index = 0; index < queue.length; index += 1) {
+    final LibrarySong song = queue[index];
+    if (!controller.shouldShowSongOutsideSearch(song)) {
+      continue;
+    }
+    result.add(_VisibleQueueSong(queueIndex: index, song: song));
+  }
+  return result;
+}
+
 class _DesktopPlayerQueuePanel extends StatelessWidget {
   const _DesktopPlayerQueuePanel({
     required this.controller,
@@ -930,7 +950,7 @@ class _DesktopPlayerQueuePanel extends StatelessWidget {
     return AnimatedBuilder(
       animation: controller,
       builder: (BuildContext context, Widget? child) {
-        final List<LibrarySong> songs = controller.queueSongs;
+        final List<_VisibleQueueSong> songs = _visibleQueueSongs(controller);
         final bool loading = controller.smartQueueLoading;
         return Container(
           padding: EdgeInsets.all(compact ? 18 : 22),
@@ -982,8 +1002,10 @@ class _DesktopPlayerQueuePanel extends StatelessWidget {
                     separatorBuilder: (BuildContext context, int index) =>
                         const SizedBox(height: 10),
                     itemBuilder: (BuildContext context, int index) {
-                      final LibrarySong queuedSong = songs[index];
-                      final bool active = controller.queueIndex == index;
+                      final _VisibleQueueSong queuedItem = songs[index];
+                      final LibrarySong queuedSong = queuedItem.song;
+                      final bool active =
+                          controller.queueIndex == queuedItem.queueIndex;
                       return Material(
                         color: active
                             ? accent.withValues(alpha: 0.14)
@@ -991,7 +1013,8 @@ class _DesktopPlayerQueuePanel extends StatelessWidget {
                         borderRadius: BorderRadius.circular(22),
                         child: InkWell(
                           borderRadius: BorderRadius.circular(22),
-                          onTap: () => controller.jumpToQueue(index),
+                          onTap: () =>
+                              controller.jumpToQueue(queuedItem.queueIndex),
                           child: Padding(
                             padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
                             child: Row(
@@ -1048,8 +1071,9 @@ class _DesktopPlayerQueuePanel extends StatelessWidget {
                                   ),
                                 ),
                                 IconButton(
-                                  onPressed: () =>
-                                      controller.removeFromQueue(index),
+                                  onPressed: () => controller.removeFromQueue(
+                                    queuedItem.queueIndex,
+                                  ),
                                   icon: const Icon(
                                     Icons.close_rounded,
                                     size: 18,
@@ -1469,13 +1493,16 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
   }
 
   void _centerCurrentQueueSong({bool animated = true}) {
-    if (!mounted || !_scroll.hasClients || controller.queueSongs.isEmpty) {
+    final List<_VisibleQueueSong> songs = _visibleQueueSongs(controller);
+    if (!mounted || !_scroll.hasClients || songs.isEmpty) {
       return;
     }
-    final int activeIndex = controller.queueIndex.clamp(
-      0,
-      controller.queueSongs.length - 1,
+    final int activeIndex = songs.indexWhere(
+      (_VisibleQueueSong item) => item.queueIndex == controller.queueIndex,
     );
+    if (activeIndex < 0) {
+      return;
+    }
     final ScrollPosition position = _scroll.position;
     final double viewport = position.viewportDimension;
     final double rawOffset =
@@ -1512,11 +1539,11 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
     if (!mounted) {
       return;
     }
-    while (mounted && controller.queueSongs.length < _queueBatchSize) {
-      final int before = controller.queueSongs.length;
+    while (mounted && _visibleQueueSongs(controller).length < _queueBatchSize) {
+      final int before = _visibleQueueSongs(controller).length;
       final int shortfall = _queueBatchSize - before;
       await _loadMoreQueue(batchSize: shortfall);
-      final int after = controller.queueSongs.length;
+      final int after = _visibleQueueSongs(controller).length;
       if (after <= before) {
         break;
       }
@@ -1553,7 +1580,9 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final List<LibrarySong> songs = controller.queueSongs;
+    final List<_VisibleQueueSong> songs = _visibleQueueSongs(controller);
+    final bool hasHiddenQueueSongs =
+        songs.length != controller.queueSongs.length;
     const Color sheet = Color(0xFF140807);
     const Color tile = Color(0xFF23100C);
     const Color accent = Color(0xFFFF7F2A);
@@ -1608,175 +1637,206 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
             child: Column(
               children: <Widget>[
                 Expanded(
-                  child: ReorderableListView.builder(
-                    scrollController: _scroll,
-                    buildDefaultDragHandles: false,
-                    proxyDecorator:
-                        (Widget child, int index, Animation<double> animation) {
-                          return AnimatedBuilder(
-                            animation: animation,
-                            builder: (BuildContext context, Widget? _) {
-                              final double t = Curves.easeOutCubic.transform(
-                                animation.value,
-                              );
-                              return Transform.scale(
-                                scale: 1 + (t * 0.02),
-                                child: Material(
-                                  color: Colors.transparent,
-                                  elevation: 12 * t,
-                                  borderRadius: BorderRadius.circular(22),
-                                  child: child,
-                                ),
-                              );
-                            },
-                          );
-                        },
-                    onReorderStart: (int index) {
-                      HapticFeedback.selectionClick();
-                    },
-                    onReorderEnd: (int index) {
-                      HapticFeedback.selectionClick();
-                    },
-                    onReorder: (int oldIndex, int newIndex) async {
-                      if (newIndex > oldIndex) {
-                        newIndex -= 1;
-                      }
-                      await HapticFeedback.selectionClick();
-                      await controller.reorderQueue(oldIndex, newIndex);
-                    },
-                    itemCount: songs.length,
-                    itemBuilder: (BuildContext context, int index) {
-                      final LibrarySong song = songs[index];
-                      final bool active = controller.queueIndex == index;
-
-                      return Padding(
-                        key: ValueKey<String>('queue-${song.id}-$index'),
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Dismissible(
-                          key: ValueKey<String>('queue-dismiss-${song.id}'),
-                          direction: DismissDirection.endToStart,
-                          background: _SwipeActionBackground(
-                            alignment: Alignment.centerRight,
-                            color: const Color(0xFF5A1613),
-                            icon: Icons.delete_outline_rounded,
-                            label: 'Remove',
+                  child: songs.isEmpty
+                      ? Center(
+                          child: Text(
+                            'Queue is empty. Start playback to generate smart suggestions.',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.splineSans(
+                              color: textSecondary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
-                          confirmDismiss: (DismissDirection direction) async {
-                            await HapticFeedback.mediumImpact();
-                            return true;
+                        )
+                      : ReorderableListView.builder(
+                          scrollController: _scroll,
+                          buildDefaultDragHandles: false,
+                          proxyDecorator:
+                              (
+                                Widget child,
+                                int index,
+                                Animation<double> animation,
+                              ) {
+                                return AnimatedBuilder(
+                                  animation: animation,
+                                  builder: (BuildContext context, Widget? _) {
+                                    final double t = Curves.easeOutCubic
+                                        .transform(animation.value);
+                                    return Transform.scale(
+                                      scale: 1 + (t * 0.02),
+                                      child: Material(
+                                        color: Colors.transparent,
+                                        elevation: 12 * t,
+                                        borderRadius: BorderRadius.circular(22),
+                                        child: child,
+                                      ),
+                                    );
+                                  },
+                                );
+                              },
+                          onReorderStart: (int index) {
+                            HapticFeedback.selectionClick();
                           },
-                          onDismissed: (DismissDirection direction) async {
-                            final int queueIndex = controller.queueSongs
-                                .indexWhere((LibrarySong item) {
-                                  return item.id == song.id;
-                                });
-                            if (queueIndex < 0) {
+                          onReorderEnd: (int index) {
+                            HapticFeedback.selectionClick();
+                          },
+                          onReorder: (int oldIndex, int newIndex) async {
+                            if (hasHiddenQueueSongs) {
                               return;
                             }
-                            await controller.removeFromQueue(queueIndex);
-                            if (context.mounted) {
-                              _showMusixSnackBar(context, 'Removed from queue');
+                            if (newIndex > oldIndex) {
+                              newIndex -= 1;
                             }
+                            await HapticFeedback.selectionClick();
+                            await controller.reorderQueue(oldIndex, newIndex);
                           },
-                          child: Material(
-                            color: active
-                                ? accent.withValues(alpha: 0.14)
-                                : tile,
-                            borderRadius: BorderRadius.circular(22),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(22),
-                              onTap: () async {
-                                unawaited(HapticFeedback.selectionClick());
-                                await controller.jumpToQueue(index);
-                                if (context.mounted) {
-                                  Navigator.of(context).pop();
-                                }
-                              },
-                              child: Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  12,
-                                  10,
-                                  12,
-                                  10,
+                          itemCount: songs.length,
+                          itemBuilder: (BuildContext context, int index) {
+                            final _VisibleQueueSong queueItem = songs[index];
+                            final LibrarySong song = queueItem.song;
+                            final bool active =
+                                controller.queueIndex == queueItem.queueIndex;
+
+                            return Padding(
+                              key: ValueKey<String>('queue-${song.id}-$index'),
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: Dismissible(
+                                key: ValueKey<String>(
+                                  'queue-dismiss-${song.id}',
                                 ),
-                                child: Row(
-                                  children: <Widget>[
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(16),
-                                      child: SizedBox(
-                                        width: 56,
-                                        height: 56,
-                                        child:
-                                            song.artworkUrl != null &&
-                                                song.artworkUrl!
-                                                    .trim()
-                                                    .isNotEmpty
-                                            ? _CachedArtworkImage(
-                                                imageUrl: song.artworkUrl!,
-                                                dimension: 56,
-                                                errorWidget:
-                                                    const _PlayerArtFallback(),
-                                                placeholder:
-                                                    const _PlayerArtFallback(),
-                                              )
-                                            : const _PlayerArtFallback(),
+                                direction: DismissDirection.endToStart,
+                                background: _SwipeActionBackground(
+                                  alignment: Alignment.centerRight,
+                                  color: const Color(0xFF5A1613),
+                                  icon: Icons.delete_outline_rounded,
+                                  label: 'Remove',
+                                ),
+                                confirmDismiss:
+                                    (DismissDirection direction) async {
+                                      await HapticFeedback.mediumImpact();
+                                      return true;
+                                    },
+                                onDismissed:
+                                    (DismissDirection direction) async {
+                                      await controller.removeFromQueue(
+                                        queueItem.queueIndex,
+                                      );
+                                      if (context.mounted) {
+                                        _showMusixSnackBar(
+                                          context,
+                                          'Removed from queue',
+                                        );
+                                      }
+                                    },
+                                child: Material(
+                                  color: active
+                                      ? accent.withValues(alpha: 0.14)
+                                      : tile,
+                                  borderRadius: BorderRadius.circular(22),
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(22),
+                                    onTap: () async {
+                                      unawaited(
+                                        HapticFeedback.selectionClick(),
+                                      );
+                                      await controller.jumpToQueue(
+                                        queueItem.queueIndex,
+                                      );
+                                      if (context.mounted) {
+                                        Navigator.of(context).pop();
+                                      }
+                                    },
+                                    child: Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        12,
+                                        10,
+                                        12,
+                                        10,
                                       ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
+                                      child: Row(
                                         children: <Widget>[
-                                          Text(
-                                            song.title,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: GoogleFonts.splineSans(
-                                              color: textPrimary,
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w600,
+                                          ClipRRect(
+                                            borderRadius: BorderRadius.circular(
+                                              16,
+                                            ),
+                                            child: SizedBox(
+                                              width: 56,
+                                              height: 56,
+                                              child:
+                                                  song.artworkUrl != null &&
+                                                      song.artworkUrl!
+                                                          .trim()
+                                                          .isNotEmpty
+                                                  ? _CachedArtworkImage(
+                                                      imageUrl:
+                                                          song.artworkUrl!,
+                                                      dimension: 56,
+                                                      errorWidget:
+                                                          const _PlayerArtFallback(),
+                                                      placeholder:
+                                                          const _PlayerArtFallback(),
+                                                    )
+                                                  : const _PlayerArtFallback(),
                                             ),
                                           ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            _songArtistLabel(song),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: GoogleFonts.splineSans(
-                                              color: active
-                                                  ? accent
-                                                  : textSecondary,
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w500,
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: <Widget>[
+                                                Text(
+                                                  song.title,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: GoogleFonts.splineSans(
+                                                    color: textPrimary,
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  _songArtistLabel(song),
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: GoogleFonts.splineSans(
+                                                    color: active
+                                                        ? accent
+                                                        : textSecondary,
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.w500,
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                           ),
+                                          if (!hasHiddenQueueSongs)
+                                            ReorderableDelayedDragStartListener(
+                                              index: index,
+                                              child: Padding(
+                                                padding: const EdgeInsets.only(
+                                                  left: 10,
+                                                ),
+                                                child: Icon(
+                                                  Icons.drag_handle_rounded,
+                                                  color: textSecondary
+                                                      .withValues(alpha: 0.84),
+                                                ),
+                                              ),
+                                            ),
                                         ],
                                       ),
                                     ),
-                                    ReorderableDelayedDragStartListener(
-                                      index: index,
-                                      child: Padding(
-                                        padding: const EdgeInsets.only(
-                                          left: 10,
-                                        ),
-                                        child: Icon(
-                                          Icons.drag_handle_rounded,
-                                          color: textSecondary.withValues(
-                                            alpha: 0.84,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+                                  ),
                                 ),
                               ),
-                            ),
-                          ),
+                            );
+                          },
                         ),
-                      );
-                    },
-                  ),
                 ),
               ],
             ),
@@ -3246,35 +3306,41 @@ class _PlaylistGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final List<_PlaylistShelf> shelves = <_PlaylistShelf>[
-      _PlaylistShelf(
-        title: 'Liked Songs',
-        subtitle: '${controller.likedSongs.length} liked tracks',
-        seed: 'liked_songs',
-        songs: controller.likedSongs,
-      ),
-      _PlaylistShelf(
-        title: 'Disliked Songs',
-        subtitle: '${controller.dislikedSongs.length} disliked tracks',
-        seed: 'disliked_songs',
-        songs: controller.dislikedSongs,
-      ),
-      _PlaylistShelf(
-        title: 'Most played',
-        subtitle: '${controller.topPlayedSongs.take(25).length} highlights',
-        seed: 'top_played',
-        songs: controller.topPlayedSongs.take(25).toList(),
-      ),
-      ...controller.playlists.map(
-        (UserPlaylist playlist) => _PlaylistShelf(
-          title: playlist.name,
-          subtitle: '${playlist.songIds.length} tracks',
-          seed: playlist.id,
-          songs: controller.songsForPlaylist(playlist),
-          playlist: playlist,
-        ),
-      ),
-    ];
+    final List<_PlaylistShelf> shelves =
+        <_PlaylistShelf>[
+              _PlaylistShelf(
+                title: 'Liked Songs',
+                subtitle: '${controller.likedSongs.length} liked tracks',
+                seed: 'liked_songs',
+                songs: controller.likedSongs,
+              ),
+              _PlaylistShelf(
+                title: 'Disliked Songs',
+                subtitle: '${controller.dislikedSongs.length} disliked tracks',
+                seed: 'disliked_songs',
+                songs: controller.dislikedSongs,
+              ),
+              _PlaylistShelf(
+                title: 'Most played',
+                subtitle:
+                    '${controller.topPlayedSongs.take(25).length} highlights',
+                seed: 'top_played',
+                songs: controller.topPlayedSongs.take(25).toList(),
+              ),
+              ...controller.playlists.map((UserPlaylist playlist) {
+                final List<LibrarySong> playlistSongs = controller
+                    .songsForPlaylist(playlist);
+                return _PlaylistShelf(
+                  title: playlist.name,
+                  subtitle: '${playlistSongs.length} tracks',
+                  seed: playlist.id,
+                  songs: playlistSongs,
+                  playlist: playlist,
+                );
+              }),
+            ]
+            .where((_PlaylistShelf shelf) => shelf.songs.isNotEmpty)
+            .toList(growable: false);
 
     return Wrap(
       spacing: 12,
