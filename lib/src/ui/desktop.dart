@@ -286,13 +286,11 @@ class _DesktopTitleBarActionButton extends StatefulWidget {
     required this.icon,
     required this.onTap,
     this.hoverColor = const Color(0xFF3A1B10),
-    this.hoverBorderColor = const Color(0xFF6A341D),
   });
 
   final IconData icon;
   final VoidCallback onTap;
   final Color hoverColor;
-  final Color hoverBorderColor;
 
   @override
   State<_DesktopTitleBarActionButton> createState() =>
@@ -320,7 +318,7 @@ class _DesktopTitleBarActionButtonState
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: _hovering
-                  ? widget.hoverBorderColor
+                  ? const Color(0xFF6A341D)
                   : const Color(0xFF4A2416),
             ),
           ),

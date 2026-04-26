@@ -1274,43 +1274,6 @@ class _PlayerProgressAndControls extends StatelessWidget {
   }
 }
 
-class _PlaybackLoadingBar extends StatelessWidget {
-  const _PlaybackLoadingBar({
-    required this.accent,
-    required this.trackColor,
-    this.height = 6,
-  });
-
-  final Color accent;
-  final Color trackColor;
-  final double height;
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(999),
-      child: SizedBox(
-        height: height,
-        width: double.infinity,
-        child: ColoredBox(
-          color: trackColor,
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: FractionallySizedBox(
-              widthFactor: 0.12,
-              alignment: Alignment.centerLeft,
-              child: SizedBox(
-                height: height,
-                child: ColoredBox(color: accent),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _PlayerArtFallback extends StatelessWidget {
   const _PlayerArtFallback();
 
