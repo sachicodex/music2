@@ -12,6 +12,8 @@ import 'package:media_kit/media_kit.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../screens/login_screen.dart';
+import '../services/auth_service.dart';
 import 'app_controller.dart';
 import 'models.dart';
 

@@ -1898,8 +1898,31 @@ class _DesktopSettingsScreen extends StatelessWidget {
     const Color subtitleColor = Color(0xFFC89373);
     const Color accent = Color(0xFFFF8A2A);
 
+    final AuthService authService = context.read<AuthService>();
     final bool gapless = controller.settings.gaplessPlayback;
     final int nextChanceSongCount = controller.settings.nextChanceSongCount;
+    final String userName = authService.currentUserDisplayName;
+    final String userEmail = authService.currentUserEmail;
+    final String userInitials = authService.currentUserInitials;
+    final String userId = authService.currentUserShortUid;
+    final bool emailVerified = authService.isCurrentUserEmailVerified;
+
+    Future<void> signOutUser() async {
+      try {
+        await authService.signOut();
+        if (!context.mounted) {
+          return;
+        }
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
+          (Route<dynamic> route) => false,
+        );
+      } on AuthException catch (error) {
+        if (context.mounted) {
+          _showMusixSnackBar(context, error.message);
+        }
+      }
+    }
 
     return _DesktopPageScrollView(
       child: Column(
@@ -1916,10 +1939,15 @@ class _DesktopSettingsScreen extends StatelessWidget {
                     color: const Color(0xFF4A1D0E),
                     borderRadius: BorderRadius.circular(22),
                   ),
-                  child: const Icon(
-                    Icons.account_circle_rounded,
-                    color: Color(0xFFFFC8A1),
-                    size: 76,
+                  child: Center(
+                    child: Text(
+                      userInitials,
+                      style: Theme.of(context).textTheme.headlineMedium
+                          ?.copyWith(
+                            color: const Color(0xFFFFC8A1),
+                            fontWeight: FontWeight.w900,
+                          ),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 18),
@@ -1928,7 +1956,7 @@ class _DesktopSettingsScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
                       Text(
-                        'SACHICODEX',
+                        userName.toUpperCase(),
                         style: Theme.of(context).textTheme.headlineMedium
                             ?.copyWith(
                               color: titleColor,
@@ -1937,7 +1965,7 @@ class _DesktopSettingsScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'alex.rivers@pulse.audio',
+                        userEmail,
                         style: Theme.of(
                           context,
                         ).textTheme.bodyMedium?.copyWith(color: subtitleColor),
@@ -1983,16 +2011,18 @@ class _DesktopSettingsScreen extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 14),
-                        const _ProfileRow(
-                          title: 'Subscription Plan',
-                          subtitle: 'Your current billing cycle ends Oct 12',
-                          trailing: 'Ultra High-Fi',
+                        _ProfileRow(
+                          title: 'Email Verification',
+                          subtitle: emailVerified
+                              ? 'Your Firebase account email is verified.'
+                              : 'Email verification is currently not completed.',
+                          trailing: emailVerified ? 'Verified' : 'Pending',
                         ),
                         const Divider(color: cardEdge, height: 24),
-                        const _ProfileRow(
-                          title: 'Payment Method',
-                          subtitle: 'Default card for renewals',
-                          trailing: '**** 4421',
+                        _ProfileRow(
+                          title: 'Firebase User ID',
+                          subtitle: 'Short reference for your signed-in account.',
+                          trailing: userId,
                         ),
                       ],
                     ),
@@ -2185,7 +2215,7 @@ class _DesktopSettingsScreen extends StatelessWidget {
                         SizedBox(
                           width: double.infinity,
                           child: OutlinedButton(
-                            onPressed: () {},
+                            onPressed: signOutUser,
                             style: OutlinedButton.styleFrom(
                               minimumSize: const Size.fromHeight(46),
                               side: const BorderSide(color: cardEdge),
@@ -2194,7 +2224,7 @@ class _DesktopSettingsScreen extends StatelessWidget {
                               ),
                               foregroundColor: accent,
                             ),
-                            child: const Text('SIGN OUT OF PULSE'),
+                            child: const Text('LOG OUT'),
                           ),
                         ),
                       ],

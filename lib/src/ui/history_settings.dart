@@ -65,9 +65,32 @@ class _SettingsScreen extends StatelessWidget {
     const Color subtitleColor = Color(0xFFC89373);
     const Color accent = Color(0xFFFF8A2A);
 
+    final AuthService authService = context.read<AuthService>();
     final bool gapless = controller.settings.gaplessPlayback;
     final int nextChanceSongCount = controller.settings.nextChanceSongCount;
     final String preferredRegion = controller.preferredRegionLabel;
+    final String userName = authService.currentUserDisplayName;
+    final String userEmail = authService.currentUserEmail;
+    final String userInitials = authService.currentUserInitials;
+    final String userId = authService.currentUserShortUid;
+    final bool emailVerified = authService.isCurrentUserEmailVerified;
+
+    Future<void> signOutUser() async {
+      try {
+        await authService.signOut();
+        if (!context.mounted) {
+          return;
+        }
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
+          (Route<dynamic> route) => false,
+        );
+      } on AuthException catch (error) {
+        if (context.mounted) {
+          _showMusixSnackBar(context, error.message);
+        }
+      }
+    }
 
     Future<void> pickNextChanceSongCount() async {
       const List<int> options = <int>[0, 1, 2, 3, 4, 5];
@@ -276,10 +299,15 @@ class _SettingsScreen extends StatelessWidget {
                       color: const Color(0xFF4A1D0E),
                       borderRadius: BorderRadius.circular(14),
                     ),
-                    child: const Icon(
-                      Icons.account_circle_rounded,
-                      color: Color(0xFFFFC8A1),
-                      size: 66,
+                    child: Center(
+                      child: Text(
+                        userInitials,
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(
+                              color: const Color(0xFFFFC8A1),
+                              fontWeight: FontWeight.w900,
+                            ),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -289,7 +317,7 @@ class _SettingsScreen extends StatelessWidget {
                       children: <Widget>[
                         const SizedBox(height: 2),
                         Text(
-                          'SACHICODEX',
+                          userName.toUpperCase(),
                           style: Theme.of(context).textTheme.headlineSmall
                               ?.copyWith(
                                 color: titleColor,
@@ -298,7 +326,7 @@ class _SettingsScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'alex.rivers@pulse.audio',
+                          userEmail,
                           style: Theme.of(
                             context,
                           ).textTheme.bodySmall?.copyWith(color: subtitleColor),
@@ -340,15 +368,17 @@ class _SettingsScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 14),
                   _ProfileRow(
-                    title: 'Subscription Plan',
-                    subtitle: 'Your current billing cycle ends Oct 12',
-                    trailing: 'Ultra High-Fi',
+                    title: 'Email Verification',
+                    subtitle: emailVerified
+                        ? 'Your Firebase account email is verified.'
+                        : 'Email verification is currently not completed.',
+                    trailing: emailVerified ? 'Verified' : 'Pending',
                   ),
                   const Divider(color: cardEdge, height: 20),
                   _ProfileRow(
-                    title: 'Payment Method',
-                    subtitle: 'Default card for renewals',
-                    trailing: '.... 4421',
+                    title: 'Firebase User ID',
+                    subtitle: 'Short reference for your signed-in account.',
+                    trailing: userId,
                   ),
                 ],
               ),
@@ -563,7 +593,7 @@ class _SettingsScreen extends StatelessWidget {
             const SizedBox(height: 22),
             Center(
               child: OutlinedButton(
-                onPressed: () {},
+                onPressed: signOutUser,
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size(220, 42),
                   side: const BorderSide(color: cardEdge),
@@ -572,7 +602,7 @@ class _SettingsScreen extends StatelessWidget {
                   ),
                   foregroundColor: accent,
                 ),
-                child: const Text('SIGN OUT OF PULSE'),
+                child: const Text('LOG OUT'),
               ),
             ),
           ],

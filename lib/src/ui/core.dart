@@ -1,7 +1,9 @@
 part of '../ui.dart';
 
 class MusixApp extends StatelessWidget {
-  const MusixApp({super.key});
+  const MusixApp({super.key, required this.home});
+
+  final Widget home;
 
   @override
   Widget build(BuildContext context) {
@@ -33,8 +35,45 @@ class MusixApp extends StatelessWidget {
       ),
       theme: _buildTheme(Brightness.light),
       darkTheme: _buildTheme(Brightness.dark),
-      home: _MusixStartupGate(controller: controller),
+      home: home,
     );
+  }
+}
+
+class MusixAuthenticatedHome extends StatefulWidget {
+  const MusixAuthenticatedHome({super.key});
+
+  @override
+  State<MusixAuthenticatedHome> createState() => _MusixAuthenticatedHomeState();
+}
+
+class _MusixAuthenticatedHomeState extends State<MusixAuthenticatedHome> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final String? message = context.read<AuthService>().takePendingSuccessMessage();
+      if (message == null) {
+        return;
+      }
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: const Color(0xFF1E7A46),
+          ),
+        );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final MusixController controller = context.watch<MusixController>();
+    return _MusixStartupGate(controller: controller);
   }
 }
 
