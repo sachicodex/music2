@@ -44,115 +44,81 @@ class _DesktopShellScaffold extends StatelessWidget {
             !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
         final double playerRailWidth = constraints.maxWidth >= 1500 ? 360 : 320;
 
-        return CallbackShortcuts(
-          bindings: <ShortcutActivator, VoidCallback>{
-            const SingleActivator(
-              LogicalKeyboardKey.digit1,
-              control: true,
-            ): () =>
-                onDestinationChanged(destinations[0]),
-            const SingleActivator(
-              LogicalKeyboardKey.digit2,
-              control: true,
-            ): () =>
-                onDestinationChanged(destinations[1]),
-            const SingleActivator(
-              LogicalKeyboardKey.digit3,
-              control: true,
-            ): () =>
-                onDestinationChanged(destinations[2]),
-            const SingleActivator(
-              LogicalKeyboardKey.digit4,
-              control: true,
-            ): () =>
-                onDestinationChanged(destinations[3]),
-            const SingleActivator(LogicalKeyboardKey.digit1, meta: true): () =>
-                onDestinationChanged(destinations[0]),
-            const SingleActivator(LogicalKeyboardKey.digit2, meta: true): () =>
-                onDestinationChanged(destinations[1]),
-            const SingleActivator(LogicalKeyboardKey.digit3, meta: true): () =>
-                onDestinationChanged(destinations[2]),
-            const SingleActivator(LogicalKeyboardKey.digit4, meta: true): () =>
-                onDestinationChanged(destinations[3]),
-          },
-          child: Scaffold(
-            backgroundColor: const Color(0xFF0B0403),
-            body: DecoratedBox(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: <Color>[_kPageTop, _kPageMiddle, _kPageBottom],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
+        return Scaffold(
+          backgroundColor: const Color(0xFF0B0403),
+          body: DecoratedBox(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: <Color>[_kPageTop, _kPageMiddle, _kPageBottom],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-              child: SafeArea(
-                bottom: false,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 10, 18, 20),
-                  child: Column(
-                    children: <Widget>[
-                      if (windowsDesktop) ...<Widget>[
-                        const _DesktopWindowTitleBar(),
-                        const SizedBox(height: 12),
-                      ],
-                      Expanded(
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: <Widget>[
-                            _DesktopSidebar(
-                              controller: controller,
-                              destination: destination,
-                              destinations: destinations,
-                              compact: compactSidebar,
-                              onDestinationChanged: onDestinationChanged,
-                            ),
-                            const SizedBox(width: 18),
-                            Expanded(
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  color: const Color(
-                                    0xFF140805,
-                                  ).withValues(alpha: 0.9),
-                                  borderRadius: BorderRadius.circular(32),
-                                  border: Border.all(
-                                    color: const Color(
-                                      0xFF3A1C11,
-                                    ).withValues(alpha: 0.9),
-                                  ),
-                                  boxShadow: <BoxShadow>[
-                                    BoxShadow(
-                                      color: Colors.black.withValues(
-                                        alpha: 0.14,
-                                      ),
-                                      blurRadius: 24,
-                                      offset: const Offset(0, 16),
-                                    ),
-                                  ],
-                                ),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(32),
-                                  child: IndexedStack(
-                                    index: pageIndex,
-                                    children: children,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            if (showPlayerRail) ...<Widget>[
-                              const SizedBox(width: 18),
-                              SizedBox(
-                                width: playerRailWidth,
-                                child: _DesktopNowPlayingRail(
-                                  controller: controller,
-                                  onOpenPlayer: onOpenPlayer,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
+            ),
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 10, 18, 20),
+                child: Column(
+                  children: <Widget>[
+                    if (windowsDesktop) ...<Widget>[
+                      const _DesktopWindowTitleBar(),
+                      const SizedBox(height: 12),
                     ],
-                  ),
+                    Expanded(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          _DesktopSidebar(
+                            controller: controller,
+                            destination: destination,
+                            destinations: destinations,
+                            compact: compactSidebar,
+                            onDestinationChanged: onDestinationChanged,
+                          ),
+                          const SizedBox(width: 18),
+                          Expanded(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: const Color(
+                                  0xFF140805,
+                                ).withValues(alpha: 0.9),
+                                borderRadius: BorderRadius.circular(32),
+                                border: Border.all(
+                                  color: const Color(
+                                    0xFF3A1C11,
+                                  ).withValues(alpha: 0.9),
+                                ),
+                                boxShadow: <BoxShadow>[
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.14),
+                                    blurRadius: 24,
+                                    offset: const Offset(0, 16),
+                                  ),
+                                ],
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(32),
+                                child: IndexedStack(
+                                  index: pageIndex,
+                                  children: children,
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (showPlayerRail) ...<Widget>[
+                            const SizedBox(width: 18),
+                            SizedBox(
+                              width: playerRailWidth,
+                              child: _DesktopNowPlayingRail(
+                                controller: controller,
+                                onOpenPlayer: onOpenPlayer,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -261,6 +227,11 @@ class _DesktopWindowTitleBarState extends State<_DesktopWindowTitleBar>
                 ),
               ),
             ),
+          ),
+          const SizedBox(width: 10),
+          _DesktopTitleBarActionButton(
+            icon: Icons.minimize_rounded,
+            onTap: () => unawaited(windowManager.minimize()),
           ),
           const SizedBox(width: 10),
           _DesktopTitleBarActionButton(
@@ -1171,6 +1142,7 @@ class _DesktopSearchScreen extends StatelessWidget {
   const _DesktopSearchScreen({
     required this.controller,
     required this.searchController,
+    required this.searchFocusNode,
     required this.scrollController,
     required this.recentSearches,
     required this.onRunSearch,
@@ -1181,6 +1153,7 @@ class _DesktopSearchScreen extends StatelessWidget {
 
   final MusixController controller;
   final TextEditingController searchController;
+  final FocusNode searchFocusNode;
   final ScrollController scrollController;
   final List<String> recentSearches;
   final ValueChanged<String> onRunSearch;
@@ -1249,6 +1222,7 @@ class _DesktopSearchScreen extends StatelessWidget {
                 const SizedBox(height: 16),
                 TextField(
                   controller: searchController,
+                  focusNode: searchFocusNode,
                   onChanged: onRunSearch,
                   onSubmitted: onRememberSearch,
                   style: const TextStyle(

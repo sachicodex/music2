@@ -427,24 +427,51 @@ class _MusixSplashProgressBar extends StatelessWidget {
 }
 
 bool _focusedWidgetAcceptsTextInput() {
-  final BuildContext? focusedContext =
-      FocusManager.instance.primaryFocus?.context;
-  if (focusedContext == null) {
+  for (
+    FocusNode? node = FocusManager.instance.primaryFocus;
+    node != null;
+    node = node.parent
+  ) {
+    final BuildContext? focusedContext = node.context;
+    if (focusedContext == null) {
+      continue;
+    }
+    if (focusedContext.widget is EditableText ||
+        focusedContext.findAncestorStateOfType<EditableTextState>() != null) {
+      return true;
+    }
+  }
+  return false;
+}
+
+class _ShortcutBinding {
+  const _ShortcutBinding(this.activator, this.onInvoke);
+
+  final ShortcutActivator activator;
+  final VoidCallback onInvoke;
+}
+
+bool _handleShortcutBindings(
+  KeyEvent event,
+  Iterable<_ShortcutBinding> bindings, {
+  bool disableWhenTextFieldFocused = true,
+}) {
+  if (disableWhenTextFieldFocused && _focusedWidgetAcceptsTextInput()) {
     return false;
   }
-  if (focusedContext.widget is EditableText) {
-    return true;
-  }
-
-  bool foundEditableText = false;
-  focusedContext.visitAncestorElements((Element element) {
-    if (element.widget is EditableText) {
-      foundEditableText = true;
-      return false;
+  final HardwareKeyboard keyboard = HardwareKeyboard.instance;
+  for (final _ShortcutBinding binding in bindings) {
+    if (binding.activator.accepts(event, keyboard)) {
+      binding.onInvoke();
+      return true;
     }
-    return true;
-  });
-  return foundEditableText;
+  }
+  return false;
+}
+
+bool _routeIsCurrent(BuildContext context) {
+  final ModalRoute<dynamic>? route = ModalRoute.of(context);
+  return route == null || route.isCurrent;
 }
 
 ThemeData _buildTheme(Brightness brightness) {
@@ -506,12 +533,16 @@ class _MusixShellState extends State<MusixShell> {
   AppDestination _destination = AppDestination.home;
   LibraryFilter _libraryFilter = LibraryFilter.all;
   late final PageController _pageController;
+  late final KeyEventCallback _shortcutHandler;
+  int _searchFocusRequestSerial = 0;
   int get _destinationPageIndex => _mainDestinations.indexOf(_destination);
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: _destinationPageIndex);
+    _shortcutHandler = _handleShortcutKeyEvent;
+    HardwareKeyboard.instance.addHandler(_shortcutHandler);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;
@@ -524,6 +555,7 @@ class _MusixShellState extends State<MusixShell> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_shortcutHandler);
     _pageController.dispose();
     super.dispose();
   }
@@ -549,7 +581,12 @@ class _MusixShellState extends State<MusixShell> {
         destinations: _mainDestinations,
         pageIndex: _destinationPageIndex,
         onDestinationChanged: _setDestination,
-        onOpenPlayer: () => _openPlayer(context, controller),
+        onOpenPlayer: () {
+          if (controller.nowPlayingState.value.song == null) {
+            return;
+          }
+          unawaited(_openPlayer(context, controller));
+        },
         children: pages,
       );
     }
@@ -674,6 +711,7 @@ class _MusixShellState extends State<MusixShell> {
       AppDestination.search => _SearchScreen(
         key: const ValueKey<String>('search'),
         controller: controller,
+        focusRequestSerial: _searchFocusRequestSerial,
       ),
       AppDestination.settings => _SettingsScreen(
         key: const ValueKey<String>('settings'),
@@ -693,6 +731,133 @@ class _MusixShellState extends State<MusixShell> {
             _PlayerScreen(controller: controller),
       ),
     );
+  }
+
+  bool _handleShortcutKeyEvent(KeyEvent event) {
+    if (!_isDesktopPlatform() || !mounted || !_routeIsCurrent(context)) {
+      return false;
+    }
+    final MusixController controller = context.read<MusixController>();
+    return _handleShortcutBindings(event, <_ShortcutBinding>[
+      _ShortcutBinding(
+        const SingleActivator(
+          LogicalKeyboardKey.digit1,
+          control: true,
+          includeRepeats: false,
+        ),
+        () => _setDestination(_mainDestinations[0]),
+      ),
+      _ShortcutBinding(
+        const SingleActivator(
+          LogicalKeyboardKey.digit2,
+          control: true,
+          includeRepeats: false,
+        ),
+        () => _setDestination(_mainDestinations[1]),
+      ),
+      _ShortcutBinding(
+        const SingleActivator(
+          LogicalKeyboardKey.digit3,
+          control: true,
+          includeRepeats: false,
+        ),
+        () => _setDestination(_mainDestinations[2]),
+      ),
+      _ShortcutBinding(
+        const SingleActivator(
+          LogicalKeyboardKey.digit4,
+          control: true,
+          includeRepeats: false,
+        ),
+        () => _setDestination(_mainDestinations[3]),
+      ),
+      _ShortcutBinding(
+        const SingleActivator(
+          LogicalKeyboardKey.digit1,
+          meta: true,
+          includeRepeats: false,
+        ),
+        () => _setDestination(_mainDestinations[0]),
+      ),
+      _ShortcutBinding(
+        const SingleActivator(
+          LogicalKeyboardKey.digit2,
+          meta: true,
+          includeRepeats: false,
+        ),
+        () => _setDestination(_mainDestinations[1]),
+      ),
+      _ShortcutBinding(
+        const SingleActivator(
+          LogicalKeyboardKey.digit3,
+          meta: true,
+          includeRepeats: false,
+        ),
+        () => _setDestination(_mainDestinations[2]),
+      ),
+      _ShortcutBinding(
+        const SingleActivator(
+          LogicalKeyboardKey.digit4,
+          meta: true,
+          includeRepeats: false,
+        ),
+        () => _setDestination(_mainDestinations[3]),
+      ),
+      _ShortcutBinding(
+        const SingleActivator(
+          LogicalKeyboardKey.arrowUp,
+          includeRepeats: false,
+        ),
+        () {
+          if (controller.nowPlayingState.value.song == null) {
+            return;
+          }
+          unawaited(_openPlayer(context, controller));
+        },
+      ),
+      _ShortcutBinding(
+        const SingleActivator(LogicalKeyboardKey.keyS, includeRepeats: false),
+        _openSearchReady,
+      ),
+      _ShortcutBinding(
+        const SingleActivator(LogicalKeyboardKey.keyL, includeRepeats: false),
+        () => unawaited(_likeCurrentSong(controller)),
+      ),
+      _ShortcutBinding(
+        const SingleActivator(LogicalKeyboardKey.keyD, includeRepeats: false),
+        () => unawaited(_dislikeCurrentSong(controller)),
+      ),
+      _ShortcutBinding(
+        const SingleActivator(
+          LogicalKeyboardKey.backspace,
+          includeRepeats: false,
+        ),
+        () => unawaited(Navigator.of(context).maybePop()),
+      ),
+    ]);
+  }
+
+  void _openSearchReady() {
+    setState(() {
+      _searchFocusRequestSerial += 1;
+    });
+    _setDestination(AppDestination.search);
+  }
+
+  Future<void> _likeCurrentSong(MusixController controller) async {
+    final String? songId = controller.nowPlayingState.value.song?.id;
+    if (songId == null) {
+      return;
+    }
+    await controller.likeSong(songId);
+  }
+
+  Future<void> _dislikeCurrentSong(MusixController controller) async {
+    final String? songId = controller.nowPlayingState.value.song?.id;
+    if (songId == null) {
+      return;
+    }
+    await controller.dislikeSong(songId);
   }
 }
 

@@ -15,6 +15,7 @@ class _PlayerScreenState extends State<_PlayerScreen>
 
   late final AnimationController _tapFeedbackController;
   late final AnimationController _likeFeedbackController;
+  late final KeyEventCallback _shortcutHandler;
   bool _showPauseGlyph = false;
 
   @override
@@ -28,10 +29,13 @@ class _PlayerScreenState extends State<_PlayerScreen>
       vsync: this,
       duration: const Duration(milliseconds: 420),
     );
+    _shortcutHandler = _handleShortcutKeyEvent;
+    HardwareKeyboard.instance.addHandler(_shortcutHandler);
   }
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_shortcutHandler);
     _tapFeedbackController.dispose();
     _likeFeedbackController.dispose();
     super.dispose();
@@ -86,6 +90,67 @@ class _PlayerScreenState extends State<_PlayerScreen>
   Future<void> _handleDislikeAction(LibrarySong song) async {
     await HapticFeedback.mediumImpact();
     await widget.controller.dislikeSong(song.id);
+  }
+
+  Future<void> _handleBackNavigation() async {
+    if (!mounted) {
+      return;
+    }
+    await Navigator.of(context).maybePop();
+  }
+
+  bool _handleShortcutKeyEvent(KeyEvent event) {
+    if (!mounted || !_routeIsCurrent(context)) {
+      return false;
+    }
+    final LibrarySong? song = widget.controller.nowPlayingState.value.song;
+    if (song == null) {
+      return false;
+    }
+    return _handleShortcutBindings(event, <_ShortcutBinding>[
+      if (_isDesktopPlatform()) ...<_ShortcutBinding>[
+        _ShortcutBinding(
+          const SingleActivator(
+            LogicalKeyboardKey.arrowLeft,
+            includeRepeats: false,
+          ),
+          () => unawaited(widget.controller.previousTrack()),
+        ),
+        _ShortcutBinding(
+          const SingleActivator(
+            LogicalKeyboardKey.arrowRight,
+            includeRepeats: false,
+          ),
+          () => unawaited(widget.controller.nextTrack()),
+        ),
+        _ShortcutBinding(
+          const SingleActivator(LogicalKeyboardKey.keyQ, includeRepeats: false),
+          () => unawaited(_showQueueSheet()),
+        ),
+      ],
+      _ShortcutBinding(
+        const SingleActivator(LogicalKeyboardKey.keyL, includeRepeats: false),
+        () => unawaited(widget.controller.likeSong(song.id)),
+      ),
+      _ShortcutBinding(
+        const SingleActivator(LogicalKeyboardKey.keyD, includeRepeats: false),
+        () => unawaited(widget.controller.dislikeSong(song.id)),
+      ),
+      _ShortcutBinding(
+        const SingleActivator(
+          LogicalKeyboardKey.backspace,
+          includeRepeats: false,
+        ),
+        () => unawaited(_handleBackNavigation()),
+      ),
+      _ShortcutBinding(
+        const SingleActivator(
+          LogicalKeyboardKey.arrowDown,
+          includeRepeats: false,
+        ),
+        () => unawaited(_handleBackNavigation()),
+      ),
+    ]);
   }
 
   Future<void> _triggerPlaybackFeedback() async {
@@ -256,37 +321,54 @@ class _PlayerScreenState extends State<_PlayerScreen>
                                   ),
                                 ),
                               ),
-                              PopupMenuButton<String>(
-                                color: _kSurface,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                  side: const BorderSide(color: _kSurfaceEdge),
-                                ),
-                                icon: const Icon(Icons.more_vert_rounded),
-                                iconColor: accent,
-                                onSelected: (String value) async {
-                                  await _handlePlayerMenuSelection(value, song);
-                                },
-                                itemBuilder: (BuildContext context) =>
-                                    <PopupMenuEntry<String>>[
-                                      _musixPopupMenuItem('save', 'Save'),
-                                      _musixPopupMenuItem(
-                                        'like',
-                                        song.isLiked
-                                            ? 'Unlike song'
-                                            : 'Like song',
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  IconButton(
+                                    onPressed: () =>
+                                        Navigator.of(context).maybePop(),
+                                    icon: const Icon(Icons.minimize_rounded),
+                                    color: accent,
+                                    iconSize: scale(24, min: 20, max: 24),
+                                  ),
+                                  PopupMenuButton<String>(
+                                    color: _kSurface,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                      side: const BorderSide(
+                                        color: _kSurfaceEdge,
                                       ),
-                                      _musixPopupMenuItem(
-                                        'dislike',
-                                        song.isDisliked
-                                            ? 'Remove dislike'
-                                            : 'Dislike song',
-                                      ),
-                                      _musixPopupMenuItem(
-                                        'queue',
-                                        'Add to queue',
-                                      ),
-                                    ],
+                                    ),
+                                    icon: const Icon(Icons.more_vert_rounded),
+                                    iconColor: accent,
+                                    onSelected: (String value) async {
+                                      await _handlePlayerMenuSelection(
+                                        value,
+                                        song,
+                                      );
+                                    },
+                                    itemBuilder: (BuildContext context) =>
+                                        <PopupMenuEntry<String>>[
+                                          _musixPopupMenuItem('save', 'Save'),
+                                          _musixPopupMenuItem(
+                                            'like',
+                                            song.isLiked
+                                                ? 'Unlike song'
+                                                : 'Like song',
+                                          ),
+                                          _musixPopupMenuItem(
+                                            'dislike',
+                                            song.isDisliked
+                                                ? 'Remove dislike'
+                                                : 'Dislike song',
+                                          ),
+                                          _musixPopupMenuItem(
+                                            'queue',
+                                            'Add to queue',
+                                          ),
+                                        ],
+                                  ),
+                                ],
                               ),
                             ],
                           ),
@@ -376,29 +458,85 @@ class _PlayerScreenState extends State<_PlayerScreen>
                             ),
                           ),
                           Spacer(flex: layoutScale < 0.8 ? 1 : 2),
-                          Text(
-                            song.title,
-                            textAlign: TextAlign.center,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.spaceGrotesk(
-                              color: textPrimary,
-                              fontSize: scale(38, min: 30, max: 38),
-                              fontWeight: FontWeight.w700,
-                              height: 0.92,
-                            ),
-                          ),
-                          SizedBox(height: scale(8, min: 6, max: 10)),
-                          Text(
-                            song.artist,
-                            textAlign: TextAlign.center,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.ibmPlexSans(
-                              color: textSecondary,
-                              fontSize: scale(17, min: 14, max: 17),
-                              fontWeight: FontWeight.w500,
-                            ),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: <Widget>[
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: <Widget>[
+                                    Text(
+                                      song.title,
+                                      textAlign: TextAlign.left,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.spaceGrotesk(
+                                        color: textPrimary,
+                                        fontSize: scale(38, min: 30, max: 38),
+                                        fontWeight: FontWeight.w700,
+                                        height: 0.92,
+                                      ),
+                                    ),
+                                    SizedBox(height: scale(8, min: 6, max: 10)),
+                                    Text(
+                                      song.artist,
+                                      textAlign: TextAlign.left,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.ibmPlexSans(
+                                        color: textSecondary,
+                                        fontSize: scale(17, min: 14, max: 17),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              SizedBox(width: scale(12, min: 8, max: 14)),
+                              Padding(
+                                padding: EdgeInsets.only(
+                                  bottom: scale(2, min: 0, max: 4),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: <Widget>[
+                                    IconButton(
+                                      onPressed: () async {
+                                        if (!song.isLiked) {
+                                          await _triggerLikeFeedback();
+                                        }
+                                        await controller.likeSong(song.id);
+                                      },
+                                      icon: Icon(
+                                        song.isLiked
+                                            ? Icons.thumb_up_rounded
+                                            : Icons.thumb_up_outlined,
+                                        color: accent,
+                                        size: scale(30, min: 24, max: 30),
+                                      ),
+                                      visualDensity: VisualDensity.compact,
+                                      splashRadius: scale(24, min: 20, max: 24),
+                                    ),
+                                    SizedBox(width: scale(2, min: 0, max: 4)),
+                                    IconButton(
+                                      onPressed: () =>
+                                          _handleDislikeAction(song),
+                                      icon: Icon(
+                                        song.isDisliked
+                                            ? Icons.thumb_down_rounded
+                                            : Icons.thumb_down_outlined,
+                                        color: song.isDisliked
+                                            ? Colors.redAccent
+                                            : accent,
+                                        size: scale(30, min: 24, max: 30),
+                                      ),
+                                      visualDensity: VisualDensity.compact,
+                                      splashRadius: scale(24, min: 20, max: 24),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                           SizedBox(height: scale(22, min: 16, max: 24)),
                           ValueListenableBuilder<PlaybackProgressState>(
@@ -520,82 +658,71 @@ class _DesktopPlayerScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: CallbackShortcuts(
-        bindings: <ShortcutActivator, VoidCallback>{
-          const SingleActivator(LogicalKeyboardKey.arrowLeft): () {
-            unawaited(controller.previousTrack());
-          },
-          const SingleActivator(LogicalKeyboardKey.arrowRight): () {
-            unawaited(controller.nextTrack());
-          },
-          const SingleActivator(LogicalKeyboardKey.keyQ): () {
-            unawaited(onShowQueueSheet());
-          },
-        },
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: <Color>[backgroundTop, backgroundBottom],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+      body: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: <Color>[backgroundTop, backgroundBottom],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
-              child: LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints constraints) {
-                  final double queueWidth = (constraints.maxWidth * 0.32).clamp(
-                    320.0,
-                    430.0,
-                  );
-                  final double leftPanelWidth =
-                      constraints.maxWidth - queueWidth - 18;
-                  final bool compactDesktop = leftPanelWidth < 980;
-                  final double artworkLayoutScale = (leftPanelWidth / 980)
-                      .clamp(0.72, 1.0);
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                final double queueWidth = (constraints.maxWidth * 0.32).clamp(
+                  320.0,
+                  430.0,
+                );
+                final double leftPanelWidth =
+                    constraints.maxWidth - queueWidth - 18;
+                final bool compactDesktop = leftPanelWidth < 980;
+                final double artworkLayoutScale = (leftPanelWidth / 980).clamp(
+                  0.72,
+                  1.0,
+                );
 
-                  final Widget mainPanel = _DesktopPlayerArtworkPanel(
-                    controller: controller,
-                    song: song,
-                    nowPlaying: nowPlaying,
-                    tapFeedbackController: tapFeedbackController,
-                    likeFeedbackController: likeFeedbackController,
-                    showPauseGlyph: showPauseGlyph,
-                    accent: accent,
-                    textPrimary: textPrimary,
-                    textSecondary: textSecondary,
-                    surface: surface,
-                    onAlbumArtTap: onAlbumArtTap,
-                    onAlbumArtDoubleTap: onAlbumArtDoubleTap,
-                    onHandlePlayerMenuSelection: onHandlePlayerMenuSelection,
-                    onDislikeAction: onDislikeAction,
-                    onTriggerLikeFeedback: onTriggerLikeFeedback,
-                    onShowQueueSheet: onShowQueueSheet,
-                    onTriggerPlaybackFeedback: onTriggerPlaybackFeedback,
-                    trackInactive: trackInactive,
-                    layoutScale: artworkLayoutScale,
-                  );
+                final Widget mainPanel = _DesktopPlayerArtworkPanel(
+                  controller: controller,
+                  song: song,
+                  nowPlaying: nowPlaying,
+                  tapFeedbackController: tapFeedbackController,
+                  likeFeedbackController: likeFeedbackController,
+                  showPauseGlyph: showPauseGlyph,
+                  accent: accent,
+                  textPrimary: textPrimary,
+                  textSecondary: textSecondary,
+                  surface: surface,
+                  onAlbumArtTap: onAlbumArtTap,
+                  onAlbumArtDoubleTap: onAlbumArtDoubleTap,
+                  onHandlePlayerMenuSelection: onHandlePlayerMenuSelection,
+                  onDislikeAction: onDislikeAction,
+                  onTriggerLikeFeedback: onTriggerLikeFeedback,
+                  onShowQueueSheet: onShowQueueSheet,
+                  onTriggerPlaybackFeedback: onTriggerPlaybackFeedback,
+                  trackInactive: trackInactive,
+                  layoutScale: artworkLayoutScale,
+                );
 
-                  final Widget queuePanel = _DesktopPlayerQueuePanel(
-                    controller: controller,
-                    accent: accent,
-                    textPrimary: textPrimary,
-                    textSecondary: textSecondary,
-                    onShowQueueSheet: onShowQueueSheet,
-                    compact: compactDesktop,
-                  );
+                final Widget queuePanel = _DesktopPlayerQueuePanel(
+                  controller: controller,
+                  accent: accent,
+                  textPrimary: textPrimary,
+                  textSecondary: textSecondary,
+                  onShowQueueSheet: onShowQueueSheet,
+                  compact: compactDesktop,
+                );
 
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      Expanded(child: mainPanel),
-                      const SizedBox(width: 18),
-                      SizedBox(width: queueWidth, child: queuePanel),
-                    ],
-                  );
-                },
-              ),
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Expanded(child: mainPanel),
+                    const SizedBox(width: 18),
+                    SizedBox(width: queueWidth, child: queuePanel),
+                  ],
+                );
+              },
             ),
           ),
         ),

@@ -346,9 +346,14 @@ class _SearchTrendingTile extends StatelessWidget {
 }
 
 class _SearchScreen extends StatefulWidget {
-  const _SearchScreen({super.key, required this.controller});
+  const _SearchScreen({
+    super.key,
+    required this.controller,
+    this.focusRequestSerial = 0,
+  });
 
   final MusixController controller;
+  final int focusRequestSerial;
 
   @override
   State<_SearchScreen> createState() => _SearchScreenState();
@@ -358,6 +363,7 @@ class _SearchScreenState extends State<_SearchScreen> {
   static const Duration _searchDebounceDuration = Duration(milliseconds: 250);
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _searchFocusNode = FocusNode();
   final List<String> _recentSearches = <String>[];
   Timer? _searchDebounce;
   bool _requestedTrending = false;
@@ -395,8 +401,22 @@ class _SearchScreenState extends State<_SearchScreen> {
     widget.controller.removeListener(_syncSearchStateFromController);
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SearchScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.focusRequestSerial != oldWidget.focusRequestSerial) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        _searchFocusNode.requestFocus();
+      });
+    }
   }
 
   void _syncSearchStateFromController() {
@@ -472,6 +492,7 @@ class _SearchScreenState extends State<_SearchScreen> {
       return _DesktopSearchScreen(
         controller: widget.controller,
         searchController: _searchController,
+        searchFocusNode: _searchFocusNode,
         scrollController: _scrollController,
         recentSearches: _recentSearches,
         onRunSearch: _runSearch,
@@ -539,6 +560,7 @@ class _SearchScreenState extends State<_SearchScreen> {
                 const SizedBox(height: 18),
                 TextField(
                   controller: _searchController,
+                  focusNode: _searchFocusNode,
                   onChanged: _runSearch,
                   onSubmitted: _rememberSearch,
                   style: const TextStyle(
