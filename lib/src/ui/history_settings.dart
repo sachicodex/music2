@@ -449,6 +449,7 @@ class _SettingsScreen extends StatelessWidget {
                 ],
               ),
             ),
+            const SizedBox(height: 20),
             Container(
               decoration: BoxDecoration(
                 color: card,
