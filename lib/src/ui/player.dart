@@ -154,7 +154,6 @@ class _PlayerScreenState extends State<_PlayerScreen>
           );
         }
 
-        final bool isPlayerLoading = nowPlaying.isLoading;
         const Color backgroundTop = Color(0xFF774120);
         const Color backgroundBottom = Color(0xFF200901);
         const Color surface = Color(0xFF120606);
@@ -319,8 +318,8 @@ class _PlayerScreenState extends State<_PlayerScreen>
                                             max: 32,
                                           ),
                                           offset: Offset(
-                                            scale(14, min: 8, max: 14),
-                                            scale(18, min: 10, max: 18),
+                                            0,
+                                            scale(18, min: 12, max: 18),
                                           ),
                                         ),
                                       ],
@@ -335,32 +334,6 @@ class _PlayerScreenState extends State<_PlayerScreen>
                                         ),
                                         switchInCurve: Curves.easeOutCubic,
                                         switchOutCurve: Curves.easeInCubic,
-                                        layoutBuilder:
-                                            (
-                                              Widget? currentChild,
-                                              List<Widget> previousChildren,
-                                            ) {
-                                              return currentChild ??
-                                                  const SizedBox.expand(
-                                                    child: _PlayerArtFallback(),
-                                                  );
-                                            },
-                                        transitionBuilder:
-                                            (
-                                              Widget child,
-                                              Animation<double> animation,
-                                            ) {
-                                              return FadeTransition(
-                                                opacity: animation,
-                                                child: ScaleTransition(
-                                                  scale: Tween<double>(
-                                                    begin: 0.985,
-                                                    end: 1,
-                                                  ).animate(animation),
-                                                  child: child,
-                                                ),
-                                              );
-                                            },
                                         child: Stack(
                                           key: ValueKey<String>(
                                             '${song.id}|${song.artworkUrl ?? ''}',
@@ -403,86 +376,31 @@ class _PlayerScreenState extends State<_PlayerScreen>
                             ),
                           ),
                           Spacer(flex: layoutScale < 0.8 ? 1 : 2),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: <Widget>[
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: <Widget>[
-                                    Text(
-                                      song.title,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: GoogleFonts.splineSans(
-                                        color: textPrimary,
-                                        fontSize: scale(33, min: 24, max: 33),
-                                        fontWeight: FontWeight.w700,
-                                        letterSpacing: -scale(
-                                          1.6,
-                                          min: 1.0,
-                                          max: 1.6,
-                                        ),
-                                        height: 0.96,
-                                      ),
-                                    ),
-                                    SizedBox(height: scale(8, min: 4, max: 8)),
-                                    Text(
-                                      song.artist,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: GoogleFonts.splineSans(
-                                        color: textSecondary,
-                                        fontSize: scale(16, min: 13, max: 16),
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              SizedBox(width: scale(16, min: 8, max: 16)),
-                              Padding(
-                                padding: EdgeInsets.only(
-                                  bottom: scale(6, min: 2, max: 6),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: <Widget>[
-                                    IconButton(
-                                      onPressed: () async {
-                                        if (!song.isLiked) {
-                                          await _triggerLikeFeedback();
-                                        }
-                                        await controller.likeSong(song.id);
-                                      },
-                                      icon: Icon(
-                                        song.isLiked
-                                            ? Icons.thumb_up_rounded
-                                            : Icons.thumb_up_outlined,
-                                        color: accent,
-                                        size: scale(28, min: 22, max: 28),
-                                      ),
-                                    ),
-                                    SizedBox(width: scale(4, min: 0, max: 4)),
-                                    IconButton(
-                                      onPressed: () =>
-                                          _handleDislikeAction(song),
-                                      icon: Icon(
-                                        song.isDisliked
-                                            ? Icons.thumb_down_rounded
-                                            : Icons.thumb_down_outlined,
-                                        color: song.isDisliked
-                                            ? Colors.redAccent
-                                            : accent,
-                                        size: scale(28, min: 22, max: 28),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
+                          Text(
+                            song.title,
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.spaceGrotesk(
+                              color: textPrimary,
+                              fontSize: scale(38, min: 30, max: 38),
+                              fontWeight: FontWeight.w700,
+                              height: 0.92,
+                            ),
                           ),
-                          SizedBox(height: scale(14, min: 10, max: 20)),
+                          SizedBox(height: scale(8, min: 6, max: 10)),
+                          Text(
+                            song.artist,
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.ibmPlexSans(
+                              color: textSecondary,
+                              fontSize: scale(17, min: 14, max: 17),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          SizedBox(height: scale(22, min: 16, max: 24)),
                           ValueListenableBuilder<PlaybackProgressState>(
                             valueListenable: controller.playbackProgressState,
                             builder:
@@ -491,7 +409,7 @@ class _PlayerScreenState extends State<_PlayerScreen>
                                   PlaybackProgressState progress,
                                   Widget? child,
                                 ) {
-                                  final Duration position = isPlayerLoading
+                                  final Duration position = nowPlaying.isLoading
                                       ? Duration.zero
                                       : progress.position;
                                   final Duration duration =
@@ -507,7 +425,8 @@ class _PlayerScreenState extends State<_PlayerScreen>
                                       .clamp(0, sliderMax.toInt())
                                       .toDouble();
                                   final bool showPauseIcon =
-                                      progress.isPlaying && !isPlayerLoading;
+                                      progress.isPlaying &&
+                                      !nowPlaying.isLoading;
 
                                   return _PlayerProgressAndControls(
                                     layoutScale: layoutScale,
@@ -518,20 +437,20 @@ class _PlayerScreenState extends State<_PlayerScreen>
                                     sliderMax: sliderMax,
                                     position: position,
                                     duration: duration,
-                                    isPlayerLoading: isPlayerLoading,
+                                    isPlayerLoading: nowPlaying.isLoading,
                                     isShuffleEnabled:
                                         nowPlaying.isShuffleEnabled,
                                     repeatMode: nowPlaying.repeatMode,
                                     onSeek: controller.seek,
                                     onToggleShuffle: controller.toggleShuffle,
                                     onPrevious: controller.previousTrack,
-                                    onNext: controller.nextTrack,
-                                    onCycleRepeatMode:
-                                        controller.cycleRepeatMode,
                                     onTogglePlayback: () async {
                                       await _triggerPlaybackFeedback();
                                       unawaited(controller.togglePlayback());
                                     },
+                                    onNext: controller.nextTrack,
+                                    onCycleRepeatMode:
+                                        controller.cycleRepeatMode,
                                     onShowQueue: _showQueueSheet,
                                     showPauseIcon: showPauseIcon,
                                   );
@@ -626,17 +545,20 @@ class _DesktopPlayerScreen extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
               child: LayoutBuilder(
                 builder: (BuildContext context, BoxConstraints constraints) {
-                  final bool stacked =
-                      constraints.maxWidth < 1080 ||
-                      constraints.maxHeight < 680;
-                  final double panelGap = constraints.maxWidth >= 1480
-                      ? 22
-                      : 18;
+                  final double queueWidth = (constraints.maxWidth * 0.32).clamp(
+                    320.0,
+                    430.0,
+                  );
+                  final double leftPanelWidth =
+                      constraints.maxWidth - queueWidth - 18;
+                  final bool compactDesktop = leftPanelWidth < 980;
+                  final double artworkLayoutScale = (leftPanelWidth / 980)
+                      .clamp(0.72, 1.0);
+
                   final Widget mainPanel = _DesktopPlayerArtworkPanel(
                     controller: controller,
                     song: song,
                     nowPlaying: nowPlaying,
-                    stacked: stacked,
                     tapFeedbackController: tapFeedbackController,
                     likeFeedbackController: likeFeedbackController,
                     showPauseGlyph: showPauseGlyph,
@@ -652,6 +574,7 @@ class _DesktopPlayerScreen extends StatelessWidget {
                     onShowQueueSheet: onShowQueueSheet,
                     onTriggerPlaybackFeedback: onTriggerPlaybackFeedback,
                     trackInactive: trackInactive,
+                    layoutScale: artworkLayoutScale,
                   );
 
                   final Widget queuePanel = _DesktopPlayerQueuePanel(
@@ -660,29 +583,14 @@ class _DesktopPlayerScreen extends StatelessWidget {
                     textPrimary: textPrimary,
                     textSecondary: textSecondary,
                     onShowQueueSheet: onShowQueueSheet,
+                    compact: compactDesktop,
                   );
 
-                  if (stacked) {
-                    final double queueHeight = (constraints.maxHeight * 0.48)
-                        .clamp(360.0, 520.0)
-                        .toDouble();
-                    return ListView(
-                      children: <Widget>[
-                        mainPanel,
-                        SizedBox(height: panelGap),
-                        SizedBox(height: queueHeight, child: queuePanel),
-                      ],
-                    );
-                  }
-
-                  final double queueWidth = (constraints.maxWidth * 0.34)
-                      .clamp(340.0, 430.0)
-                      .toDouble();
                   return Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
                       Expanded(child: mainPanel),
-                      SizedBox(width: panelGap),
+                      const SizedBox(width: 18),
                       SizedBox(width: queueWidth, child: queuePanel),
                     ],
                   );
@@ -701,7 +609,6 @@ class _DesktopPlayerArtworkPanel extends StatelessWidget {
     required this.controller,
     required this.song,
     required this.nowPlaying,
-    required this.stacked,
     required this.tapFeedbackController,
     required this.likeFeedbackController,
     required this.showPauseGlyph,
@@ -717,12 +624,12 @@ class _DesktopPlayerArtworkPanel extends StatelessWidget {
     required this.onShowQueueSheet,
     required this.onTriggerPlaybackFeedback,
     required this.trackInactive,
+    required this.layoutScale,
   });
 
   final MusixController controller;
   final LibrarySong song;
   final NowPlayingState nowPlaying;
-  final bool stacked;
   final AnimationController tapFeedbackController;
   final AnimationController likeFeedbackController;
   final bool showPauseGlyph;
@@ -739,314 +646,264 @@ class _DesktopPlayerArtworkPanel extends StatelessWidget {
   final Future<void> Function() onShowQueueSheet;
   final Future<void> Function() onTriggerPlaybackFeedback;
   final Color trackInactive;
+  final double layoutScale;
+
+  double _scale(double value, {double? min, double? max}) {
+    final double scaled = value * layoutScale;
+    return scaled.clamp(min ?? double.negativeInfinity, max ?? double.infinity);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final double boundedHeight = constraints.maxHeight.isFinite
-            ? constraints.maxHeight
-            : 920;
-        final double layoutScale = math
-            .min(
-              constraints.maxWidth / (stacked ? 820 : 960),
-              boundedHeight / 900,
-            )
-            .clamp(stacked ? 0.88 : 0.76, 1.0)
-            .toDouble();
-        final double panelPadding = (22 * layoutScale)
-            .clamp(18.0, 24.0)
-            .toDouble();
-        final double panelRadius = (32 * layoutScale)
-            .clamp(26.0, 32.0)
-            .toDouble();
-        final double contentGap = (18 * layoutScale)
-            .clamp(14.0, 20.0)
-            .toDouble();
-        final double titleFontSize = (40 * layoutScale)
-            .clamp(30.0, 40.0)
-            .toDouble();
-        final double artistFontSize = (16 * layoutScale)
-            .clamp(14.0, 16.0)
-            .toDouble();
-        final double reactionIconSize = (28 * layoutScale)
-            .clamp(24.0, 28.0)
-            .toDouble();
-        final double artworkDimension = math
-            .min(
-              520,
-              stacked
-                  ? constraints.maxWidth - (panelPadding * 2)
-                  : math.min(
-                      constraints.maxWidth - (panelPadding * 2),
-                      boundedHeight * 0.56,
-                    ),
-            )
-            .clamp(stacked ? 240.0 : 260.0, 520.0)
-            .toDouble();
-        final double artworkRadius = (38 * layoutScale)
-            .clamp(28.0, 38.0)
-            .toDouble();
-        final double menuRadius = (16 * layoutScale)
-            .clamp(14.0, 16.0)
-            .toDouble();
-
-        final Widget artworkSection = Center(
-          child: SizedBox.square(
-            dimension: artworkDimension,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onAlbumArtTap,
-              onDoubleTap: () => onAlbumArtDoubleTap(song),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: surface,
-                  borderRadius: BorderRadius.circular(artworkRadius),
-                  boxShadow: <BoxShadow>[
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.38),
-                      blurRadius: (34 * layoutScale)
-                          .clamp(22.0, 34.0)
-                          .toDouble(),
-                      offset: Offset(0, (24 * layoutScale).toDouble()),
-                    ),
-                  ],
+    return Container(
+      padding: EdgeInsets.all(_scale(22, min: 18, max: 22)),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A0D09).withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(32),
+        border: Border.all(color: const Color(0xFF342018)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              IconButton(
+                onPressed: () => Navigator.of(context).maybePop(),
+                icon: const Icon(Icons.arrow_back_rounded),
+                color: accent,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'NOW PLAYING',
+                  style: GoogleFonts.ibmPlexSans(
+                    color: accent,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: _scale(1.8, min: 1.2, max: 1.8),
+                    fontSize: _scale(14, min: 12, max: 14),
+                  ),
                 ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(artworkRadius),
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 260),
-                    switchInCurve: Curves.easeOutCubic,
-                    switchOutCurve: Curves.easeInCubic,
-                    child: Stack(
-                      key: ValueKey<String>(
-                        '${song.id}|${song.artworkUrl ?? ''}',
+              ),
+              PopupMenuButton<String>(
+                color: _kSurface,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: const BorderSide(color: _kSurfaceEdge),
+                ),
+                icon: const Icon(Icons.more_horiz_rounded),
+                iconColor: accent,
+                onSelected: (String value) async {
+                  await onHandlePlayerMenuSelection(value, song);
+                },
+                itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                  _musixPopupMenuItem('save', 'Save'),
+                  _musixPopupMenuItem(
+                    'like',
+                    song.isLiked ? 'Unlike song' : 'Like song',
+                  ),
+                  _musixPopupMenuItem(
+                    'dislike',
+                    song.isDisliked ? 'Remove dislike' : 'Dislike song',
+                  ),
+                  _musixPopupMenuItem('queue', 'Add to queue'),
+                ],
+              ),
+            ],
+          ),
+          SizedBox(height: _scale(18, min: 14, max: 18)),
+          Expanded(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: _scale(520, min: 360, max: 520),
+                  maxHeight: _scale(520, min: 360, max: 520),
+                ),
+                child: AspectRatio(
+                  aspectRatio: 1,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onAlbumArtTap,
+                    onDoubleTap: () => onAlbumArtDoubleTap(song),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: surface,
+                        borderRadius: BorderRadius.circular(
+                          _scale(38, min: 28, max: 38),
+                        ),
+                        boxShadow: <BoxShadow>[
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.38),
+                            blurRadius: _scale(34, min: 22, max: 34),
+                            offset: Offset(0, _scale(24, min: 16, max: 24)),
+                          ),
+                        ],
                       ),
-                      fit: StackFit.expand,
-                      children: <Widget>[
-                        if (song.artworkUrl != null &&
-                            song.artworkUrl!.trim().isNotEmpty)
-                          _CachedArtworkImage(
-                            imageUrl: song.artworkUrl!,
-                            dimension: artworkDimension,
-                            placeholder: const _PlayerArtFallback(),
-                            errorWidget: const _PlayerArtFallback(),
-                          )
-                        else
-                          const _PlayerArtFallback(),
-                        IgnorePointer(
-                          child: _PlayerArtInteractionOverlay(
-                            tapController: tapFeedbackController,
-                            likeController: likeFeedbackController,
-                            showPauseGlyph: showPauseGlyph,
-                            isLiked: song.isLiked,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(
+                          _scale(38, min: 28, max: 38),
+                        ),
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 260),
+                          switchInCurve: Curves.easeOutCubic,
+                          switchOutCurve: Curves.easeInCubic,
+                          child: Stack(
+                            key: ValueKey<String>(
+                              '${song.id}|${song.artworkUrl ?? ''}',
+                            ),
+                            fit: StackFit.expand,
+                            children: <Widget>[
+                              if (song.artworkUrl != null &&
+                                  song.artworkUrl!.trim().isNotEmpty)
+                                _CachedArtworkImage(
+                                  imageUrl: song.artworkUrl!,
+                                  dimension: 520,
+                                  placeholder: const _PlayerArtFallback(),
+                                  errorWidget: const _PlayerArtFallback(),
+                                )
+                              else
+                                const _PlayerArtFallback(),
+                              IgnorePointer(
+                                child: _PlayerArtInteractionOverlay(
+                                  tapController: tapFeedbackController,
+                                  likeController: likeFeedbackController,
+                                  showPauseGlyph: showPauseGlyph,
+                                  isLiked: song.isLiked,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
           ),
-        );
-
-        return Container(
-          padding: EdgeInsets.all(panelPadding),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A0D09).withValues(alpha: 0.96),
-            borderRadius: BorderRadius.circular(panelRadius),
-            border: Border.all(color: const Color(0xFF342018)),
-          ),
-          child: Column(
-            mainAxisSize: stacked ? MainAxisSize.min : MainAxisSize.max,
-            crossAxisAlignment: CrossAxisAlignment.start,
+          SizedBox(height: _scale(18, min: 14, max: 18)),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: <Widget>[
-              Row(
-                children: <Widget>[
-                  IconButton(
-                    onPressed: () => Navigator.of(context).maybePop(),
-                    icon: const Icon(Icons.arrow_back_rounded),
-                    color: accent,
-                    iconSize: (28 * layoutScale).clamp(24.0, 28.0).toDouble(),
-                  ),
-                  SizedBox(width: (8 * layoutScale).clamp(6.0, 8.0).toDouble()),
-                  Expanded(
-                    child: Text(
-                      'NOW PLAYING',
-                      style: GoogleFonts.ibmPlexSans(
-                        color: accent,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      song.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.spaceGrotesk(
+                        color: textPrimary,
+                        fontSize: _scale(40, min: 30, max: 40),
                         fontWeight: FontWeight.w700,
-                        letterSpacing: (1.8 * layoutScale)
-                            .clamp(1.4, 1.8)
-                            .toDouble(),
+                        height: 0.94,
                       ),
                     ),
-                  ),
-                  PopupMenuButton<String>(
-                    color: _kSurface,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(menuRadius),
-                      side: const BorderSide(color: _kSurfaceEdge),
+                    SizedBox(height: _scale(8, min: 6, max: 8)),
+                    Text(
+                      song.artist,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.ibmPlexSans(
+                        color: textSecondary,
+                        fontSize: _scale(16, min: 14, max: 16),
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
-                    icon: const Icon(Icons.more_horiz_rounded),
-                    iconColor: accent,
-                    onSelected: (String value) async {
-                      await onHandlePlayerMenuSelection(value, song);
-                    },
-                    itemBuilder: (BuildContext context) =>
-                        <PopupMenuEntry<String>>[
-                          _musixPopupMenuItem('save', 'Save'),
-                          _musixPopupMenuItem(
-                            'like',
-                            song.isLiked ? 'Unlike song' : 'Like song',
-                          ),
-                          _musixPopupMenuItem(
-                            'dislike',
-                            song.isDisliked ? 'Remove dislike' : 'Dislike song',
-                          ),
-                          _musixPopupMenuItem('queue', 'Add to queue'),
-                        ],
-                  ),
-                ],
+                  ],
+                ),
               ),
-              SizedBox(height: contentGap),
-              if (stacked) artworkSection else Expanded(child: artworkSection),
-              SizedBox(height: contentGap),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: <Widget>[
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          song.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.spaceGrotesk(
-                            color: textPrimary,
-                            fontSize: titleFontSize,
-                            fontWeight: FontWeight.w700,
-                            height: 0.94,
-                          ),
-                        ),
-                        SizedBox(
-                          height: (8 * layoutScale).clamp(6.0, 8.0).toDouble(),
-                        ),
-                        Text(
-                          song.artist,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.ibmPlexSans(
-                            color: textSecondary,
-                            fontSize: artistFontSize,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
+              SizedBox(width: _scale(16, min: 10, max: 16)),
+              Padding(
+                padding: EdgeInsets.only(bottom: _scale(6, min: 2, max: 6)),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    IconButton(
+                      onPressed: () async {
+                        if (!song.isLiked) {
+                          await onTriggerLikeFeedback();
+                        }
+                        await controller.likeSong(song.id);
+                      },
+                      icon: Icon(
+                        song.isLiked
+                            ? Icons.thumb_up_rounded
+                            : Icons.thumb_up_outlined,
+                        color: accent,
+                        size: _scale(28, min: 24, max: 28),
+                      ),
                     ),
-                  ),
-                  SizedBox(
-                    width: (16 * layoutScale).clamp(12.0, 16.0).toDouble(),
-                  ),
-                  Padding(
-                    padding: EdgeInsets.only(
-                      bottom: (6 * layoutScale).clamp(4.0, 6.0).toDouble(),
+                    SizedBox(width: _scale(4, min: 2, max: 4)),
+                    IconButton(
+                      onPressed: () => onDislikeAction(song),
+                      icon: Icon(
+                        song.isDisliked
+                            ? Icons.thumb_down_rounded
+                            : Icons.thumb_down_outlined,
+                        color: song.isDisliked ? Colors.redAccent : accent,
+                        size: _scale(28, min: 24, max: 28),
+                      ),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        IconButton(
-                          onPressed: () async {
-                            if (!song.isLiked) {
-                              await onTriggerLikeFeedback();
-                            }
-                            await controller.likeSong(song.id);
-                          },
-                          icon: Icon(
-                            song.isLiked
-                                ? Icons.thumb_up_rounded
-                                : Icons.thumb_up_outlined,
-                            color: accent,
-                            size: reactionIconSize,
-                          ),
-                        ),
-                        SizedBox(
-                          width: (4 * layoutScale).clamp(2.0, 4.0).toDouble(),
-                        ),
-                        IconButton(
-                          onPressed: () => onDislikeAction(song),
-                          icon: Icon(
-                            song.isDisliked
-                                ? Icons.thumb_down_rounded
-                                : Icons.thumb_down_outlined,
-                            color: song.isDisliked ? Colors.redAccent : accent,
-                            size: reactionIconSize,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-              SizedBox(height: contentGap),
-              ValueListenableBuilder<PlaybackProgressState>(
-                valueListenable: controller.playbackProgressState,
-                builder:
-                    (
-                      BuildContext context,
-                      PlaybackProgressState progress,
-                      Widget? child,
-                    ) {
-                      final Duration position = nowPlaying.isLoading
-                          ? Duration.zero
-                          : progress.position;
-                      final Duration duration =
-                          progress.duration == Duration.zero
-                          ? song.duration
-                          : progress.duration;
-                      final double sliderMax = math.max(
-                        duration.inMilliseconds.toDouble(),
-                        1,
-                      );
-                      final double sliderValue = position.inMilliseconds
-                          .clamp(0, sliderMax.toInt())
-                          .toDouble();
-                      final bool showPauseIcon =
-                          progress.isPlaying && !nowPlaying.isLoading;
-
-                      return _PlayerProgressAndControls(
-                        layoutScale: layoutScale,
-                        accent: accent,
-                        textPrimary: textPrimary,
-                        trackInactive: trackInactive,
-                        sliderValue: sliderValue,
-                        sliderMax: sliderMax,
-                        position: position,
-                        duration: duration,
-                        isPlayerLoading: nowPlaying.isLoading,
-                        isShuffleEnabled: nowPlaying.isShuffleEnabled,
-                        repeatMode: nowPlaying.repeatMode,
-                        onSeek: controller.seek,
-                        onToggleShuffle: controller.toggleShuffle,
-                        onPrevious: controller.previousTrack,
-                        onTogglePlayback: () async {
-                          await onTriggerPlaybackFeedback();
-                          unawaited(controller.togglePlayback());
-                        },
-                        onNext: controller.nextTrack,
-                        onCycleRepeatMode: controller.cycleRepeatMode,
-                        showQueueHandle: false,
-                        showPauseIcon: showPauseIcon,
-                      );
-                    },
-              ),
-              SizedBox(height: (20 * layoutScale).clamp(16.0, 20.0).toDouble()),
             ],
           ),
-        );
-      },
+          SizedBox(height: _scale(18, min: 14, max: 18)),
+          ValueListenableBuilder<PlaybackProgressState>(
+            valueListenable: controller.playbackProgressState,
+            builder:
+                (
+                  BuildContext context,
+                  PlaybackProgressState progress,
+                  Widget? child,
+                ) {
+                  final Duration position = nowPlaying.isLoading
+                      ? Duration.zero
+                      : progress.position;
+                  final Duration duration = progress.duration == Duration.zero
+                      ? song.duration
+                      : progress.duration;
+                  final double sliderMax = math.max(
+                    duration.inMilliseconds.toDouble(),
+                    1,
+                  );
+                  final double sliderValue = position.inMilliseconds
+                      .clamp(0, sliderMax.toInt())
+                      .toDouble();
+                  final bool showPauseIcon =
+                      progress.isPlaying && !nowPlaying.isLoading;
+
+                  return _PlayerProgressAndControls(
+                    layoutScale: layoutScale,
+                    accent: accent,
+                    textPrimary: textPrimary,
+                    trackInactive: trackInactive,
+                    sliderValue: sliderValue,
+                    sliderMax: sliderMax,
+                    position: position,
+                    duration: duration,
+                    isPlayerLoading: nowPlaying.isLoading,
+                    isShuffleEnabled: nowPlaying.isShuffleEnabled,
+                    repeatMode: nowPlaying.repeatMode,
+                    onSeek: controller.seek,
+                    onToggleShuffle: controller.toggleShuffle,
+                    onPrevious: controller.previousTrack,
+                    onTogglePlayback: () async {
+                      await onTriggerPlaybackFeedback();
+                      unawaited(controller.togglePlayback());
+                    },
+                    onNext: controller.nextTrack,
+                    onCycleRepeatMode: controller.cycleRepeatMode,
+                    showQueueHandle: false,
+                    showPauseIcon: showPauseIcon,
+                  );
+                },
+          ),
+          SizedBox(height: _scale(20, min: 14, max: 20)),
+        ],
+      ),
     );
   }
 }
@@ -1058,6 +915,7 @@ class _DesktopPlayerQueuePanel extends StatelessWidget {
     required this.textPrimary,
     required this.textSecondary,
     required this.onShowQueueSheet,
+    required this.compact,
   });
 
   final MusixController controller;
@@ -1065,6 +923,7 @@ class _DesktopPlayerQueuePanel extends StatelessWidget {
   final Color textPrimary;
   final Color textSecondary;
   final Future<void> Function() onShowQueueSheet;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -1074,7 +933,7 @@ class _DesktopPlayerQueuePanel extends StatelessWidget {
         final List<LibrarySong> songs = controller.queueSongs;
         final bool loading = controller.smartQueueLoading;
         return Container(
-          padding: const EdgeInsets.all(22),
+          padding: EdgeInsets.all(compact ? 18 : 22),
           decoration: BoxDecoration(
             color: const Color(0xFF1A0D09).withValues(alpha: 0.96),
             borderRadius: BorderRadius.circular(32),
