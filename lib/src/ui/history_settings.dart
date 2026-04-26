@@ -348,28 +348,10 @@ class _SettingsScreen extends StatelessWidget {
                   _ProfileRow(
                     title: 'Payment Method',
                     subtitle: 'Default card for renewals',
-                    trailing: 'Ã¢â‚¬Â¢ Ã¢â‚¬Â¢ Ã¢â‚¬Â¢ Ã¢â‚¬Â¢  4421',
+                    trailing: '.... 4421',
                   ),
                 ],
               ),
-            ),
-            const SizedBox(height: 14),
-            _ProfileDataUsageCard(
-              controller: controller,
-              card: card,
-              cardEdge: cardEdge,
-              titleColor: titleColor,
-              subtitleColor: subtitleColor,
-              accent: accent,
-            ),
-            const SizedBox(height: 14),
-            _ProfileCurrentStreamCard(
-              controller: controller,
-              card: card,
-              cardEdge: cardEdge,
-              titleColor: titleColor,
-              subtitleColor: subtitleColor,
-              accent: accent,
             ),
             const SizedBox(height: 14),
             Container(
@@ -467,7 +449,6 @@ class _SettingsScreen extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 14),
             Container(
               decoration: BoxDecoration(
                 color: card,
@@ -522,6 +503,24 @@ class _SettingsScreen extends StatelessWidget {
                   ),
                 ],
               ),
+            ),
+            const SizedBox(height: 14),
+            _ProfileDataUsageCard(
+              controller: controller,
+              card: card,
+              cardEdge: cardEdge,
+              titleColor: titleColor,
+              subtitleColor: subtitleColor,
+              accent: accent,
+            ),
+            const SizedBox(height: 14),
+            _ProfileCurrentStreamCard(
+              controller: controller,
+              card: card,
+              cardEdge: cardEdge,
+              titleColor: titleColor,
+              subtitleColor: subtitleColor,
+              accent: accent,
             ),
             const SizedBox(height: 14),
             Container(
@@ -597,6 +596,9 @@ class _ProfileRow extends StatelessWidget {
   Widget build(BuildContext context) {
     const Color titleColor = Color(0xFFFFE6D5);
     const Color subtitleColor = Color(0xFFC89373);
+    final String displayTrailing = title == 'Payment Method'
+        ? '**** 4421'
+        : trailing;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -624,13 +626,19 @@ class _ProfileRow extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 10),
-        Padding(
-          padding: const EdgeInsets.only(top: 6),
-          child: Text(
-            trailing,
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: titleColor,
-              fontWeight: FontWeight.w700,
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 132),
+          child: Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              displayTrailing,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: titleColor,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ),
@@ -1037,7 +1045,7 @@ class _ProfileCurrentStreamCard extends StatelessWidget {
                     ),
                     _ProfileDetailRow(
                       title: 'Bitrate',
-                      value: '${info.bitrateLabel} Ã¢â‚¬Â¢ ${info.bitrateTier}',
+                      value: '${info.bitrateLabel} - ${info.bitrateTier}',
                       titleColor: titleColor,
                       valueColor: titleColor,
                     ),
@@ -1084,7 +1092,7 @@ class _ProfileCurrentStreamCard extends StatelessWidget {
                     _ProfileDetailRow(
                       title: 'Available',
                       value:
-                          'A ${info.availableAudioOnlyCount} Ã¢â‚¬Â¢ HA ${info.availableHlsAudioOnlyCount} Ã¢â‚¬Â¢ M ${info.availableMuxedCount} Ã¢â‚¬Â¢ HM ${info.availableHlsMuxedCount} Ã¢â‚¬Â¢ HV ${info.availableHlsVideoOnlyCount}',
+                          'A ${info.availableAudioOnlyCount} - HA ${info.availableHlsAudioOnlyCount} - M ${info.availableMuxedCount} - HM ${info.availableHlsMuxedCount} - HV ${info.availableHlsVideoOnlyCount}',
                       titleColor: titleColor,
                       valueColor: subtitleColor,
                     ),

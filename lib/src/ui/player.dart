@@ -1226,14 +1226,9 @@ class _PlayerProgressAndControls extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        if (isPlayerLoading)
-          _PlaybackLoadingBar(
-            accent: accent,
-            trackColor: trackInactive,
-            height: _scale(6, min: 4, max: 6),
-          )
-        else
-          SliderTheme(
+        IgnorePointer(
+          ignoring: isPlayerLoading,
+          child: SliderTheme(
             data: SliderTheme.of(context).copyWith(
               trackHeight: _scale(6, min: 4, max: 6),
               activeTrackColor: accent,
@@ -1251,6 +1246,7 @@ class _PlayerProgressAndControls extends StatelessWidget {
               },
             ),
           ),
+        ),
         SizedBox(height: _scale(10, min: 6, max: 15)),
         Row(
           children: <Widget>[
@@ -1935,7 +1931,7 @@ class _AlbumScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          '${album.artist} Ã¢â‚¬Â¢ ${album.songCount} tracks',
+                          '${album.artist} - ${album.songCount} tracks',
                         ),
                         const SizedBox(height: 8),
                         Text(_formatDuration(album.totalDuration)),
@@ -1996,7 +1992,7 @@ class _ArtistScreen extends StatelessWidget {
                   const SizedBox(width: 16),
                   Expanded(
                     child: Text(
-                      '${artist.songs.length} tracks Ã¢â‚¬Â¢ ${artist.albumCount} albums',
+                      '${artist.songs.length} tracks - ${artist.albumCount} albums',
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
@@ -2198,7 +2194,7 @@ class _MusixAlbumScreen extends StatelessWidget {
             leading: _Artwork(seed: album.id, title: album.title, size: 120),
             title: album.title,
             lines: <String>[
-              '${album.artist} Ã¢â‚¬Â¢ ${album.songCount} tracks',
+              '${album.artist} - ${album.songCount} tracks',
               _formatDuration(album.totalDuration),
             ],
           ),
@@ -2243,7 +2239,7 @@ class _MusixArtistScreen extends StatelessWidget {
             ),
             title: artist.name,
             lines: <String>[
-              '${artist.songs.length} tracks Ã¢â‚¬Â¢ ${artist.albumCount} albums',
+              '${artist.songs.length} tracks - ${artist.albumCount} albums',
             ],
           ),
           const SizedBox(height: 20),
@@ -3256,7 +3252,7 @@ class _AlbumGrid extends StatelessWidget {
           width: 200,
           child: _CollectionCard(
             title: album.title,
-            subtitle: '${album.artist} Ã¢â‚¬Â¢ ${album.songCount} tracks',
+            subtitle: '${album.artist} - ${album.songCount} tracks',
             seed: album.id,
             icon: Icons.album_rounded,
             onTap: () {
@@ -3292,7 +3288,7 @@ class _ArtistGrid extends StatelessWidget {
           child: _CollectionCard(
             title: artist.name,
             subtitle:
-                '${artist.songs.length} tracks Ã¢â‚¬Â¢ ${artist.albumCount} albums',
+                '${artist.songs.length} tracks - ${artist.albumCount} albums',
             seed: artist.id,
             icon: Icons.person_rounded,
             onTap: () {

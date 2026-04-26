@@ -683,7 +683,7 @@ int _hasArtwork(LibrarySong song) {
 
 int _durationScore(LibrarySong song) {
   final int seconds = song.duration.inSeconds;
-  // Prefer typical music-length tracks (avoid 1h ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“mixÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â style dominating).
+  // Prefer typical music-length tracks (avoid 1h "mix" style dominating).
   if (seconds == 0) return 1;
   if (seconds >= 120 && seconds <= 360) return 5; // 2-6 minutes
   if (seconds >= 60 && seconds < 120) return 3;
@@ -1566,65 +1566,41 @@ class _MusixSectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final Widget action = TextButton(
-          onPressed: onViewAll,
-          style: TextButton.styleFrom(
-            foregroundColor: Colors.white.withValues(alpha: 0.55),
-            padding: EdgeInsets.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            minimumSize: Size.zero,
-          ),
+    final Widget action = TextButton(
+      onPressed: onViewAll,
+      style: TextButton.styleFrom(
+        foregroundColor: Colors.white.withValues(alpha: 0.55),
+        padding: EdgeInsets.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        minimumSize: Size.zero,
+      ),
+      child: Text(
+        'VIEW ALL',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(
+          context,
+        ).textTheme.labelSmall?.copyWith(letterSpacing: 1.4),
+      ),
+    );
+
+    return Row(
+      children: <Widget>[
+        Expanded(
           child: Text(
-            'VIEW ALL',
+            title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: Theme.of(
-              context,
-            ).textTheme.labelSmall?.copyWith(letterSpacing: 1.4),
-          ),
-        );
-
-        if (constraints.maxWidth < 230) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.1,
-                  color: Colors.white.withValues(alpha: 0.92),
-                ),
-              ),
-              const SizedBox(height: 6),
-              action,
-            ],
-          );
-        }
-
-        return Row(
-          children: <Widget>[
-            Expanded(
-              child: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.1,
-                  color: Colors.white.withValues(alpha: 0.92),
-                ),
-              ),
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.1,
+              color: Colors.white.withValues(alpha: 0.92),
             ),
-            const SizedBox(width: 12),
-            Flexible(child: action),
-          ],
-        );
-      },
+          ),
+        ),
+        const SizedBox(width: 12),
+        Align(alignment: Alignment.centerRight, child: action),
+      ],
     );
   }
 }
@@ -1727,7 +1703,7 @@ class _MusixJumpBackGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     if (items.isEmpty) {
       return Text(
-        'Play something and itÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ll show up here.',
+        "Play something and it'll show up here.",
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
           color: Colors.white.withValues(alpha: 0.55),
         ),

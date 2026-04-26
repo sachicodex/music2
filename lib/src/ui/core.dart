@@ -49,11 +49,13 @@ class _MusixStartupGate extends StatefulWidget {
 
 class _MusixStartupGateState extends State<_MusixStartupGate> {
   static const Duration _targetStartupDuration = Duration(seconds: 5);
+  static const Duration _splashFadeOutDuration = Duration(milliseconds: 650);
   static const bool _debugInfiniteStartup = false;
 
   int _bootAttempt = 0;
   Object? _bootError;
   bool _ready = false;
+  bool _splashVisible = true;
   Duration _measuredBootDuration = Duration.zero;
 
   @override
@@ -75,6 +77,7 @@ class _MusixStartupGateState extends State<_MusixStartupGate> {
     setState(() {
       _bootError = null;
       _ready = false;
+      _splashVisible = true;
       _measuredBootDuration = Duration.zero;
     });
 
@@ -94,6 +97,14 @@ class _MusixStartupGateState extends State<_MusixStartupGate> {
         _measuredBootDuration = bootDuration;
         _ready = !_debugInfiniteStartup;
       });
+      if (!_debugInfiniteStartup) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || attempt != _bootAttempt) {
+            return;
+          }
+          setState(() => _splashVisible = false);
+        });
+      }
     } catch (error, stackTrace) {
       debugPrint('Boot failed: $error');
       debugPrintStack(stackTrace: stackTrace);
@@ -116,28 +127,18 @@ class _MusixStartupGateState extends State<_MusixStartupGate> {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 520),
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
-      transitionBuilder: (Widget child, Animation<double> animation) {
-        final Animation<Offset> offset =
-            Tween<Offset>(
-              begin: const Offset(0, 0.03),
-              end: Offset.zero,
-            ).animate(
-              CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
-            );
-
-        return FadeTransition(
-          opacity: animation,
-          child: SlideTransition(position: offset, child: child),
-        );
-      },
-      child: _ready
-          ? const MusixShell(key: ValueKey<String>('shell'))
-          : _MusixStartupScreen(
-              key: const ValueKey<String>('startup'),
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        if (_ready) const MusixShell(key: ValueKey<String>('shell')),
+        IgnorePointer(
+          ignoring: !_splashVisible,
+          child: AnimatedOpacity(
+            opacity: _splashVisible ? 1.0 : 0.0,
+            duration: _splashFadeOutDuration,
+            curve: Curves.easeInOutCubic,
+            child: _MusixStartupScreen(
+              key: ValueKey<String>('startup-$_bootAttempt'),
               bootAttempt: _bootAttempt,
               controller: widget.controller,
               error: _bootError,
@@ -145,6 +146,9 @@ class _MusixStartupGateState extends State<_MusixStartupGate> {
               targetStartupDuration: _targetStartupDuration,
               onRetry: _beginBoot,
             ),
+          ),
+        ),
+      ],
     );
   }
 }

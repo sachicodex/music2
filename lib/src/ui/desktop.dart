@@ -273,8 +273,7 @@ class _DesktopWindowTitleBarState extends State<_DesktopWindowTitleBar>
           _DesktopTitleBarActionButton(
             icon: Icons.close_rounded,
             onTap: () => windowManager.close(),
-            hoverColor: const Color(0xFFC94D2C),
-            hoverBorderColor: const Color(0xFFE58E72),
+            hoverColor: const Color.fromARGB(255, 121, 27, 0),
           ),
         ],
       ),
@@ -754,32 +753,25 @@ class _DesktopNowPlayingRail extends StatelessWidget {
                               ),
                             ),
                             SizedBox(height: compactHeight ? 18 : 22),
-                            if (nowPlaying.isLoading)
-                              const _PlaybackLoadingBar(
-                                accent: _kAccent,
-                                trackColor: Color(0xFF73432C),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(999),
+                              child: SizedBox(
                                 height: 6,
-                              )
-                            else
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(999),
-                                child: SizedBox(
-                                  height: 6,
-                                  child: ColoredBox(
-                                    color: const Color(0xFF73432C),
-                                    child: Align(
+                                child: ColoredBox(
+                                  color: const Color(0xFF73432C),
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: FractionallySizedBox(
+                                      widthFactor: safeProgress,
                                       alignment: Alignment.centerLeft,
-                                      child: FractionallySizedBox(
-                                        widthFactor: safeProgress,
-                                        alignment: Alignment.centerLeft,
-                                        child: const SizedBox.expand(
-                                          child: ColoredBox(color: _kAccent),
-                                        ),
+                                      child: const SizedBox.expand(
+                                        child: ColoredBox(color: _kAccent),
                                       ),
                                     ),
                                   ),
                                 ),
                               ),
+                            ),
                             const SizedBox(height: 10),
                             Row(
                               children: <Widget>[
@@ -2029,24 +2021,6 @@ class _DesktopSettingsScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  _ProfileDataUsageCard(
-                    controller: controller,
-                    card: card,
-                    cardEdge: cardEdge,
-                    titleColor: titleColor,
-                    subtitleColor: subtitleColor,
-                    accent: accent,
-                  ),
-                  const SizedBox(height: 20),
-                  _ProfileCurrentStreamCard(
-                    controller: controller,
-                    card: card,
-                    cardEdge: cardEdge,
-                    titleColor: titleColor,
-                    subtitleColor: subtitleColor,
-                    accent: accent,
-                  ),
-                  const SizedBox(height: 20),
                   Container(
                     decoration: BoxDecoration(
                       color: card,
@@ -2174,6 +2148,24 @@ class _DesktopSettingsScreen extends StatelessWidget {
                         ),
                       ],
                     ),
+                  ),
+                  const SizedBox(height: 20),
+                  _ProfileDataUsageCard(
+                    controller: controller,
+                    card: card,
+                    cardEdge: cardEdge,
+                    titleColor: titleColor,
+                    subtitleColor: subtitleColor,
+                    accent: accent,
+                  ),
+                  const SizedBox(height: 20),
+                  _ProfileCurrentStreamCard(
+                    controller: controller,
+                    card: card,
+                    cardEdge: cardEdge,
+                    titleColor: titleColor,
+                    subtitleColor: subtitleColor,
+                    accent: accent,
                   ),
                   const SizedBox(height: 20),
                   Container(
