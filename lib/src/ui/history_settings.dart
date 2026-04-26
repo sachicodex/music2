@@ -449,7 +449,7 @@ class _SettingsScreen extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 14),
             Container(
               decoration: BoxDecoration(
                 color: card,
@@ -706,6 +706,9 @@ class _ProfileDataUsageCard extends StatelessWidget {
           }
         }
 
+        final LibrarySong? activeUsageSong =
+            controller.miniPlayerSong ?? controller.currentSong;
+
         return Container(
           decoration: BoxDecoration(
             color: card,
@@ -734,7 +737,7 @@ class _ProfileDataUsageCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'Live playback counts once while you listen. Future-song warmups are tracked separately.',
+                'Streaming grows only from live caching bytes. Total is Other plus Streaming.',
                 style: Theme.of(
                   context,
                 ).textTheme.bodySmall?.copyWith(color: subtitleColor),
@@ -772,13 +775,17 @@ class _ProfileDataUsageCard extends StatelessWidget {
                     titleColor: titleColor,
                     subtitleColor: subtitleColor,
                   ),
-                  _UsageChip(
-                    label: 'Current Song',
-                    value: usage.currentSongLabel,
-                    accent: accent,
-                    titleColor: titleColor,
-                    subtitleColor: subtitleColor,
-                  ),
+                  if (activeUsageSong != null)
+                    _UsageChip(
+                      label: 'Caching Now',
+                      value: controller.currentCacheProgressLabel(
+                        song: activeUsageSong,
+                        fallbackLabel: usage.currentCacheLabel,
+                      ),
+                      accent: accent,
+                      titleColor: titleColor,
+                      subtitleColor: subtitleColor,
+                    ),
                 ],
               ),
               const SizedBox(height: 14),
@@ -1011,7 +1018,7 @@ class _ProfileCurrentStreamCard extends StatelessWidget {
                   const SizedBox(height: 8),
                   if (song == null || info == null)
                     Text(
-                      'Start playback to inspect transport, source, bitrate, codecs, and live bytes.',
+                      'Start playback to inspect transport, source, bitrate, codecs, and song data.',
                       style: Theme.of(
                         context,
                       ).textTheme.bodySmall?.copyWith(color: subtitleColor),
@@ -1085,8 +1092,21 @@ class _ProfileCurrentStreamCard extends StatelessWidget {
                         valueColor: titleColor,
                       ),
                     _ProfileDetailRow(
-                      title: 'Song Data',
-                      value: usage.currentSongLabel,
+                      title: 'Source Size',
+                      value: controller.currentStreamSongDataLabel(
+                        song: song,
+                        info: info,
+                        fallbackLabel: usage.currentSongLabel,
+                      ),
+                      titleColor: titleColor,
+                      valueColor: accent,
+                    ),
+                    _ProfileDetailRow(
+                      title: 'Caching Now',
+                      value: controller.currentCacheProgressLabel(
+                        song: song,
+                        fallbackLabel: usage.currentCacheLabel,
+                      ),
                       titleColor: titleColor,
                       valueColor: accent,
                     ),

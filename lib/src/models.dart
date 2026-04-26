@@ -758,7 +758,10 @@ class AppDataUsageStats {
     this.artworkBytes = 0,
     this.metadataBytes = 0,
     this.currentSongBytes = 0,
+    this.currentCacheBytes = 0,
+    this.currentCacheExpectedBytes = 0,
     this.currentSongId,
+    this.currentCacheSongId,
     this.lastUpdatedAt,
   });
 
@@ -770,7 +773,10 @@ class AppDataUsageStats {
   final int artworkBytes;
   final int metadataBytes;
   final int currentSongBytes;
+  final int currentCacheBytes;
+  final int currentCacheExpectedBytes;
   final String? currentSongId;
+  final String? currentCacheSongId;
   final DateTime? lastUpdatedAt;
 
   String get totalLabel => formatDataSize(totalBytes);
@@ -783,8 +789,12 @@ class AppDataUsageStats {
   String get artworkLabel => formatDataSize(artworkBytes);
   String get metadataLabel => formatDataSize(metadataBytes);
   String get currentSongLabel => formatDataSize(currentSongBytes);
+  String get currentCacheLabel => formatDataSize(currentCacheBytes);
   bool get hasCurrentSongUsage =>
       (currentSongId?.trim().isNotEmpty ?? false) && currentSongBytes > 0;
+  bool get hasCurrentCacheUsage =>
+      (currentCacheSongId?.trim().isNotEmpty ?? false) &&
+      (currentCacheBytes > 0 || currentCacheExpectedBytes > 0);
 
   AppDataUsageStats copyWith({
     int? totalBytes,
@@ -795,8 +805,12 @@ class AppDataUsageStats {
     int? artworkBytes,
     int? metadataBytes,
     int? currentSongBytes,
+    int? currentCacheBytes,
+    int? currentCacheExpectedBytes,
     String? currentSongId,
+    String? currentCacheSongId,
     bool clearCurrentSongId = false,
+    bool clearCurrentCacheSongId = false,
     DateTime? lastUpdatedAt,
   }) {
     return AppDataUsageStats(
@@ -808,9 +822,15 @@ class AppDataUsageStats {
       artworkBytes: artworkBytes ?? this.artworkBytes,
       metadataBytes: metadataBytes ?? this.metadataBytes,
       currentSongBytes: currentSongBytes ?? this.currentSongBytes,
+      currentCacheBytes: currentCacheBytes ?? this.currentCacheBytes,
+      currentCacheExpectedBytes:
+          currentCacheExpectedBytes ?? this.currentCacheExpectedBytes,
       currentSongId: clearCurrentSongId
           ? null
           : currentSongId ?? this.currentSongId,
+      currentCacheSongId: clearCurrentCacheSongId
+          ? null
+          : currentCacheSongId ?? this.currentCacheSongId,
       lastUpdatedAt: lastUpdatedAt ?? this.lastUpdatedAt,
     );
   }
@@ -826,6 +846,9 @@ class AppDataUsageStats {
       'metadataBytes': metadataBytes,
       'currentSongBytes': currentSongBytes,
       'currentSongId': currentSongId,
+      'currentCacheBytes': currentCacheBytes,
+      'currentCacheExpectedBytes': currentCacheExpectedBytes,
+      'currentCacheSongId': currentCacheSongId,
       'lastUpdatedAt': lastUpdatedAt?.toIso8601String(),
     };
   }
@@ -845,6 +868,10 @@ class AppDataUsageStats {
       metadataBytes: (json['metadataBytes'] as num?)?.toInt() ?? 0,
       currentSongBytes: (json['currentSongBytes'] as num?)?.toInt() ?? 0,
       currentSongId: json['currentSongId'] as String?,
+      currentCacheBytes: (json['currentCacheBytes'] as num?)?.toInt() ?? 0,
+      currentCacheExpectedBytes:
+          (json['currentCacheExpectedBytes'] as num?)?.toInt() ?? 0,
+      currentCacheSongId: json['currentCacheSongId'] as String?,
       lastUpdatedAt: DateTime.tryParse(json['lastUpdatedAt'] as String? ?? ''),
     );
   }
@@ -862,7 +889,10 @@ class AppDataUsageStats {
             artworkBytes == other.artworkBytes &&
             metadataBytes == other.metadataBytes &&
             currentSongBytes == other.currentSongBytes &&
+            currentCacheBytes == other.currentCacheBytes &&
+            currentCacheExpectedBytes == other.currentCacheExpectedBytes &&
             currentSongId == other.currentSongId &&
+            currentCacheSongId == other.currentCacheSongId &&
             lastUpdatedAt == other.lastUpdatedAt;
   }
 
@@ -876,7 +906,10 @@ class AppDataUsageStats {
     artworkBytes,
     metadataBytes,
     currentSongBytes,
+    currentCacheBytes,
+    currentCacheExpectedBytes,
     currentSongId,
+    currentCacheSongId,
     lastUpdatedAt,
   );
 }

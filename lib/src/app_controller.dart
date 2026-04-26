@@ -51,6 +51,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   final YoutubeExplode _yt;
   late final PlaybackProxyServer _playbackProxy = PlaybackProxyServer(
     onBytesTransferred: _handlePlaybackProxyTransfer,
+    onCacheProgress: _handlePlaybackProxyCacheProgress,
     onCacheCompleted: _handlePlaybackProxyCacheCompleted,
   );
   final Connectivity _connectivity = Connectivity();
@@ -79,7 +80,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   final Map<String, int> _songPlaybackBytes = <String, int>{};
   final Map<String, _ActivePlaybackProxy> _activePlaybackProxiesBySongId =
       <String, _ActivePlaybackProxy>{};
-  final Set<String> _proxyTrackedSongIds = <String>{};
   final Set<String> _playbackProxyBypassSongIds = <String>{};
   bool _isDisposing = false;
   bool _isDisposed = false;
@@ -127,6 +127,11 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   final Map<String, String?> _ytMusicArtistImageCache = <String, String?>{};
   final Set<String> _smartQueueSongIds = <String>{};
   final Map<String, String> _offlinePlaybackCachePaths = <String, String>{};
+  final Map<String, int> _offlinePlaybackCacheSizesBySongId = <String, int>{};
+  final Map<String, int> _offlinePlaybackCacheProgressBytesBySongId =
+      <String, int>{};
+  final Map<String, int> _offlinePlaybackCacheExpectedBytesBySongId =
+      <String, int>{};
   final List<String> _offlinePlaybackCacheQueue = <String>[];
   final Set<String> _offlinePlaybackCacheQueuedSongIds = <String>{};
   final Set<String> _offlinePlaybackPrefetchInFlight = <String>{};
@@ -141,7 +146,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   String? _playbackActivationSongId;
   bool _refreshingOfflinePlaybackCache = false;
   bool _offlinePlaybackCacheRefreshQueued = false;
-  LibrarySong? _pendingOfflinePlaybackCacheAnchor;
   int _offlinePlaybackCacheEpoch = 0;
   bool _offlineQueueAdvancePending = false;
   bool _queueNavigationInFlight = false;
@@ -476,9 +480,17 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
 
   void _syncDataUsageState() {
     final String? songId = miniPlayerSong?.id ?? currentSong?.id;
+    final (int currentCacheBytes, int currentCacheExpectedBytes) = songId == null
+        ? (0, 0)
+        : _currentSongCacheProgress(songId);
     final AppDataUsageStats next = _dataUsage.copyWith(
+      totalBytes: _dataUsage.streamBytes + _dataUsage.otherBytes,
+      cacheBytes: 0,
       currentSongId: songId,
-      currentSongBytes: songId == null ? 0 : (_songPlaybackBytes[songId] ?? 0),
+      currentSongBytes: currentCacheBytes,
+      currentCacheSongId: songId,
+      currentCacheBytes: currentCacheBytes,
+      currentCacheExpectedBytes: currentCacheExpectedBytes,
     );
     if (dataUsageState.value != next) {
       _dataUsage = next;
@@ -546,19 +558,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
             (_duration > Duration.zero || _position > Duration.zero))) {
       _playbackActivationSongId = null;
     }
-  }
-
-  void _recordCacheBytes(int bytes) {
-    if (bytes <= 0) {
-      return;
-    }
-    _dataUsage = _dataUsage.copyWith(
-      totalBytes: _dataUsage.totalBytes + bytes,
-      cacheBytes: _dataUsage.cacheBytes + bytes,
-      lastUpdatedAt: DateTime.now(),
-    );
-    _syncDataUsageState();
-    _scheduleSnapshotSave();
   }
 
   void _recordOtherUsage({
@@ -674,8 +673,17 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     if (_isDisposed || _isDisposing) {
       return;
     }
-    _proxyTrackedSongIds.add(transfer.songId);
-    _recordStreamBytes(transfer.songId, transfer.bytesTransferred);
+  }
+
+  void _handlePlaybackProxyCacheProgress(PlaybackProxyCacheProgress progress) {
+    if (_isDisposed || _isDisposing) {
+      return;
+    }
+    _updateOfflinePlaybackCacheProgress(
+      songId: progress.songId,
+      bytesWritten: progress.bytesWritten,
+      expectedBytes: progress.expectedBytes,
+    );
   }
 
   void _handlePlaybackProxyCacheCompleted(PlaybackProxyCacheResult result) {
@@ -687,6 +695,16 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     _offlinePlaybackCachePaths[result.songId] = result.cachedFilePath;
+    final File cachedFile = File(result.cachedFilePath);
+    if (cachedFile.existsSync()) {
+      _offlinePlaybackCacheSizesBySongId[result.songId] =
+          cachedFile.lengthSync();
+    }
+    final int completedSize = _offlinePlaybackCacheSizesBySongId[result.songId] ?? 0;
+    if (completedSize > 0) {
+      _offlinePlaybackCacheProgressBytesBySongId[result.songId] = completedSize;
+      _offlinePlaybackCacheExpectedBytesBySongId[result.songId] = completedSize;
+    }
     _preparedMediaUrlsBySongId[result.songId] = result.cachedFilePath;
     _preparedMediaHeadersBySongId[result.songId] = null;
     final LibrarySong? song = songById(result.songId);
@@ -697,6 +715,11 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
             cachedPath: result.cachedFilePath,
             previousInfo: _playbackStreamInfoBySongId[result.songId],
           );
+      _updateOfflinePlaybackCacheProgress(
+        songId: result.songId,
+        bytesWritten: completedSize,
+        expectedBytes: completedSize,
+      );
     }
     unawaited(_saveSnapshot());
     notifyListeners();
@@ -717,7 +740,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         .map((_ActivePlaybackProxy item) => item.sessionId)
         .toList(growable: false);
     _activePlaybackProxiesBySongId.clear();
-    _proxyTrackedSongIds.clear();
     _playbackProxyBypassSongIds.clear();
     _preparedMediaUrlsBySongId.clear();
     _preparedMediaHeadersBySongId.clear();
@@ -4901,8 +4923,16 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       return song;
     }
 
-    if (_isSongUsingPlaybackProxy(song.id) &&
+    final _ActivePlaybackProxy? activeProxy =
+        _activePlaybackProxiesBySongId[song.id];
+    if (activeProxy != null &&
+        _preparedMediaUrlsBySongId[song.id] == activeProxy.proxyUrl &&
         !_playbackProxyBypassSongIds.contains(song.id)) {
+      _maybePrimeAndroidPlaybackCache(
+        song: song,
+        resolvedUrl: activeProxy.upstreamUrl,
+        upstreamHeaders: activeProxy.upstreamHeaders,
+      );
       return song;
     }
 
@@ -5042,6 +5072,11 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       preferPlaybackCompatibility: true,
     );
     if (_playbackProxyBypassSongIds.contains(song.id)) {
+      _maybePrimeAndroidPlaybackCache(
+        song: song,
+        resolvedUrl: resolved.resolvedUrl,
+        upstreamHeaders: resolved.upstreamHeaders,
+      );
       _disablePlaybackProxyForSong(song.id, bypass: true);
       return _PreparedPlaybackSource(
         mediaUrl: resolved.resolvedUrl,
@@ -5049,16 +5084,21 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         streamInfo: resolved.streamInfo,
       );
     }
-    final File cacheTarget = await _offlinePlaybackCacheTargetFile(
-      song,
-      resolved.resolvedUrl,
-    );
+    final String? proxyCacheFilePath = Platform.isAndroid
+        ? null
+        : (await _offlinePlaybackCacheTargetFile(song, resolved.resolvedUrl))
+              .path;
     try {
       final String proxyUrl = await _registerPlaybackProxy(
         song: song,
         upstreamUrl: resolved.resolvedUrl,
         upstreamHeaders: resolved.upstreamHeaders,
-        cacheFilePath: cacheTarget.path,
+        cacheFilePath: proxyCacheFilePath,
+      );
+      _maybePrimeAndroidPlaybackCache(
+        song: song,
+        resolvedUrl: resolved.resolvedUrl,
+        upstreamHeaders: resolved.upstreamHeaders,
       );
       return _PreparedPlaybackSource(
         mediaUrl: proxyUrl,
@@ -5070,6 +5110,11 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         'proxy.register failed song=${_debugSongLabel(song)} error=$error',
       );
     }
+    _maybePrimeAndroidPlaybackCache(
+      song: song,
+      resolvedUrl: resolved.resolvedUrl,
+      upstreamHeaders: resolved.upstreamHeaders,
+    );
     return _PreparedPlaybackSource(
       mediaUrl: resolved.resolvedUrl,
       mediaHeaders: resolved.upstreamHeaders,
@@ -5092,7 +5137,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     } else {
       _playbackProxyBypassSongIds.remove(songId);
     }
-    _proxyTrackedSongIds.remove(songId);
     final _ActivePlaybackProxy? existing = _activePlaybackProxiesBySongId
         .remove(songId);
     if (existing != null) {
@@ -5104,17 +5148,15 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     required LibrarySong song,
     required String upstreamUrl,
     required Map<String, String>? upstreamHeaders,
-    required String cacheFilePath,
+    required String? cacheFilePath,
   }) async {
     final _ActivePlaybackProxy? existing =
         _activePlaybackProxiesBySongId[song.id];
     if (existing != null &&
         existing.upstreamUrl == upstreamUrl &&
         mapEquals(existing.upstreamHeaders, upstreamHeaders)) {
-      _proxyTrackedSongIds.add(song.id);
       return existing.proxyUrl;
     }
-    _proxyTrackedSongIds.remove(song.id);
     if (existing != null) {
       unawaited(_playbackProxy.unregister(existing.sessionId));
     }
@@ -5138,7 +5180,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
               Map<String, String>.from(upstreamHeaders),
             ),
     );
-    _proxyTrackedSongIds.add(song.id);
     return proxyUrl;
   }
 
@@ -5917,6 +5958,9 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     _offlinePlaybackCacheQueue.clear();
     _offlinePlaybackCacheQueuedSongIds.clear();
     _offlinePlaybackPrefetchInFlight.clear();
+    _offlinePlaybackCacheSizesBySongId.clear();
+    _offlinePlaybackCacheProgressBytesBySongId.clear();
+    _offlinePlaybackCacheExpectedBytesBySongId.clear();
     final Map<String, String> cachedPaths = Map<String, String>.from(
       _offlinePlaybackCachePaths,
     );
@@ -5978,38 +6022,69 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _cacheSongForOfflinePlayback(LibrarySong song) async {
+  void _maybePrimeAndroidPlaybackCache({
+    required LibrarySong song,
+    required String resolvedUrl,
+    required Map<String, String>? upstreamHeaders,
+  }) {
+    if (!Platform.isAndroid ||
+        !offlinePlaybackCacheEnabled ||
+        !song.isRemote ||
+        _hasOfflinePlaybackCache(song.id) ||
+        _offlinePlaybackPrefetchInFlight.contains(song.id) ||
+        _isOffline ||
+        offlineMusicMode ||
+        _isDisposing ||
+        _isDisposed ||
+        resolvedUrl.trim().isEmpty) {
+      return;
+    }
+    unawaited(
+      _cacheResolvedSongForOfflinePlayback(
+        song: song,
+        resolvedUrl: resolvedUrl,
+        upstreamHeaders: upstreamHeaders,
+      ),
+    );
+  }
+
+  Future<void> _cacheResolvedSongForOfflinePlayback({
+    required LibrarySong song,
+    required String resolvedUrl,
+    required Map<String, String>? upstreamHeaders,
+    bool manageInFlight = true,
+  }) async {
     if (!offlinePlaybackCacheEnabled ||
         !song.isRemote ||
-        _offlinePlaybackPrefetchInFlight.contains(song.id) ||
         _hasOfflinePlaybackCache(song.id) ||
         _isDisposing ||
         _isDisposed) {
       return;
     }
-
-    _offlinePlaybackPrefetchInFlight.add(song.id);
-    try {
-      final int cacheEpoch = _offlinePlaybackCacheEpoch;
-      final _ResolvedRemotePlayback resolved =
-          await _resolvePlayableRemoteStream(song);
-      final String resolvedUrl = resolved.resolvedUrl;
-      if (_isDisposing || _isDisposed) {
+    if (manageInFlight) {
+      if (_offlinePlaybackPrefetchInFlight.contains(song.id)) {
         return;
       }
+      _offlinePlaybackPrefetchInFlight.add(song.id);
+    }
+
+    try {
+      final int cacheEpoch = _offlinePlaybackCacheEpoch;
       final File target = await _offlinePlaybackCacheTargetFile(
         song,
         resolvedUrl,
       );
       final File temp = File('${target.path}.part');
+      int bytesWritten = 0;
+      final int estimatedExpectedBytes =
+          _estimatedSourceSizeBytes(song.id, fallbackSong: song) ?? 0;
 
       final HttpClient client = HttpClient();
       try {
         final HttpClientRequest request = await client.getUrl(
           Uri.parse(resolvedUrl),
         );
-        final Map<String, String>? headers = resolved.upstreamHeaders;
-        headers?.forEach(request.headers.set);
+        upstreamHeaders?.forEach(request.headers.set);
         final HttpClientResponse response = await request.close();
         if (response.statusCode < 200 || response.statusCode >= 300) {
           throw HttpException(
@@ -6019,14 +6094,35 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         }
         await temp.parent.create(recursive: true);
         final IOSink sink = temp.openWrite();
-        await for (final List<int> chunk in response) {
-          if (chunk.isEmpty) {
-            continue;
+        final int? expectedBytes = response.contentLength >= 0
+            ? response.contentLength
+            : null;
+        _updateOfflinePlaybackCacheProgress(
+          songId: song.id,
+          bytesWritten: 0,
+          expectedBytes: expectedBytes ?? estimatedExpectedBytes,
+        );
+        try {
+          await for (final List<int> chunk in response) {
+            if (chunk.isEmpty) {
+              continue;
+            }
+            sink.add(chunk);
+            bytesWritten += chunk.length;
+            _updateOfflinePlaybackCacheProgress(
+              songId: song.id,
+              bytesWritten: bytesWritten,
+              expectedBytes: expectedBytes ?? estimatedExpectedBytes,
+            );
           }
-          sink.add(chunk);
-          _recordCacheBytes(chunk.length);
+        } finally {
+          await sink.close();
         }
-        await sink.close();
+        if (bytesWritten <= 0 ||
+            (expectedBytes != null && expectedBytes != bytesWritten)) {
+          await _deleteFileIfExists(temp.path);
+          return;
+        }
       } finally {
         client.close(force: true);
       }
@@ -6042,6 +6138,58 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       }
       await temp.rename(target.path);
       _offlinePlaybackCachePaths[song.id] = target.path;
+      _offlinePlaybackCacheSizesBySongId[song.id] = bytesWritten;
+      _preparedMediaUrlsBySongId[song.id] = target.path;
+      _preparedMediaHeadersBySongId[song.id] = null;
+      _playbackStreamInfoBySongId[song.id] = buildCachedPlaybackStreamInfo(
+        song: song,
+        cachedPath: target.path,
+        previousInfo: _playbackStreamInfoBySongId[song.id],
+      );
+      _updateOfflinePlaybackCacheProgress(
+        songId: song.id,
+        bytesWritten: bytesWritten,
+        expectedBytes: bytesWritten,
+      );
+      unawaited(_saveSnapshot());
+      notifyListeners();
+    } catch (_) {
+      final String? path = _offlinePlaybackCachePaths[song.id];
+      if (path != null && !File(path).existsSync()) {
+        _offlinePlaybackCachePaths.remove(song.id);
+      }
+      if (_offlinePlaybackCachePathForSong(song.id) == null) {
+        _offlinePlaybackCacheProgressBytesBySongId.remove(song.id);
+        _offlinePlaybackCacheExpectedBytesBySongId.remove(song.id);
+      }
+    } finally {
+      if (manageInFlight) {
+        _offlinePlaybackPrefetchInFlight.remove(song.id);
+      }
+      _syncDataUsageState();
+    }
+  }
+
+  Future<void> _cacheSongForOfflinePlayback(LibrarySong song) async {
+    if (!offlinePlaybackCacheEnabled ||
+        !song.isRemote ||
+        _offlinePlaybackPrefetchInFlight.contains(song.id) ||
+        _hasOfflinePlaybackCache(song.id) ||
+        _isDisposing ||
+        _isDisposed) {
+      return;
+    }
+
+    _offlinePlaybackPrefetchInFlight.add(song.id);
+    try {
+      final _ResolvedRemotePlayback resolved =
+          await _resolvePlayableRemoteStream(song);
+      await _cacheResolvedSongForOfflinePlayback(
+        song: song,
+        resolvedUrl: resolved.resolvedUrl,
+        upstreamHeaders: resolved.upstreamHeaders,
+        manageInFlight: false,
+      );
     } catch (_) {
       final String? path = _offlinePlaybackCachePaths[song.id];
       if (path != null && !File(path).existsSync()) {
@@ -6052,7 +6200,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  List<LibrarySong> _offlinePlaybackCacheCandidates({LibrarySong? anchor}) {
+  List<LibrarySong> _offlinePlaybackCacheCandidates() {
     if (!offlinePlaybackCacheEnabled) {
       return <LibrarySong>[];
     }
@@ -6064,10 +6212,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         return;
       }
       result.add(song);
-    }
-
-    if (anchor != null && !_isSongUsingPlaybackProxy(anchor.id)) {
-      addSong(anchor);
     }
 
     final int nextWarmCount = _settings.nextChanceSongCount.clamp(0, 5);
@@ -6136,21 +6280,15 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     }
     if (_refreshingOfflinePlaybackCache) {
       _offlinePlaybackCacheRefreshQueued = true;
-      _pendingOfflinePlaybackCacheAnchor = anchor;
       return;
     }
     _refreshingOfflinePlaybackCache = true;
     try {
-      LibrarySong? nextAnchor = anchor;
       do {
         _offlinePlaybackCacheRefreshQueued = false;
-        _pendingOfflinePlaybackCacheAnchor = null;
-        final List<LibrarySong> candidates = _offlinePlaybackCacheCandidates(
-          anchor: nextAnchor,
-        );
+        final List<LibrarySong> candidates = _offlinePlaybackCacheCandidates();
         _enqueueOfflinePlaybackCacheSongs(candidates);
         await _ensureOfflinePlaybackCacheWorkerRunning();
-        nextAnchor = _pendingOfflinePlaybackCacheAnchor;
       } while (_offlinePlaybackCacheRefreshQueued);
     } finally {
       _refreshingOfflinePlaybackCache = false;
@@ -6762,32 +6900,136 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     if (ratio > _activePlaybackCompletionRatio) {
       _activePlaybackCompletionRatio = ratio.clamp(0, 1);
     }
-    _recordEstimatedStreamBytes(song);
   }
 
-  void _recordEstimatedStreamBytes(LibrarySong song) {
-    final PlaybackStreamInfo? info = _playbackStreamInfoBySongId[song.id];
-    final int? bitrate = info?.bitrateBitsPerSecond;
-    if (info == null ||
-        !info.transport.isNetwork ||
-        _proxyTrackedSongIds.contains(song.id) ||
-        bitrate == null ||
-        bitrate <= 0) {
+  String currentStreamSongDataLabel({
+    required LibrarySong song,
+    required PlaybackStreamInfo info,
+    required String fallbackLabel,
+  }) {
+    final int? bytes = _currentStreamSongDataBytes(song: song, info: info);
+    if (bytes != null && bytes > 0) {
+      return formatDataSize(bytes);
+    }
+    return fallbackLabel;
+  }
+
+  String currentCacheProgressLabel({
+    required LibrarySong song,
+    required String fallbackLabel,
+  }) {
+    final (int bytes, int _) = _currentSongCacheProgress(song.id);
+    if (bytes > 0) {
+      return formatDataSize(bytes);
+    }
+    return fallbackLabel;
+  }
+
+  (int, int) _currentSongCacheProgress(String songId) {
+    final int bytes = _offlinePlaybackCacheProgressBytesBySongId[songId] ?? 0;
+    int expected = _offlinePlaybackCacheExpectedBytesBySongId[songId] ?? 0;
+    if (expected <= 0) {
+      expected = _estimatedSourceSizeBytes(songId) ?? 0;
+    }
+    final LibrarySong? song = songById(songId);
+    final PlaybackStreamInfo? info = _playbackStreamInfoBySongId[songId];
+    final int? fullSize = song == null || info == null
+        ? null
+        : _currentStreamSongDataBytes(song: song, info: info);
+    if (fullSize != null && fullSize > 0) {
+      if (expected <= 0 || expected < fullSize) {
+        expected = fullSize;
+      }
+      if (info != null &&
+          (info.transport == PlaybackStreamTransport.cachedFile ||
+              info.transport == PlaybackStreamTransport.localFile)) {
+        return (fullSize, fullSize);
+      }
+    }
+    return (bytes.clamp(0, expected > 0 ? expected : bytes), expected);
+  }
+
+  void _updateOfflinePlaybackCacheProgress({
+    required String songId,
+    required int bytesWritten,
+    int? expectedBytes,
+  }) {
+    final int normalizedBytes = math.max(0, bytesWritten);
+    final int previousBytes = _offlinePlaybackCacheProgressBytesBySongId[songId] ?? 0;
+    _offlinePlaybackCacheProgressBytesBySongId[songId] = normalizedBytes;
+    final int normalizedExpected = math.max(0, expectedBytes ?? 0);
+    if (normalizedExpected > 0) {
+      _offlinePlaybackCacheExpectedBytesBySongId[songId] = normalizedExpected;
+    } else {
+      final int? estimated = _estimatedSourceSizeBytes(songId);
+      if (estimated != null && estimated > 0) {
+        _offlinePlaybackCacheExpectedBytesBySongId[songId] = estimated;
+      }
+    }
+    final int delta = normalizedBytes - previousBytes;
+    if (delta > 0) {
+      _recordStreamBytes(songId, delta);
       return;
     }
+    _syncDataUsageState();
+  }
 
-    final int estimatedBytes = ((bitrate * _position.inMilliseconds) / 8000)
-        .floor();
-    final int previousBytes = _songPlaybackBytes[song.id] ?? 0;
-    if (estimatedBytes > previousBytes) {
-      _recordStreamBytes(song.id, estimatedBytes - previousBytes);
+  int? _estimatedSourceSizeBytes(String songId, {LibrarySong? fallbackSong}) {
+    final LibrarySong? song = fallbackSong ?? songById(songId);
+    final PlaybackStreamInfo? info = _playbackStreamInfoBySongId[songId];
+    if (song == null || info == null) {
+      return null;
     }
+    return _currentStreamSongDataBytes(song: song, info: info);
+  }
+
+  int? _currentStreamSongDataBytes({
+    required LibrarySong song,
+    required PlaybackStreamInfo info,
+  }) {
+    if (info.transport == PlaybackStreamTransport.cachedFile) {
+      final int? cachedSize = _offlinePlaybackCacheSizesBySongId[song.id];
+      if (cachedSize != null && cachedSize > 0) {
+        return cachedSize;
+      }
+      final String? cachedPath = _offlinePlaybackCachePathForSong(song.id);
+      if (cachedPath != null) {
+        final File cachedFile = File(cachedPath);
+        if (cachedFile.existsSync()) {
+          final int length = cachedFile.lengthSync();
+          _offlinePlaybackCacheSizesBySongId[song.id] = length;
+          return length;
+        }
+      }
+    }
+
+    if (info.transport == PlaybackStreamTransport.localFile) {
+      final File localFile = File(info.resolvedUrl);
+      if (localFile.existsSync()) {
+        return localFile.lengthSync();
+      }
+    }
+
+    final int? bitrate = info.bitrateBitsPerSecond;
+    final int durationMs = math.max(
+      song.durationMs,
+      currentSong?.id == song.id ? _duration.inMilliseconds : 0,
+    );
+    if (bitrate != null && bitrate > 0 && durationMs > 0) {
+      return ((bitrate * durationMs) / 8000).round();
+    }
+    final int consumedBytes = _songPlaybackBytes[song.id] ?? 0;
+    return consumedBytes > 0 ? consumedBytes : null;
   }
 
   void _finalizeActivePlaybackSession({String? nextSongId}) {
     final String? songId = _activePlaybackSongId;
     if (songId == null || songId == nextSongId) {
       return;
+    }
+    if (!_offlinePlaybackPrefetchInFlight.contains(songId)) {
+      _offlinePlaybackCacheProgressBytesBySongId.remove(songId);
+      _offlinePlaybackCacheExpectedBytesBySongId.remove(songId);
     }
     if (!_shouldUseSongIdForHistorySignals(songId)) {
       _activePlaybackSongId = null;
@@ -6894,6 +7136,16 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
                   File(item.value).existsSync();
             }),
       );
+    _offlinePlaybackCacheSizesBySongId
+      ..clear()
+      ..addEntries(
+        _offlinePlaybackCachePaths.entries.map(
+          (MapEntry<String, String> item) => MapEntry<String, int>(
+            item.key,
+            File(item.value).lengthSync(),
+          ),
+        ),
+      );
     final List<String> restoredQueueSongIds =
         (json['queueSongIds'] as List<dynamic>? ?? <dynamic>[])
             .map((dynamic item) => item as String)
@@ -6912,9 +7164,22 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     _queueLabel = restoredQueueLabel.trim().isEmpty
         ? 'Now Playing'
         : restoredQueueLabel;
-    _dataUsage = AppDataUsageStats.fromJson(
+    final AppDataUsageStats restoredDataUsage = AppDataUsageStats.fromJson(
       json['dataUsage'] as Map<String, dynamic>?,
-    ).copyWith(currentSongBytes: 0, clearCurrentSongId: true);
+    );
+    _dataUsage = restoredDataUsage.copyWith(
+      totalBytes: 0,
+      streamBytes: restoredDataUsage.streamBytes,
+      cacheBytes: 0,
+      currentSongBytes: 0,
+      clearCurrentSongId: true,
+      currentCacheBytes: 0,
+      currentCacheExpectedBytes: 0,
+      clearCurrentCacheSongId: true,
+    );
+    _dataUsage = _dataUsage.copyWith(
+      totalBytes: _dataUsage.streamBytes + _dataUsage.otherBytes,
+    );
     dataUsageState.value = _dataUsage;
   }
 

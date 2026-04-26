@@ -16,6 +16,23 @@ class PlaybackProxyTransfer {
 typedef PlaybackProxyTransferCallback =
     void Function(PlaybackProxyTransfer transfer);
 
+class PlaybackProxyCacheProgress {
+  const PlaybackProxyCacheProgress({
+    required this.sessionId,
+    required this.songId,
+    required this.bytesWritten,
+    this.expectedBytes,
+  });
+
+  final String sessionId;
+  final String songId;
+  final int bytesWritten;
+  final int? expectedBytes;
+}
+
+typedef PlaybackProxyCacheProgressCallback =
+    void Function(PlaybackProxyCacheProgress progress);
+
 class PlaybackProxyCacheResult {
   const PlaybackProxyCacheResult({
     required this.sessionId,
@@ -36,10 +53,12 @@ typedef PlaybackProxyCacheCompletedCallback =
 class PlaybackProxyServer {
   PlaybackProxyServer({
     required this.onBytesTransferred,
+    this.onCacheProgress,
     this.onCacheCompleted,
   });
 
   final PlaybackProxyTransferCallback onBytesTransferred;
+  final PlaybackProxyCacheProgressCallback? onCacheProgress;
   final PlaybackProxyCacheCompletedCallback? onCacheCompleted;
   final HttpClient _client = HttpClient();
   final Map<String, _PlaybackProxySession> _sessions =
@@ -164,6 +183,14 @@ class PlaybackProxyServer {
           if (cacheSink != null && chunk.isNotEmpty) {
             cacheSink.add(chunk);
             cachedBytes += chunk.length;
+            onCacheProgress?.call(
+              PlaybackProxyCacheProgress(
+                sessionId: session.sessionId,
+                songId: session.songId,
+                bytesWritten: cachedBytes,
+                expectedBytes: cachePlan?.expectedBytes,
+              ),
+            );
           }
           if (chunk.isNotEmpty) {
             onBytesTransferred(
