@@ -534,6 +534,34 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     return playerQueueSongIds[playerIndex] == song.id;
   }
 
+  bool _songHasImmediatePlaybackSource(LibrarySong song) {
+    if (!songNeedsResolvedPlaybackUrl(song)) {
+      return true;
+    }
+    if (_offlinePlaybackCachePathForSong(song.id) != null) {
+      return true;
+    }
+    final String? prepared = _preparedMediaUrlsBySongId[song.id];
+    return prepared != null && prepared.isNotEmpty && prepared != song.path;
+  }
+
+  Future<void> _primeStartupMiniPlayerPlayback() async {
+    final LibrarySong? song = currentSong;
+    if (song == null || !_songHasImmediatePlaybackSource(song)) {
+      return;
+    }
+    try {
+      await _preparePlayableSong(song);
+      if (!_isDisposed && !_isDisposing) {
+        notifyListeners();
+      }
+    } catch (error) {
+      _debugPlayback(
+        'startup.prime skipped song=${_debugSongLabel(song)} error=$error',
+      );
+    }
+  }
+
   Future<bool> _resumeMiniPlayerPlaybackFallback() async {
     final LibrarySong? song = miniPlayerSong;
     if (song == null) {
@@ -1270,6 +1298,8 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     await _loadSnapshot();
+    _player;
+    unawaited(_primeStartupMiniPlayerPlayback());
     // Never block app startup on Android runtime permission UI.
     unawaited(_ensureNotificationPermission());
     _bindNotificationActions();
@@ -6366,6 +6396,9 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     if (_playerHasLoadedCurrentSong(activeSong)) {
       try {
         await _player.play();
+        if (activeSong != null && _lastTrackedSongId != activeSong.id) {
+          _trackPlayback(activeSong.id);
+        }
         return;
       } catch (error) {
         _debugPlayback(
@@ -6373,6 +6406,16 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
           'error=$error',
         );
       }
+    }
+    if (activeSong != null &&
+        !_playerQueueHasControllerPlaylist() &&
+        _songHasImmediatePlaybackSource(activeSong)) {
+      await _reopenQueueAtIndex(
+        _queueIndex,
+        forcePlay: true,
+        preferDetached: true,
+      );
+      return;
     }
     if (activeSong != null &&
         _queueSongNeedsQueueRefresh(activeSong, _queueIndex)) {
@@ -7198,7 +7241,11 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _reopenQueueAtIndex(int index, {bool forcePlay = false}) async {
+  Future<void> _reopenQueueAtIndex(
+    int index, {
+    bool forcePlay = false,
+    bool preferDetached = false,
+  }) async {
     if (index < 0 || index >= _queueSongIds.length) {
       return;
     }
@@ -7207,7 +7254,9 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     final bool openDetachedQueue =
-        offlineMusicMode || await _resolveOfflineStateForAction();
+        preferDetached ||
+        offlineMusicMode ||
+        await _resolveOfflineStateForAction();
     final List<LibrarySong> preparedQueue = List<LibrarySong>.from(queue);
     final List<int> preparationIndexes = openDetachedQueue
         ? <int>[index]
