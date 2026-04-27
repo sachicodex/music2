@@ -508,8 +508,7 @@ class _SearchScreenState extends State<_SearchScreen> {
         },
       );
     }
-    final bool searchOffline =
-        widget.controller.isOffline || widget.controller.offlineMusicMode;
+    final bool searchOffline = widget.controller.isOfflineViewActive;
     if (searchOffline) {
       return _SearchOfflineState(controller: widget.controller);
     }

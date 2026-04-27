@@ -144,7 +144,7 @@ class _HomeScreenState extends State<_HomeScreen>
         onOpenSearch: widget.onOpenSearch,
       );
     }
-    if (controller.isOffline || controller.offlineMusicMode) {
+    if (controller.isOfflineViewActive) {
       return _HomeOfflineState(controller: controller);
     }
 

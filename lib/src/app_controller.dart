@@ -103,9 +103,11 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   bool _homeLoading = false;
   bool _smartQueueLoading = false;
   bool _isOffline = false;
+  bool _startupOfflineMode = false;
   String? _statusMessage;
   String? _errorMessage;
   String? _cloudSyncMessage;
+  String? _connectivityMessage;
   String? _onlineError;
   String? _trendingNowError;
   String? _homeError;
@@ -207,6 +209,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   bool get homeLoading => _homeLoading;
   bool get smartQueueLoading => _smartQueueLoading;
   bool get isOffline => _isOffline;
+  bool get isOfflineViewActive => _startupOfflineMode || offlineMusicMode;
   bool get offlineMusicMode => _settings.offlineMusicMode;
   bool get offlinePlaybackCacheEnabled => true;
   int get offlinePlaybackCacheSongCount => _offlinePlaybackCachePaths.keys
@@ -218,6 +221,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   String? get statusMessage => _statusMessage;
   String? get errorMessage => _errorMessage;
   String? get cloudSyncMessage => _cloudSyncMessage;
+  String? get connectivityMessage => _connectivityMessage;
   String? get onlineError => _onlineError;
   String? get trendingNowError => _trendingNowError;
   String? get homeError => _homeError;
@@ -301,6 +305,12 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   String? takeCloudSyncMessage() {
     final String? message = _cloudSyncMessage;
     _cloudSyncMessage = null;
+    return message;
+  }
+
+  String? takeConnectivityMessage() {
+    final String? message = _connectivityMessage;
+    _connectivityMessage = null;
     return message;
   }
 
@@ -1690,11 +1700,21 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<bool> refreshConnectivityStatus({bool notify = true}) async {
+  Future<bool> refreshConnectivityStatus({
+    bool notify = true,
+    bool syncOfflineMode = true,
+    bool announceLoss = false,
+  }) async {
     final List<ConnectivityResult> results = await _connectivity
         .checkConnectivity();
     final bool online = await _isNetworkReachable(results);
-    _setOffline(!online, notify: notify);
+    _setConnectivityOffline(!online, notify: false, announceLoss: announceLoss);
+    if (syncOfflineMode) {
+      _setStartupOfflineMode(!online, notify: false);
+    }
+    if (notify) {
+      notifyListeners();
+    }
     return online;
   }
 
@@ -1712,7 +1732,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   ) async {
     final bool online = await _isNetworkReachable(results);
     final bool wasOffline = _isOffline;
-    _setOffline(!online, notify: false);
+    _setConnectivityOffline(!online, notify: false, announceLoss: true);
     if (!online) {
       _onlineLoading = false;
       _trendingNowLoading = false;
@@ -1736,6 +1756,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
       return;
     }
+    _setStartupOfflineMode(false, notify: false);
     if (_offlineQueueWaitingSongId != null) {
       unawaited(_resumeOfflineWaitingQueue());
     }
@@ -1748,6 +1769,17 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         !offlineMusicMode) {
       _requestAutoHomeRefresh(force: true);
     }
+  }
+
+  Future<bool> _resolveOfflineStateForAction() async {
+    if (!_isOffline || _startupOfflineMode || offlineMusicMode) {
+      return _isOffline;
+    }
+    final bool online = await refreshConnectivityStatus(
+      notify: false,
+      syncOfflineMode: false,
+    );
+    return !online;
   }
 
   void _maybeAdvanceOfflineQueueAtTrackEnd() {
@@ -1871,7 +1903,8 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
 
-    if (_isOffline) {
+    final bool offline = await _resolveOfflineStateForAction();
+    if (offline) {
       _onlineResults = <LibrarySong>[];
       _onlineError = 'Internet is unavailable right now.';
       _onlineLoading = false;
@@ -2078,7 +2111,11 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         _homeError = 'Offline Music mode is on.';
         return;
       }
-      final bool online = await refreshConnectivityStatus(notify: false);
+      final bool online = await refreshConnectivityStatus(
+        notify: false,
+        syncOfflineMode: false,
+        announceLoss: true,
+      );
       if (!online) {
         _homeError = 'No internet connection. Reconnect and tap Refresh.';
         return;
@@ -2141,7 +2178,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       }
     } catch (error) {
       if (_isConnectivityError(error)) {
-        _setOffline(true, notify: false);
+        _setConnectivityOffline(true, notify: false, announceLoss: true);
       }
       _homeError = _friendlyOnlineError(error);
     } finally {
@@ -2154,7 +2191,10 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     if (_homeLoading) {
       return;
     }
-    if (_isOffline || offlineMusicMode) {
+    if (offlineMusicMode) {
+      return;
+    }
+    if (await _resolveOfflineStateForAction()) {
       return;
     }
     if (_homeFeed.isEmpty) {
@@ -2297,7 +2337,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       return songs;
     } catch (error) {
       if (_isConnectivityError(error)) {
-        _setOffline(true, notify: false);
+        _setConnectivityOffline(true, notify: false, announceLoss: true);
       }
       try {
         final List<LibrarySong> fallback = await _searchYouTubeMusicOnly(
@@ -2310,7 +2350,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         return fallback;
       } catch (fallbackError) {
         if (_isConnectivityError(fallbackError)) {
-          _setOffline(true, notify: false);
+          _setConnectivityOffline(true, notify: false, announceLoss: true);
         }
         rethrow;
       }
@@ -3913,11 +3953,29 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         message.contains('socketexception');
   }
 
-  void _setOffline(bool value, {bool notify = true}) {
+  void _setConnectivityOffline(
+    bool value, {
+    bool notify = true,
+    bool announceLoss = false,
+  }) {
     if (_isOffline == value) {
       return;
     }
     _isOffline = value;
+    if (value && announceLoss && !_startupOfflineMode && !offlineMusicMode) {
+      _connectivityMessage =
+          'Connection lost. Online features may not work until internet returns.';
+    }
+    if (notify) {
+      notifyListeners();
+    }
+  }
+
+  void _setStartupOfflineMode(bool value, {bool notify = true}) {
+    if (_startupOfflineMode == value) {
+      return;
+    }
+    _startupOfflineMode = value;
     if (notify) {
       notifyListeners();
     }
@@ -4548,7 +4606,12 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> playOnlineSong(LibrarySong song) async {
-    if (_isOffline || offlineMusicMode) {
+    if (offlineMusicMode) {
+      _errorMessage = 'Offline Music mode is on.';
+      notifyListeners();
+      return;
+    }
+    if (await _resolveOfflineStateForAction()) {
       _errorMessage = offlineMusicMode
           ? 'Offline Music mode is on.'
           : 'Internet is unavailable right now.';
@@ -4667,7 +4730,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
           return;
         }
         if (_isConnectivityError(_errorMessage!)) {
-          _setOffline(true, notify: false);
+          _setConnectivityOffline(true, notify: false, announceLoss: true);
         }
         if (_isOffline || offlineMusicMode) {
           final int? transitionIndex = _transitioningQueueIndex;
@@ -5546,7 +5609,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       return song;
     }
 
-    if (_isOffline || offlineMusicMode) {
+    if (offlineMusicMode || await _resolveOfflineStateForAction()) {
       throw const SocketException('Song is not cached for offline playback.');
     }
 
@@ -7143,7 +7206,8 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     if (queue.isEmpty || index >= queue.length) {
       return;
     }
-    final bool openDetachedQueue = _isOffline || offlineMusicMode;
+    final bool openDetachedQueue =
+        offlineMusicMode || await _resolveOfflineStateForAction();
     final List<LibrarySong> preparedQueue = List<LibrarySong>.from(queue);
     final List<int> preparationIndexes = openDetachedQueue
         ? <int>[index]
@@ -7235,7 +7299,8 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     int targetIndex, {
     bool bootstrapPlayback = false,
   }) async {
-    if (!offlineMusicMode && !_isOffline) {
+    final bool offline = await _resolveOfflineStateForAction();
+    if (!offlineMusicMode && !offline) {
       return false;
     }
     if (targetIndex < 0 || targetIndex >= _queueSongIds.length) {
@@ -7264,10 +7329,11 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<bool> _shouldUseOfflineQueueTransition(int targetIndex) async {
-    if (offlineMusicMode || _isOffline) {
+    final bool offline = await _resolveOfflineStateForAction();
+    if (offlineMusicMode || offline) {
       _debugPlayback(
         'queue.transition offline shortcut '
-        'targetIndex=$targetIndex offline=$_isOffline offlineMode=$offlineMusicMode',
+        'targetIndex=$targetIndex offline=$offline offlineMode=$offlineMusicMode',
       );
       return true;
     }
@@ -7281,7 +7347,11 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     if (_offlinePlaybackCachePathForSong(targetSong.id) == null) {
       return false;
     }
-    final bool online = await refreshConnectivityStatus(notify: false);
+    final bool online = await refreshConnectivityStatus(
+      notify: false,
+      syncOfflineMode: false,
+      announceLoss: true,
+    );
     _debugPlayback(
       'queue.transition connectivity check '
       'targetIndex=$targetIndex target=${_debugSongLabel(targetSong)} online=$online',
@@ -7300,7 +7370,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     if (!_isConnectivityError(error)) {
       return false;
     }
-    _setOffline(true, notify: false);
+    _setConnectivityOffline(true, notify: false, announceLoss: true);
     if (targetIndex < 0 || targetIndex >= _queueSongIds.length) {
       return false;
     }
@@ -7426,7 +7496,8 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _resumeOfflineWaitingQueue() async {
     final int? targetIndex = _offlineQueueWaitingIndex;
-    if (targetIndex == null || _isOffline || offlineMusicMode) {
+    final bool offline = await _resolveOfflineStateForAction();
+    if (targetIndex == null || offline || offlineMusicMode) {
       return;
     }
     if (targetIndex < 0 || targetIndex >= _queueSongIds.length) {

@@ -30,7 +30,7 @@ class _LibraryScreen extends StatelessWidget {
     final List<LibrarySong> cachedSongs = controller.cachedSongs;
     final List<LibrarySong> likedSongs = controller.likedSongs;
     final List<LibrarySong> dislikedSongs = controller.dislikedSongs;
-    final bool offline = controller.isOffline;
+    final bool offline = controller.isOfflineViewActive;
     final bool hasCachedPlaylist = cachedSongs.isNotEmpty;
     final bool hasDislikedPlaylist = dislikedSongs.isNotEmpty;
     final bool hasAnyPlaylistEntries =

@@ -2949,7 +2949,7 @@ class _LibraryPlaylistRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final LibrarySong? leadSong = songs.isEmpty ? null : songs.first;
-    final bool blocked = controller.isOffline && !forceEnabled;
+    final bool blocked = controller.isOfflineViewActive && !forceEnabled;
 
     return InkWell(
       onTap: blocked

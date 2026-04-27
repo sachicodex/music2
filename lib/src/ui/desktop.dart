@@ -493,7 +493,7 @@ class _DesktopSidebarStatus extends StatelessWidget {
       child: Row(
         children: <Widget>[
           Icon(
-            controller.isOffline || controller.offlineMusicMode
+            controller.isOfflineViewActive
                 ? Icons.cloud_off_rounded
                 : controller.scanning
                 ? Icons.sync_rounded
@@ -504,7 +504,7 @@ class _DesktopSidebarStatus extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              controller.isOffline || controller.offlineMusicMode
+              controller.isOfflineViewActive
                   ? 'Offline mode'
                   : controller.scanning
                   ? 'Scanning library'
@@ -880,7 +880,7 @@ class _DesktopHomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (controller.isOffline || controller.offlineMusicMode) {
+    if (controller.isOfflineViewActive) {
       final List<LibrarySong> localSongs = controller.browsableSongs
           .where((LibrarySong song) => !song.isRemote)
           .take(6)
@@ -1163,7 +1163,7 @@ class _DesktopSearchScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool offline = controller.isOffline || controller.offlineMusicMode;
+    final bool offline = controller.isOfflineViewActive;
     if (offline) {
       return _DesktopPageScrollView(
         child: _DesktopPanel(
@@ -1448,7 +1448,7 @@ class _DesktopLibraryScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool offline = controller.isOffline;
+    final bool offline = controller.isOfflineViewActive;
     final List<UserPlaylist> playlists = controller.playlists;
     final List<LibrarySong> cachedSongs = controller.cachedSongs;
     final List<LibrarySong> likedSongs = controller.likedSongs;

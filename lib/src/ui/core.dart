@@ -96,19 +96,26 @@ class _MusixAuthenticatedHomeState extends State<MusixAuthenticatedHome> {
     if (!mounted) {
       return;
     }
-    final String? message = _controller?.takeCloudSyncMessage();
-    if (message == null) {
+    final String? connectivityMessage = _controller?.takeConnectivityMessage();
+    final String? cloudSyncMessage = connectivityMessage == null
+        ? _controller?.takeCloudSyncMessage()
+        : null;
+    if (connectivityMessage == null && cloudSyncMessage == null) {
       return;
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;
       }
+      if (connectivityMessage != null) {
+        _showMusixSnackBar(context, connectivityMessage);
+        return;
+      }
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
           SnackBar(
-            content: Text(message),
+            content: Text(cloudSyncMessage!),
             backgroundColor: const Color(0xFF8B2E2E),
           ),
         );
