@@ -26,10 +26,6 @@ class _LibraryScreen extends StatelessWidget {
                 controller.songsForPlaylist(playlist),
               );
             })
-            .where(
-              (MapEntry<UserPlaylist, List<LibrarySong>> entry) =>
-                  entry.value.isNotEmpty,
-            )
             .toList(growable: false);
     final List<LibrarySong> cachedSongs = controller.cachedSongs;
     final List<LibrarySong> likedSongs = controller.likedSongs;
@@ -38,7 +34,7 @@ class _LibraryScreen extends StatelessWidget {
     final bool hasCachedPlaylist = cachedSongs.isNotEmpty;
     final bool hasDislikedPlaylist = dislikedSongs.isNotEmpty;
     final bool hasAnyPlaylistEntries =
-        hasCachedPlaylist || hasDislikedPlaylist || visiblePlaylists.isNotEmpty;
+        hasCachedPlaylist || hasDislikedPlaylist || playlists.isNotEmpty;
 
     return DecoratedBox(
       decoration: _musixPageDecoration(),

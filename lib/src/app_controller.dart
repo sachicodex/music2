@@ -1361,7 +1361,13 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     );
     _playlists = userData.playlists.toList(growable: false)
       ..sort(_sortUserPlaylists);
-    unawaited(_hydrateMissingCloudSongs());
+    unawaited(
+      _hydrateMissingCloudSongs(
+        songIds: userData.playlists.expand(
+          (UserPlaylist playlist) => playlist.songIds,
+        ),
+      ),
+    );
   }
 
   int _sortUserPlaylists(UserPlaylist a, UserPlaylist b) {
@@ -1392,13 +1398,15 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     return _withCloudPreferenceState(song);
   }
 
-  Future<void> _hydrateMissingCloudSongs() async {
+  Future<void> _hydrateMissingCloudSongs({
+    Iterable<String> songIds = const <String>[],
+  }) async {
     if (_isDisposed || _isDisposing) {
       return;
     }
 
     final List<String> missingSongIds =
-        <String>{..._cloudLikedSongIds, ..._cloudDislikedSongIds}
+        <String>{..._cloudLikedSongIds, ..._cloudDislikedSongIds, ...songIds}
             .where((String songId) {
               return songById(songId) == null &&
                   _cloudSongHydrationInFlight.add(songId);
@@ -5052,7 +5060,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
               updatedAt: DateTime.now(),
             ),
           )
-          .where((UserPlaylist playlist) => playlist.songIds.isNotEmpty)
           .toList();
       _history = _history
           .where(

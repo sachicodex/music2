@@ -3433,41 +3433,41 @@ class _PlaylistGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final List<_PlaylistShelf> shelves =
-        <_PlaylistShelf>[
-              _PlaylistShelf(
-                title: 'Liked Songs',
-                subtitle: '${controller.likedSongs.length} liked tracks',
-                seed: 'liked_songs',
-                songs: controller.likedSongs,
-              ),
-              _PlaylistShelf(
-                title: 'Disliked Songs',
-                subtitle: '${controller.dislikedSongs.length} disliked tracks',
-                seed: 'disliked_songs',
-                songs: controller.dislikedSongs,
-              ),
-              _PlaylistShelf(
-                title: 'Most played',
-                subtitle:
-                    '${controller.topPlayedSongs.take(25).length} highlights',
-                seed: 'top_played',
-                songs: controller.topPlayedSongs.take(25).toList(),
-              ),
-              ...controller.playlists.map((UserPlaylist playlist) {
-                final List<LibrarySong> playlistSongs = controller
-                    .songsForPlaylist(playlist);
-                return _PlaylistShelf(
-                  title: playlist.name,
-                  subtitle: '${playlistSongs.length} tracks',
-                  seed: playlist.id,
-                  songs: playlistSongs,
-                  playlist: playlist,
-                );
-              }),
-            ]
-            .where((_PlaylistShelf shelf) => shelf.songs.isNotEmpty)
-            .toList(growable: false);
+    final List<_PlaylistShelf> shelves = <_PlaylistShelf>[
+      if (controller.likedSongs.isNotEmpty)
+        _PlaylistShelf(
+          title: 'Liked Songs',
+          subtitle: '${controller.likedSongs.length} liked tracks',
+          seed: 'liked_songs',
+          songs: controller.likedSongs,
+        ),
+      if (controller.dislikedSongs.isNotEmpty)
+        _PlaylistShelf(
+          title: 'Disliked Songs',
+          subtitle: '${controller.dislikedSongs.length} disliked tracks',
+          seed: 'disliked_songs',
+          songs: controller.dislikedSongs,
+        ),
+      if (controller.topPlayedSongs.take(25).isNotEmpty)
+        _PlaylistShelf(
+          title: 'Most played',
+          subtitle: '${controller.topPlayedSongs.take(25).length} highlights',
+          seed: 'top_played',
+          songs: controller.topPlayedSongs.take(25).toList(),
+        ),
+      ...controller.playlists.map((UserPlaylist playlist) {
+        final List<LibrarySong> playlistSongs = controller.songsForPlaylist(
+          playlist,
+        );
+        return _PlaylistShelf(
+          title: playlist.name,
+          subtitle: '${playlistSongs.length} tracks',
+          seed: playlist.id,
+          songs: playlistSongs,
+          playlist: playlist,
+        );
+      }),
+    ].toList(growable: false);
 
     return Wrap(
       spacing: 12,

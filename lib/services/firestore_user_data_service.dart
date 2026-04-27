@@ -746,6 +746,9 @@ class FirestoreUserDataService {
   }
 
   Map<String, dynamic> _stringArrayField(List<String> values) {
+    if (values.isEmpty) {
+      return <String, dynamic>{'arrayValue': <String, dynamic>{}};
+    }
     return <String, dynamic>{
       'arrayValue': <String, dynamic>{
         'values': values

@@ -1457,35 +1457,32 @@ class _DesktopLibraryScreen extends StatelessWidget {
     final bool hasDislikedPlaylist = dislikedSongs.isNotEmpty;
     final List<_DesktopLibraryPlaylistEntry> playlistEntries =
         <_DesktopLibraryPlaylistEntry>[
-              if (hasCachedPlaylist)
-                _DesktopLibraryPlaylistEntry(
-                  title: 'Cached Songs',
-                  seed: 'cached_songs',
-                  songs: cachedSongs,
-                  subtitle: '${cachedSongs.length} cached tracks',
-                ),
-              if (hasDislikedPlaylist)
-                _DesktopLibraryPlaylistEntry(
-                  title: 'Disliked Songs',
-                  seed: 'disliked_songs',
-                  songs: dislikedSongs,
-                  subtitle: '${dislikedSongs.length} disliked tracks',
-                ),
-              ...playlists.map((UserPlaylist playlist) {
-                final List<LibrarySong> playlistSongs = controller
-                    .songsForPlaylist(playlist);
-                return _DesktopLibraryPlaylistEntry(
-                  title: playlist.name,
-                  seed: playlist.id,
-                  songs: playlistSongs,
-                  playlist: playlist,
-                );
-              }),
-            ]
-            .where(
-              (_DesktopLibraryPlaylistEntry entry) => entry.songs.isNotEmpty,
-            )
-            .toList(growable: false);
+          if (hasCachedPlaylist)
+            _DesktopLibraryPlaylistEntry(
+              title: 'Cached Songs',
+              seed: 'cached_songs',
+              songs: cachedSongs,
+              subtitle: '${cachedSongs.length} cached tracks',
+            ),
+          if (hasDislikedPlaylist)
+            _DesktopLibraryPlaylistEntry(
+              title: 'Disliked Songs',
+              seed: 'disliked_songs',
+              songs: dislikedSongs,
+              subtitle: '${dislikedSongs.length} disliked tracks',
+            ),
+          ...playlists.map((UserPlaylist playlist) {
+            final List<LibrarySong> playlistSongs = controller.songsForPlaylist(
+              playlist,
+            );
+            return _DesktopLibraryPlaylistEntry(
+              title: playlist.name,
+              seed: playlist.id,
+              songs: playlistSongs,
+              playlist: playlist,
+            );
+          }),
+        ].toList(growable: false);
     final bool hasAnyPlaylistEntries = playlistEntries.isNotEmpty;
 
     return _DesktopPageScrollView(
