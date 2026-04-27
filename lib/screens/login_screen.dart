@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/auth_service.dart';
+import '../src/app_controller.dart';
 import '../src/ui.dart';
 import 'signup_screen.dart';
 
@@ -49,21 +50,22 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     FocusScope.of(context).unfocus();
+    final AuthService authService = context.read<AuthService>();
+    final MusixController controller = context.read<MusixController>();
 
     setState(() => _isLoading = true);
 
     try {
-      await context.read<AuthService>().signIn(
+      await authService.signIn(
         email: _emailController.text,
         password: _passwordController.text,
       );
+      await controller.loadUserDataFromCloud(force: true);
       if (!mounted) {
         return;
       }
       Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute<void>(
-          builder: (_) => const MusixAuthenticatedHome(),
-        ),
+        MaterialPageRoute<void>(builder: (_) => const MusixAuthenticatedHome()),
         (Route<dynamic> route) => false,
       );
     } on AuthException catch (error) {

@@ -54,6 +54,7 @@ class WindowsMediaControls {
   winrt::Windows::Media::SystemMediaTransportControls controls_{nullptr};
   winrt::event_token button_pressed_token_{};
   bool button_pressed_registered_ = false;
+  bool initialized_ = false;
 };
 
 #endif  // RUNNER_WINDOWS_MEDIA_CONTROLS_H_

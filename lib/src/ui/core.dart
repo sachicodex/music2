@@ -48,6 +48,8 @@ class MusixAuthenticatedHome extends StatefulWidget {
 }
 
 class _MusixAuthenticatedHomeState extends State<MusixAuthenticatedHome> {
+  MusixController? _controller;
+
   @override
   void initState() {
     super.initState();
@@ -55,7 +57,9 @@ class _MusixAuthenticatedHomeState extends State<MusixAuthenticatedHome> {
       if (!mounted) {
         return;
       }
-      final String? message = context.read<AuthService>().takePendingSuccessMessage();
+      final String? message = context
+          .read<AuthService>()
+          .takePendingSuccessMessage();
       if (message == null) {
         return;
       }
@@ -65,6 +69,47 @@ class _MusixAuthenticatedHomeState extends State<MusixAuthenticatedHome> {
           SnackBar(
             content: Text(message),
             backgroundColor: const Color(0xFF1E7A46),
+          ),
+        );
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final MusixController nextController = context.read<MusixController>();
+    if (!identical(_controller, nextController)) {
+      _controller?.removeListener(_handleControllerMessages);
+      _controller = nextController;
+      _controller?.addListener(_handleControllerMessages);
+      _handleControllerMessages();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.removeListener(_handleControllerMessages);
+    super.dispose();
+  }
+
+  void _handleControllerMessages() {
+    if (!mounted) {
+      return;
+    }
+    final String? message = _controller?.takeCloudSyncMessage();
+    if (message == null) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: const Color(0xFF8B2E2E),
           ),
         );
     });

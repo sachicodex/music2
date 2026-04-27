@@ -1,6 +1,7 @@
 #include "windows_media_controls.h"
 
 #include <SystemMediaTransportControlsInterop.h>
+#include <windows.h>
 
 #include <algorithm>
 #include <chrono>
@@ -12,6 +13,10 @@ using EncodableValue = flutter::EncodableValue;
 using EncodableMap = flutter::EncodableMap;
 
 constexpr char kChannelName[] = "com.sachicodex.musix/windows_media_controls";
+
+void DebugLog(const wchar_t* message) {
+  OutputDebugStringW(message);
+}
 
 std::string ButtonToAction(
     winrt::Windows::Media::SystemMediaTransportControlsButton button) {
@@ -40,13 +45,24 @@ WindowsMediaControls::WindowsMediaControls(HWND window,
           messenger,
           kChannelName,
           &flutter::StandardMethodCodec::GetInstance())) {
-  InitializeSmtc();
   RegisterMethodHandler();
+  try {
+    InitializeSmtc();
+    initialized_ = true;
+  } catch (const winrt::hresult_error&) {
+    DebugLog(L"[Musix] Windows media controls initialization failed.\n");
+  } catch (...) {
+    DebugLog(L"[Musix] Windows media controls initialization failed with an unknown error.\n");
+  }
 }
 
 WindowsMediaControls::~WindowsMediaControls() {
-  if (controls_ && button_pressed_registered_) {
-    controls_.ButtonPressed(button_pressed_token_);
+  try {
+    if (controls_ && button_pressed_registered_) {
+      controls_.ButtonPressed(button_pressed_token_);
+    }
+  } catch (...) {
+    DebugLog(L"[Musix] Windows media controls cleanup failed.\n");
   }
 }
 
@@ -113,6 +129,11 @@ void WindowsMediaControls::HandleMethodCall(
 }
 
 void WindowsMediaControls::UpdateMediaState(const EncodableMap& arguments) {
+  if (!initialized_ || !controls_) {
+    return;
+  }
+
+  try {
   const std::string title =
       ReadString(arguments, "title").value_or("Nothing playing");
   const std::string artist =
@@ -164,30 +185,46 @@ void WindowsMediaControls::UpdateMediaState(const EncodableMap& arguments) {
     timeline.MaxSeekTime(MillisecondsToTimeSpan(duration_ms));
   }
   controls_.UpdateTimelineProperties(timeline);
+  } catch (const winrt::hresult_error&) {
+    DebugLog(L"[Musix] Windows media controls update failed.\n");
+    initialized_ = false;
+  } catch (...) {
+    DebugLog(L"[Musix] Windows media controls update failed with an unknown error.\n");
+    initialized_ = false;
+  }
 }
 
 void WindowsMediaControls::ClearMediaState() {
-  if (!controls_) {
+  if (!initialized_ || !controls_) {
     return;
   }
 
-  controls_.PlaybackStatus(
-      winrt::Windows::Media::MediaPlaybackStatus::Closed);
-  controls_.IsPlayEnabled(false);
-  controls_.IsPauseEnabled(false);
-  controls_.IsPreviousEnabled(false);
-  controls_.IsNextEnabled(false);
-  controls_.DisplayUpdater().ClearAll();
-  controls_.DisplayUpdater().Update();
-  controls_.IsEnabled(false);
+  try {
+    controls_.PlaybackStatus(
+        winrt::Windows::Media::MediaPlaybackStatus::Closed);
+    controls_.IsPlayEnabled(false);
+    controls_.IsPauseEnabled(false);
+    controls_.IsPreviousEnabled(false);
+    controls_.IsNextEnabled(false);
+    controls_.DisplayUpdater().ClearAll();
+    controls_.DisplayUpdater().Update();
+    controls_.IsEnabled(false);
+  } catch (...) {
+    DebugLog(L"[Musix] Windows media controls clear failed.\n");
+    initialized_ = false;
+  }
 }
 
 void WindowsMediaControls::EmitAction(const std::string& action) {
-  EncodableMap payload = {
-      {EncodableValue("action"), EncodableValue(action)},
-  };
-  channel_->InvokeMethod("mediaAction",
-                         std::make_unique<EncodableValue>(std::move(payload)));
+  try {
+    EncodableMap payload = {
+        {EncodableValue("action"), EncodableValue(action)},
+    };
+    channel_->InvokeMethod("mediaAction",
+                           std::make_unique<EncodableValue>(std::move(payload)));
+  } catch (...) {
+    DebugLog(L"[Musix] Windows media controls action emit failed.\n");
+  }
 }
 
 const EncodableValue* WindowsMediaControls::FindValue(

@@ -1910,6 +1910,7 @@ class _DesktopSettingsScreen extends StatelessWidget {
     Future<void> signOutUser() async {
       try {
         await authService.signOut();
+        await controller.clearUserDataFromCloud();
         if (!context.mounted) {
           return;
         }
@@ -2021,7 +2022,8 @@ class _DesktopSettingsScreen extends StatelessWidget {
                         const Divider(color: cardEdge, height: 24),
                         _ProfileRow(
                           title: 'Firebase User ID',
-                          subtitle: 'Short reference for your signed-in account.',
+                          subtitle:
+                              'Short reference for your signed-in account.',
                           trailing: userId,
                         ),
                       ],

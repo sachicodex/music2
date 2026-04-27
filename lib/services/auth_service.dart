@@ -1,18 +1,23 @@
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'firestore_user_data_service.dart';
+
 class AuthService {
-  AuthService({FirebaseAuth? firebaseAuth})
-    : _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance;
+  AuthService({
+    FirebaseAuth? firebaseAuth,
+    FirestoreUserDataService? firestoreUserDataService,
+  }) : _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance,
+       _firestoreUserDataService = firestoreUserDataService;
 
   final FirebaseAuth _firebaseAuth;
+  final FirestoreUserDataService? _firestoreUserDataService;
   String? _pendingSuccessMessage;
 
   Stream<User?> get authStateChanges => _firebaseAuth.authStateChanges();
 
   User? get currentUser => _firebaseAuth.currentUser;
 
-  String get currentUserEmail =>
-      currentUser?.email?.trim().isNotEmpty == true
+  String get currentUserEmail => currentUser?.email?.trim().isNotEmpty == true
       ? currentUser!.email!.trim()
       : 'No email address';
 
@@ -70,18 +75,18 @@ class AuthService {
 
   bool get isCurrentUserEmailVerified => currentUser?.emailVerified ?? false;
 
-  Future<void> signUp({
-    required String email,
-    required String password,
-  }) async {
+  Future<void> signUp({required String email, required String password}) async {
     try {
       await _firebaseAuth.createUserWithEmailAndPassword(
         email: email.trim(),
         password: password,
       );
+      await _firestoreUserDataService?.ensureCurrentUserDocument();
       _pendingSuccessMessage = 'Account created successfully.';
     } on FirebaseAuthException catch (error) {
       throw AuthException(_messageForFirebaseAuthError(error));
+    } on FirestoreUserDataException catch (error) {
+      throw AuthException(error.message);
     } catch (_) {
       throw const AuthException(
         'Could not create your account right now. Please try again.',
@@ -89,18 +94,18 @@ class AuthService {
     }
   }
 
-  Future<void> signIn({
-    required String email,
-    required String password,
-  }) async {
+  Future<void> signIn({required String email, required String password}) async {
     try {
       await _firebaseAuth.signInWithEmailAndPassword(
         email: email.trim(),
         password: password,
       );
+      await _firestoreUserDataService?.ensureCurrentUserDocument();
       _pendingSuccessMessage = 'Logged in successfully.';
     } on FirebaseAuthException catch (error) {
       throw AuthException(_messageForFirebaseAuthError(error));
+    } on FirestoreUserDataException catch (error) {
+      throw AuthException(error.message);
     } catch (_) {
       throw const AuthException(
         'Could not log you in right now. Please try again.',

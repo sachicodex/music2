@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/auth_service.dart';
+import '../src/app_controller.dart';
 import '../src/ui.dart';
 import 'login_screen.dart';
 
@@ -24,10 +25,58 @@ class AuthGate extends StatelessWidget {
         }
 
         if (signedInUser != null) {
-          return const HomeScreen();
+          return _UserDataBootstrap(
+            userId: signedInUser.uid,
+            child: const HomeScreen(),
+          );
         }
 
         return const LoginScreen();
+      },
+    );
+  }
+}
+
+class _UserDataBootstrap extends StatefulWidget {
+  const _UserDataBootstrap({required this.userId, required this.child});
+
+  final String userId;
+  final Widget child;
+
+  @override
+  State<_UserDataBootstrap> createState() => _UserDataBootstrapState();
+}
+
+class _UserDataBootstrapState extends State<_UserDataBootstrap> {
+  late Future<void> _bootstrapFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _bootstrapFuture = _bootstrap();
+  }
+
+  @override
+  void didUpdateWidget(covariant _UserDataBootstrap oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.userId != widget.userId) {
+      _bootstrapFuture = _bootstrap();
+    }
+  }
+
+  Future<void> _bootstrap() {
+    return context.read<MusixController>().loadUserDataFromCloud(force: true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<void>(
+      future: _bootstrapFuture,
+      builder: (BuildContext context, AsyncSnapshot<void> snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const _AuthLoadingScreen();
+        }
+        return widget.child;
       },
     );
   }
@@ -59,10 +108,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: Color(0xFF1E7A46),
-          ),
+          SnackBar(content: Text(message), backgroundColor: Color(0xFF1E7A46)),
         );
     });
   }
@@ -127,8 +173,9 @@ class FirebaseSetupScreen extends StatelessWidget {
                       const SizedBox(height: 12),
                       Text(
                         'This auth flow is ready, but Firebase is not connected to this app yet.',
-                        style: Theme.of(context).textTheme.bodyMedium
-                            ?.copyWith(color: const Color(0xFFDAB09B)),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: const Color(0xFFDAB09B),
+                        ),
                       ),
                       const SizedBox(height: 16),
                       const Text(
@@ -137,10 +184,7 @@ class FirebaseSetupScreen extends StatelessWidget {
                         '3. Run "flutterfire configure".\n'
                         '4. Add the generated Firebase files to this project.\n'
                         '5. Run the app again.',
-                        style: TextStyle(
-                          color: Colors.white,
-                          height: 1.6,
-                        ),
+                        style: TextStyle(color: Colors.white, height: 1.6),
                       ),
                       if (errorMessage != null) ...<Widget>[
                         const SizedBox(height: 16),

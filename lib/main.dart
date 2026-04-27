@@ -10,6 +10,7 @@ import 'package:window_manager/window_manager.dart';
 import 'firebase_options.dart';
 import 'screens/home_screen.dart';
 import 'services/auth_service.dart';
+import 'services/firestore_user_data_service.dart';
 import 'src/app_controller.dart';
 import 'src/ui.dart';
 
@@ -50,14 +51,28 @@ Future<void> main() async {
         : FirebaseSetupScreen(errorMessage: firebaseStartupResult.errorMessage),
   );
 
-  app = ChangeNotifierProvider<MusixController>(
-    create: (_) => MusixController(),
-    child: app,
-  );
-
   if (firebaseStartupResult.isReady) {
-    app = Provider<AuthService>(
-      create: (_) => AuthService(),
+    app = MultiProvider(
+      providers: [
+        Provider<FirestoreUserDataService>(
+          create: (_) => FirestoreUserDataService(),
+        ),
+        Provider<AuthService>(
+          create: (BuildContext context) => AuthService(
+            firestoreUserDataService: context.read<FirestoreUserDataService>(),
+          ),
+        ),
+        ChangeNotifierProvider<MusixController>(
+          create: (BuildContext context) => MusixController(
+            firestoreUserDataService: context.read<FirestoreUserDataService>(),
+          ),
+        ),
+      ],
+      child: app,
+    );
+  } else {
+    app = ChangeNotifierProvider<MusixController>(
+      create: (_) => MusixController(),
       child: app,
     );
   }

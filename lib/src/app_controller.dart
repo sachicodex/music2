@@ -19,6 +19,7 @@ import 'package:ytmusicapi_dart/auth/browser.dart' as ytm_browser;
 import 'package:ytmusicapi_dart/ytmusicapi_dart.dart';
 import 'package:ytmusicapi_dart/enums.dart' as ytm;
 
+import '../services/firestore_user_data_service.dart';
 import 'android_media_notification_bridge.dart';
 import 'models.dart';
 import 'playback_proxy.dart';
@@ -28,7 +29,9 @@ import 'windows_media_controls_bridge.dart';
 enum _AppNetworkUsageBucket { search, load, artwork, metadata }
 
 class MusixController extends ChangeNotifier with WidgetsBindingObserver {
-  MusixController() : _yt = YoutubeExplode() {
+  MusixController({FirestoreUserDataService? firestoreUserDataService})
+    : _yt = YoutubeExplode(),
+      _firestoreUserDataService = firestoreUserDataService {
     WidgetsBinding.instance.addObserver(this);
   }
   static const int _smartQueueBatchSize = 7;
@@ -51,6 +54,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   Player? _playerInstance;
   bool _playerBound = false;
   final YoutubeExplode _yt;
+  final FirestoreUserDataService? _firestoreUserDataService;
   late final PlaybackProxyServer _playbackProxy = PlaybackProxyServer(
     onBytesTransferred: _handlePlaybackProxyTransfer,
     onCacheProgress: _handlePlaybackProxyCacheProgress,
@@ -96,6 +100,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   bool _isOffline = false;
   String? _statusMessage;
   String? _errorMessage;
+  String? _cloudSyncMessage;
   String? _onlineError;
   String? _trendingNowError;
   String? _homeError;
@@ -158,6 +163,8 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   int? _offlineQueueWaitingIndex;
   Future<void>? _offlinePlaybackCacheWorker;
   bool _offlineDetachedQueueMode = false;
+  String? _activeCloudUserId;
+  bool _cloudUserDataLoaded = false;
 
   List<String> _queueSongIds = <String>[];
   String _queueLabel = 'Now Playing';
@@ -205,6 +212,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   AppDataUsageStats get dataUsage => dataUsageState.value;
   String? get statusMessage => _statusMessage;
   String? get errorMessage => _errorMessage;
+  String? get cloudSyncMessage => _cloudSyncMessage;
   String? get onlineError => _onlineError;
   String? get trendingNowError => _trendingNowError;
   String? get homeError => _homeError;
@@ -284,6 +292,12 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       .map(songById)
       .whereType<LibrarySong>()
       .toList(growable: false);
+
+  String? takeCloudSyncMessage() {
+    final String? message = _cloudSyncMessage;
+    _cloudSyncMessage = null;
+    return message;
+  }
 
   List<String> get _playerQueueSongIds {
     final Player? player = _playerInstance;
@@ -1249,6 +1263,204 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     unawaited(WindowsMediaControlsBridge.stop());
     notifyListeners();
     _scheduleStartupContinuation();
+  }
+
+  Future<void> loadUserDataFromCloud({bool force = false}) async {
+    final FirestoreUserDataService? service = _firestoreUserDataService;
+    if (service == null) {
+      return;
+    }
+
+    if (!_initialized) {
+      await initialize();
+    }
+
+    final String? userId = service.currentUserId;
+    if (userId == null) {
+      await clearUserDataFromCloud();
+      return;
+    }
+
+    if (!service.supportsCloudSync) {
+      if (_activeCloudUserId != userId || !_cloudUserDataLoaded) {
+        _queueCloudSyncMessage(
+          'Cloud sync is temporarily disabled on Windows. Local music data is still available.',
+        );
+      }
+      _activeCloudUserId = userId;
+      _cloudUserDataLoaded = true;
+      notifyListeners();
+      return;
+    }
+
+    if (!force && _activeCloudUserId == userId && _cloudUserDataLoaded) {
+      return;
+    }
+
+    try {
+      await service.ensureCurrentUserDocument();
+      final FirestoreUserData userData = await service.loadCurrentUserData();
+      _applyCloudUserData(userData);
+      _activeCloudUserId = userId;
+      _cloudUserDataLoaded = true;
+      _homeFeed = <HomeFeedSection>[];
+      _personalizedHomeRecommendations = <SongRecommendation>[];
+      await _saveSnapshot();
+      notifyListeners();
+      if (!_isOffline && !offlineMusicMode) {
+        _requestAutoHomeRefresh(force: true);
+      }
+    } on FirestoreUserDataException catch (error) {
+      _queueCloudSyncMessage(error.message);
+      notifyListeners();
+    } catch (error) {
+      _queueCloudSyncMessage(
+        'Could not load your Firestore library. Local data is still available.',
+      );
+      debugPrint('Firestore user data load failed: $error');
+      notifyListeners();
+    }
+  }
+
+  Future<void> clearUserDataFromCloud() async {
+    _applyCloudUserData(const FirestoreUserData.empty());
+    _activeCloudUserId = null;
+    _cloudUserDataLoaded = false;
+    _homeFeed = <HomeFeedSection>[];
+    _personalizedHomeRecommendations = <SongRecommendation>[];
+    await _saveSnapshot();
+    notifyListeners();
+  }
+
+  void _applyCloudUserData(FirestoreUserData userData) {
+    final Set<String> dislikedSongIds = Set<String>.from(
+      userData.dislikedSongIds,
+    );
+    final Set<String> likedSongIds = Set<String>.from(userData.likedSongIds)
+      ..removeAll(dislikedSongIds);
+
+    _songs = _songs
+        .map(
+          (LibrarySong song) => song.copyWith(
+            isLiked: likedSongIds.contains(song.id),
+            isDisliked: dislikedSongIds.contains(song.id),
+          ),
+        )
+        .toList(growable: false);
+    _transientSongsById.updateAll(
+      (_, LibrarySong song) => song.copyWith(
+        isLiked: likedSongIds.contains(song.id),
+        isDisliked: dislikedSongIds.contains(song.id),
+      ),
+    );
+    _playlists = userData.playlists.toList(growable: false)
+      ..sort(_sortUserPlaylists);
+  }
+
+  int _sortUserPlaylists(UserPlaylist a, UserPlaylist b) {
+    final int updatedCompare = b.updatedAt.compareTo(a.updatedAt);
+    if (updatedCompare != 0) {
+      return updatedCompare;
+    }
+    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  }
+
+  void _queueCloudSyncMessage(String message) {
+    _cloudSyncMessage = message;
+  }
+
+  Future<void> _syncLikedSongToCloud({
+    required String songId,
+    required bool isLiked,
+  }) async {
+    final FirestoreUserDataService? service = _firestoreUserDataService;
+    if (service == null || service.currentUserId == null) {
+      return;
+    }
+
+    try {
+      await service.setLikedSong(songId: songId, isLiked: isLiked);
+    } on FirestoreUserDataException catch (error) {
+      _queueCloudSyncMessage(
+        '${error.message} The change was kept only on this device.',
+      );
+      notifyListeners();
+    } catch (error) {
+      _queueCloudSyncMessage(
+        'Could not sync liked songs to Firestore. The change was kept only on this device.',
+      );
+      debugPrint('Firestore liked song sync failed: $error');
+      notifyListeners();
+    }
+  }
+
+  Future<void> _syncDislikedSongToCloud({
+    required String songId,
+    required bool isDisliked,
+  }) async {
+    final FirestoreUserDataService? service = _firestoreUserDataService;
+    if (service == null || service.currentUserId == null) {
+      return;
+    }
+
+    try {
+      await service.setDislikedSong(songId: songId, isDisliked: isDisliked);
+    } on FirestoreUserDataException catch (error) {
+      _queueCloudSyncMessage(
+        '${error.message} The change was kept only on this device.',
+      );
+      notifyListeners();
+    } catch (error) {
+      _queueCloudSyncMessage(
+        'Could not sync disliked songs to Firestore. The change was kept only on this device.',
+      );
+      debugPrint('Firestore disliked song sync failed: $error');
+      notifyListeners();
+    }
+  }
+
+  Future<void> _syncPlaylistToCloud(UserPlaylist playlist) async {
+    final FirestoreUserDataService? service = _firestoreUserDataService;
+    if (service == null || service.currentUserId == null) {
+      return;
+    }
+
+    try {
+      await service.upsertPlaylist(playlist);
+    } on FirestoreUserDataException catch (error) {
+      _queueCloudSyncMessage(
+        '${error.message} The playlist change was kept only on this device.',
+      );
+      notifyListeners();
+    } catch (error) {
+      _queueCloudSyncMessage(
+        'Could not sync the playlist to Firestore. The change was kept only on this device.',
+      );
+      debugPrint('Firestore playlist sync failed: $error');
+      notifyListeners();
+    }
+  }
+
+  Future<void> _deletePlaylistFromCloud(String playlistId) async {
+    final FirestoreUserDataService? service = _firestoreUserDataService;
+    if (service == null || service.currentUserId == null) {
+      return;
+    }
+
+    try {
+      await service.deletePlaylist(playlistId);
+    } on FirestoreUserDataException catch (error) {
+      _queueCloudSyncMessage(
+        '${error.message} The playlist was removed only on this device.',
+      );
+      notifyListeners();
+    } catch (error) {
+      _queueCloudSyncMessage(
+        'Could not delete the playlist from Firestore. The change was kept only on this device.',
+      );
+      debugPrint('Firestore playlist delete failed: $error');
+      notifyListeners();
+    }
   }
 
   void _scheduleStartupContinuation() {
@@ -5274,6 +5486,24 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         streamInfo: resolved.streamInfo,
       );
     }
+    if (Platform.isWindows) {
+      _debugPlayback(
+        'proxy.bypass platform=windows song=${_debugSongLabel(song)}',
+      );
+      if (primeOfflineCache && cacheAllowed) {
+        _maybePrimeAndroidPlaybackCache(
+          song: song,
+          resolvedUrl: resolved.resolvedUrl,
+          upstreamHeaders: resolved.upstreamHeaders,
+        );
+      }
+      _disablePlaybackProxyForSong(song.id, bypass: true);
+      return _PreparedPlaybackSource(
+        mediaUrl: resolved.resolvedUrl,
+        mediaHeaders: resolved.upstreamHeaders,
+        streamInfo: resolved.streamInfo,
+      );
+    }
     final String? proxyCacheFilePath = Platform.isAndroid || !cacheAllowed
         ? null
         : (await _offlinePlaybackCacheTargetFile(
@@ -7115,10 +7345,12 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<UserPlaylist> createPlaylist(String name) async {
+    final String trimmed = name.trim();
+    final String playlistName = trimmed.isEmpty ? 'Untitled Playlist' : trimmed;
     final DateTime now = DateTime.now();
     final UserPlaylist playlist = UserPlaylist(
       id: _uuid.v4(),
-      name: name.trim(),
+      name: playlistName,
       songIds: <String>[],
       createdAt: now,
       updatedAt: now,
@@ -7126,6 +7358,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     _playlists = <UserPlaylist>[playlist, ..._playlists];
     await _saveSnapshot();
     notifyListeners();
+    await _syncPlaylistToCloud(playlist);
     return playlist;
   }
 
@@ -7135,6 +7368,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         .toList();
     await _saveSnapshot();
     notifyListeners();
+    await _deletePlaylistFromCloud(playlistId);
   }
 
   Future<void> renamePlaylist(String playlistId, String name) async {
@@ -7142,15 +7376,23 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     if (trimmed.isEmpty) {
       return;
     }
-    _playlists = _playlists
-        .map(
-          (UserPlaylist playlist) => playlist.id == playlistId
-              ? playlist.copyWith(name: trimmed, updatedAt: DateTime.now())
-              : playlist,
-        )
-        .toList();
+    _playlists =
+        _playlists
+            .map(
+              (UserPlaylist playlist) => playlist.id == playlistId
+                  ? playlist.copyWith(name: trimmed, updatedAt: DateTime.now())
+                  : playlist,
+            )
+            .toList()
+          ..sort(_sortUserPlaylists);
     await _saveSnapshot();
     notifyListeners();
+    final UserPlaylist? updated = _playlists.firstWhereOrNull(
+      (UserPlaylist playlist) => playlist.id == playlistId,
+    );
+    if (updated != null) {
+      await _syncPlaylistToCloud(updated);
+    }
   }
 
   Future<void> addSongToPlaylist(String playlistId, String songId) async {
@@ -7162,9 +7404,15 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         songIds: <String>[...playlist.songIds, songId],
         updatedAt: DateTime.now(),
       );
-    }).toList();
+    }).toList()..sort(_sortUserPlaylists);
     await _saveSnapshot();
     notifyListeners();
+    final UserPlaylist? updated = _playlists.firstWhereOrNull(
+      (UserPlaylist playlist) => playlist.id == playlistId,
+    );
+    if (updated != null) {
+      await _syncPlaylistToCloud(updated);
+    }
   }
 
   Future<void> removeSongFromPlaylist(String playlistId, String songId) async {
@@ -7176,9 +7424,15 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         songIds: playlist.songIds.where((String id) => id != songId).toList(),
         updatedAt: DateTime.now(),
       );
-    }).toList();
+    }).toList()..sort(_sortUserPlaylists);
     await _saveSnapshot();
     notifyListeners();
+    final UserPlaylist? updated = _playlists.firstWhereOrNull(
+      (UserPlaylist playlist) => playlist.id == playlistId,
+    );
+    if (updated != null) {
+      await _syncPlaylistToCloud(updated);
+    }
   }
 
   Future<void> toggleFavorite(String songId) async {
@@ -7216,6 +7470,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     }
     await _saveSnapshot();
     notifyListeners();
+    await _syncLikedSongToCloud(songId: songId, isLiked: newLiked);
   }
 
   Future<void> dislikeSong(String songId) async {
@@ -7259,6 +7514,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
     notifyListeners();
+    await _syncDislikedSongToCloud(songId: songId, isDisliked: newDisliked);
   }
 
   void _rememberTransientSong(LibrarySong song) {

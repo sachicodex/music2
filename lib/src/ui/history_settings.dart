@@ -78,6 +78,7 @@ class _SettingsScreen extends StatelessWidget {
     Future<void> signOutUser() async {
       try {
         await authService.signOut();
+        await controller.clearUserDataFromCloud();
         if (!context.mounted) {
           return;
         }
