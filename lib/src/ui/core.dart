@@ -366,10 +366,8 @@ class _MusixStartupScreenState extends State<_MusixStartupScreen>
                   child: Center(
                     child: Padding(
                       padding: const EdgeInsets.all(24),
-                      child: Transform.scale(
-                        scale: Tween<double>(begin: 0.98, end: 1.0).transform(
-                          Curves.easeOutCubic.transform(_intro.value),
-                        ),
+                      child: Opacity(
+                        opacity: Curves.easeOutCubic.transform(_intro.value),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: <Widget>[

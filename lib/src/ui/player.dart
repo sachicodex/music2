@@ -321,54 +321,37 @@ class _PlayerScreenState extends State<_PlayerScreen>
                                   ),
                                 ),
                               ),
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: <Widget>[
-                                  IconButton(
-                                    onPressed: () =>
-                                        Navigator.of(context).maybePop(),
-                                    icon: const Icon(Icons.minimize_rounded),
-                                    color: accent,
-                                    iconSize: scale(24, min: 20, max: 24),
-                                  ),
-                                  PopupMenuButton<String>(
-                                    color: _kSurface,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(16),
-                                      side: const BorderSide(
-                                        color: _kSurfaceEdge,
+                              PopupMenuButton<String>(
+                                color: _kSurface,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  side: const BorderSide(color: _kSurfaceEdge),
+                                ),
+                                icon: const Icon(Icons.more_vert_rounded),
+                                iconColor: accent,
+                                onSelected: (String value) async {
+                                  await _handlePlayerMenuSelection(value, song);
+                                },
+                                itemBuilder: (BuildContext context) =>
+                                    <PopupMenuEntry<String>>[
+                                      _musixPopupMenuItem('save', 'Save'),
+                                      _musixPopupMenuItem(
+                                        'like',
+                                        song.isLiked
+                                            ? 'Unlike song'
+                                            : 'Like song',
                                       ),
-                                    ),
-                                    icon: const Icon(Icons.more_vert_rounded),
-                                    iconColor: accent,
-                                    onSelected: (String value) async {
-                                      await _handlePlayerMenuSelection(
-                                        value,
-                                        song,
-                                      );
-                                    },
-                                    itemBuilder: (BuildContext context) =>
-                                        <PopupMenuEntry<String>>[
-                                          _musixPopupMenuItem('save', 'Save'),
-                                          _musixPopupMenuItem(
-                                            'like',
-                                            song.isLiked
-                                                ? 'Unlike song'
-                                                : 'Like song',
-                                          ),
-                                          _musixPopupMenuItem(
-                                            'dislike',
-                                            song.isDisliked
-                                                ? 'Remove dislike'
-                                                : 'Dislike song',
-                                          ),
-                                          _musixPopupMenuItem(
-                                            'queue',
-                                            'Add to queue',
-                                          ),
-                                        ],
-                                  ),
-                                ],
+                                      _musixPopupMenuItem(
+                                        'dislike',
+                                        song.isDisliked
+                                            ? 'Remove dislike'
+                                            : 'Dislike song',
+                                      ),
+                                      _musixPopupMenuItem(
+                                        'queue',
+                                        'Add to queue',
+                                      ),
+                                    ],
                               ),
                             ],
                           ),
