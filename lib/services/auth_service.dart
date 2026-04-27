@@ -1,16 +1,10 @@
 import 'package:firebase_auth/firebase_auth.dart';
 
-import 'firestore_user_data_service.dart';
-
 class AuthService {
-  AuthService({
-    FirebaseAuth? firebaseAuth,
-    FirestoreUserDataService? firestoreUserDataService,
-  }) : _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance,
-       _firestoreUserDataService = firestoreUserDataService;
+  AuthService({FirebaseAuth? firebaseAuth})
+    : _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance;
 
   final FirebaseAuth _firebaseAuth;
-  final FirestoreUserDataService? _firestoreUserDataService;
   String? _pendingSuccessMessage;
 
   Stream<User?> get authStateChanges => _firebaseAuth.authStateChanges();
@@ -81,12 +75,9 @@ class AuthService {
         email: email.trim(),
         password: password,
       );
-      await _firestoreUserDataService?.ensureCurrentUserDocument();
       _pendingSuccessMessage = 'Account created successfully.';
     } on FirebaseAuthException catch (error) {
       throw AuthException(_messageForFirebaseAuthError(error));
-    } on FirestoreUserDataException catch (error) {
-      throw AuthException(error.message);
     } catch (_) {
       throw const AuthException(
         'Could not create your account right now. Please try again.',
@@ -100,12 +91,9 @@ class AuthService {
         email: email.trim(),
         password: password,
       );
-      await _firestoreUserDataService?.ensureCurrentUserDocument();
       _pendingSuccessMessage = 'Logged in successfully.';
     } on FirebaseAuthException catch (error) {
       throw AuthException(_messageForFirebaseAuthError(error));
-    } on FirestoreUserDataException catch (error) {
-      throw AuthException(error.message);
     } catch (_) {
       throw const AuthException(
         'Could not log you in right now. Please try again.',

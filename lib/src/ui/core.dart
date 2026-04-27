@@ -168,6 +168,7 @@ class _MusixStartupGateState extends State<_MusixStartupGate> {
     try {
       final Stopwatch stopwatch = Stopwatch()..start();
       await widget.controller.initialize();
+      unawaited(widget.controller.loadUserDataFromCloud(force: true));
       stopwatch.stop();
       final Duration bootDuration = stopwatch.elapsed;
       final Duration holdDuration = _remainingStartupHold(bootDuration);
@@ -634,6 +635,7 @@ class _MusixShellState extends State<MusixShell> {
       unawaited(
         context.read<MusixController>().ensureNotificationPermissionIfNeeded(),
       );
+      unawaited(context.read<MusixController>().loadUserDataFromCloud());
     });
   }
 

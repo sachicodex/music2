@@ -57,11 +57,7 @@ Future<void> main() async {
         Provider<FirestoreUserDataService>(
           create: (_) => FirestoreUserDataService(),
         ),
-        Provider<AuthService>(
-          create: (BuildContext context) => AuthService(
-            firestoreUserDataService: context.read<FirestoreUserDataService>(),
-          ),
-        ),
+        Provider<AuthService>(create: (_) => AuthService()),
         ChangeNotifierProvider<MusixController>(
           create: (BuildContext context) => MusixController(
             firestoreUserDataService: context.read<FirestoreUserDataService>(),

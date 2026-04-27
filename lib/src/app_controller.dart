@@ -71,6 +71,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   StreamSubscription<String>? _windowsMediaActionSubscription;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   StreamSubscription<FirestoreUserData>? _cloudUserDataSubscription;
+  Future<void>? _cloudUserDataLoadFuture;
   YTMusic? _ytMusic;
   final Uuid _uuid = const Uuid();
   final List<StreamSubscription<dynamic>> _subscriptions =
@@ -1269,7 +1270,22 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     _scheduleStartupContinuation();
   }
 
-  Future<void> loadUserDataFromCloud({bool force = false}) async {
+  Future<void> loadUserDataFromCloud({bool force = false}) {
+    final Future<void>? activeLoad = _cloudUserDataLoadFuture;
+    if (activeLoad != null) {
+      return activeLoad;
+    }
+
+    final Future<void> loadFuture = _loadUserDataFromCloud(force: force);
+    _cloudUserDataLoadFuture = loadFuture;
+    return loadFuture.whenComplete(() {
+      if (identical(_cloudUserDataLoadFuture, loadFuture)) {
+        _cloudUserDataLoadFuture = null;
+      }
+    });
+  }
+
+  Future<void> _loadUserDataFromCloud({bool force = false}) async {
     final FirestoreUserDataService? service = _firestoreUserDataService;
     if (service == null) {
       return;
@@ -1307,6 +1323,9 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     try {
       await service.ensureCurrentUserDocument();
       final FirestoreUserData userData = await service.loadCurrentUserData();
+      if (_isDisposed || _isDisposing || service.currentUserId != userId) {
+        return;
+      }
       _activeCloudUserId = userId;
       _cloudUserDataLoaded = true;
       _applyCloudUserData(userData);
@@ -1319,9 +1338,15 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         _requestAutoHomeRefresh(force: true);
       }
     } on FirestoreUserDataException catch (error) {
+      if (_isDisposed || _isDisposing || service.currentUserId != userId) {
+        return;
+      }
       _queueCloudSyncMessage(error.message);
       notifyListeners();
     } catch (error) {
+      if (_isDisposed || _isDisposing || service.currentUserId != userId) {
+        return;
+      }
       _queueCloudSyncMessage(
         'Could not load your Firestore library. Local data is still available.',
       );
@@ -1331,6 +1356,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> clearUserDataFromCloud() async {
+    _cloudUserDataLoadFuture = null;
     await _cloudUserDataSubscription?.cancel();
     _cloudUserDataSubscription = null;
     _applyCloudUserData(const FirestoreUserData.empty());

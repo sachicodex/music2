@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/auth_service.dart';
-import '../src/app_controller.dart';
 import '../src/ui.dart';
 import 'login_screen.dart';
 
@@ -25,58 +24,10 @@ class AuthGate extends StatelessWidget {
         }
 
         if (signedInUser != null) {
-          return _UserDataBootstrap(
-            userId: signedInUser.uid,
-            child: const HomeScreen(),
-          );
+          return const HomeScreen();
         }
 
         return const LoginScreen();
-      },
-    );
-  }
-}
-
-class _UserDataBootstrap extends StatefulWidget {
-  const _UserDataBootstrap({required this.userId, required this.child});
-
-  final String userId;
-  final Widget child;
-
-  @override
-  State<_UserDataBootstrap> createState() => _UserDataBootstrapState();
-}
-
-class _UserDataBootstrapState extends State<_UserDataBootstrap> {
-  late Future<void> _bootstrapFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _bootstrapFuture = _bootstrap();
-  }
-
-  @override
-  void didUpdateWidget(covariant _UserDataBootstrap oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.userId != widget.userId) {
-      _bootstrapFuture = _bootstrap();
-    }
-  }
-
-  Future<void> _bootstrap() {
-    return context.read<MusixController>().loadUserDataFromCloud(force: true);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<void>(
-      future: _bootstrapFuture,
-      builder: (BuildContext context, AsyncSnapshot<void> snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const _AuthLoadingScreen();
-        }
-        return widget.child;
       },
     );
   }
@@ -211,9 +162,9 @@ class _AuthLoadingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       body: DecoratedBox(
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
@@ -225,7 +176,26 @@ class _AuthLoadingScreen extends StatelessWidget {
           ),
         ),
         child: Center(
-          child: CircularProgressIndicator(color: Color(0xFFFF8A2A)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Image.asset(
+                'assets/icons/Musix - Full.png',
+                width: 96,
+                height: 96,
+                fit: BoxFit.contain,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'MUSIX',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  color: Colors.white.withValues(alpha: 0.84),
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.0,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

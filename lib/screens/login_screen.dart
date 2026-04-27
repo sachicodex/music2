@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/auth_service.dart';
-import '../src/app_controller.dart';
 import '../src/ui.dart';
 import 'signup_screen.dart';
 
@@ -51,7 +50,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
     FocusScope.of(context).unfocus();
     final AuthService authService = context.read<AuthService>();
-    final MusixController controller = context.read<MusixController>();
 
     setState(() => _isLoading = true);
 
@@ -60,7 +58,6 @@ class _LoginScreenState extends State<LoginScreen> {
         email: _emailController.text,
         password: _passwordController.text,
       );
-      await controller.loadUserDataFromCloud(force: true);
       if (!mounted) {
         return;
       }
