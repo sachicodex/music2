@@ -70,11 +70,15 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   StreamSubscription<String>? _notificationActionSubscription;
   StreamSubscription<String>? _windowsMediaActionSubscription;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  StreamSubscription<FirestoreUserData>? _cloudUserDataSubscription;
   YTMusic? _ytMusic;
   final Uuid _uuid = const Uuid();
   final List<StreamSubscription<dynamic>> _subscriptions =
       <StreamSubscription<dynamic>>[];
   final Map<String, LibrarySong> _transientSongsById = <String, LibrarySong>{};
+  final Set<String> _cloudLikedSongIds = <String>{};
+  final Set<String> _cloudDislikedSongIds = <String>{};
+  final Set<String> _cloudSongHydrationInFlight = <String>{};
   final Map<String, String> _preparedMediaUrlsBySongId = <String, String>{};
   final Map<String, Map<String, String>?> _preparedMediaHeadersBySongId =
       <String, Map<String, String>?>{};
@@ -1293,16 +1297,20 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
 
-    if (!force && _activeCloudUserId == userId && _cloudUserDataLoaded) {
+    if (!force &&
+        _activeCloudUserId == userId &&
+        _cloudUserDataLoaded &&
+        _cloudUserDataSubscription != null) {
       return;
     }
 
     try {
       await service.ensureCurrentUserDocument();
       final FirestoreUserData userData = await service.loadCurrentUserData();
-      _applyCloudUserData(userData);
       _activeCloudUserId = userId;
       _cloudUserDataLoaded = true;
+      _applyCloudUserData(userData);
+      await _startCloudUserDataSubscription(userId);
       _homeFeed = <HomeFeedSection>[];
       _personalizedHomeRecommendations = <SongRecommendation>[];
       await _saveSnapshot();
@@ -1323,6 +1331,8 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> clearUserDataFromCloud() async {
+    await _cloudUserDataSubscription?.cancel();
+    _cloudUserDataSubscription = null;
     _applyCloudUserData(const FirestoreUserData.empty());
     _activeCloudUserId = null;
     _cloudUserDataLoaded = false;
@@ -1338,23 +1348,20 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     );
     final Set<String> likedSongIds = Set<String>.from(userData.likedSongIds)
       ..removeAll(dislikedSongIds);
+    _cloudLikedSongIds
+      ..clear()
+      ..addAll(likedSongIds);
+    _cloudDislikedSongIds
+      ..clear()
+      ..addAll(dislikedSongIds);
 
-    _songs = _songs
-        .map(
-          (LibrarySong song) => song.copyWith(
-            isLiked: likedSongIds.contains(song.id),
-            isDisliked: dislikedSongIds.contains(song.id),
-          ),
-        )
-        .toList(growable: false);
+    _songs = _songs.map(_withCloudPreferenceState).toList(growable: false);
     _transientSongsById.updateAll(
-      (_, LibrarySong song) => song.copyWith(
-        isLiked: likedSongIds.contains(song.id),
-        isDisliked: dislikedSongIds.contains(song.id),
-      ),
+      (_, LibrarySong song) => _withCloudPreferenceState(song),
     );
     _playlists = userData.playlists.toList(growable: false)
       ..sort(_sortUserPlaylists);
+    unawaited(_hydrateMissingCloudSongs());
   }
 
   int _sortUserPlaylists(UserPlaylist a, UserPlaylist b) {
@@ -1367,6 +1374,167 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
 
   void _queueCloudSyncMessage(String message) {
     _cloudSyncMessage = message;
+  }
+
+  LibrarySong _withCloudPreferenceState(LibrarySong song) {
+    final bool isDisliked = _cloudDislikedSongIds.contains(song.id);
+    final bool isLiked = !isDisliked && _cloudLikedSongIds.contains(song.id);
+    if (song.isLiked == isLiked && song.isDisliked == isDisliked) {
+      return song;
+    }
+    return song.copyWith(isLiked: isLiked, isDisliked: isDisliked);
+  }
+
+  LibrarySong _withKnownCloudPreferenceState(LibrarySong song) {
+    if (_activeCloudUserId == null || !_cloudUserDataLoaded) {
+      return song;
+    }
+    return _withCloudPreferenceState(song);
+  }
+
+  Future<void> _hydrateMissingCloudSongs() async {
+    if (_isDisposed || _isDisposing) {
+      return;
+    }
+
+    final List<String> missingSongIds =
+        <String>{..._cloudLikedSongIds, ..._cloudDislikedSongIds}
+            .where((String songId) {
+              return songById(songId) == null &&
+                  _cloudSongHydrationInFlight.add(songId);
+            })
+            .toList(growable: false);
+    if (missingSongIds.isEmpty) {
+      return;
+    }
+
+    final String? expectedUserId = _firestoreUserDataService?.currentUserId;
+    List<LibrarySong?> hydratedSongs = const <LibrarySong?>[];
+    try {
+      hydratedSongs = await Future.wait(
+        missingSongIds.map(_hydrateCloudSongById),
+      );
+    } finally {
+      _cloudSongHydrationInFlight.removeAll(missingSongIds);
+    }
+
+    if (_isDisposed ||
+        _isDisposing ||
+        expectedUserId == null ||
+        _firestoreUserDataService?.currentUserId != expectedUserId ||
+        _activeCloudUserId != expectedUserId ||
+        !_cloudUserDataLoaded) {
+      return;
+    }
+
+    bool changed = false;
+    for (final LibrarySong song in hydratedSongs.whereType<LibrarySong>()) {
+      _rememberTransientSong(song);
+      changed = true;
+    }
+    if (!changed) {
+      return;
+    }
+
+    await _saveSnapshot();
+    if (!_isDisposed && !_isDisposing) {
+      notifyListeners();
+    }
+  }
+
+  Future<LibrarySong?> _hydrateCloudSongById(String songId) async {
+    try {
+      if (songId.startsWith('yt:')) {
+        final String videoId = songId.substring(3).trim();
+        if (videoId.isEmpty) {
+          return null;
+        }
+        final Video video = await _yt.videos.get(videoId);
+        _recordOtherUsage(
+          metadataBytes: _estimateUsagePayloadBytes(<String, Object?>{
+            'videoId': video.id.value,
+            'title': video.title,
+            'author': video.author,
+            'durationMs': video.duration?.inMilliseconds,
+            'thumbnail': video.thumbnails.highResUrl,
+          }),
+        );
+        return _withKnownCloudPreferenceState(_videoToSong(video));
+      }
+
+      if (songId.startsWith('url:')) {
+        final Uri? uri = Uri.tryParse(songId.substring(4));
+        if (uri == null || !uri.hasScheme) {
+          return null;
+        }
+        return _withKnownCloudPreferenceState(_urlToSong(uri));
+      }
+    } catch (error) {
+      debugPrint('Cloud song hydration failed for $songId: $error');
+    }
+    return null;
+  }
+
+  Future<void> _startCloudUserDataSubscription(String userId) async {
+    final FirestoreUserDataService? service = _firestoreUserDataService;
+    if (service == null) {
+      return;
+    }
+
+    await _cloudUserDataSubscription?.cancel();
+    _cloudUserDataSubscription = service.watchCurrentUserData().listen(
+      (FirestoreUserData userData) {
+        if (_activeCloudUserId != userId || _matchesCloudUserData(userData)) {
+          return;
+        }
+        _applyCloudUserData(userData);
+        _cloudUserDataLoaded = true;
+        _homeFeed = <HomeFeedSection>[];
+        _personalizedHomeRecommendations = <SongRecommendation>[];
+        unawaited(_saveSnapshot());
+        if (!_isDisposed && !_isDisposing) {
+          notifyListeners();
+        }
+      },
+      onError: (Object error) {
+        final String message = error is FirestoreUserDataException
+            ? error.message
+            : 'Could not sync your Firestore library.';
+        _queueCloudSyncMessage(message);
+        if (!_isDisposed && !_isDisposing) {
+          notifyListeners();
+        }
+      },
+    );
+  }
+
+  bool _matchesCloudUserData(FirestoreUserData userData) {
+    final Set<String> incomingDislikedSongIds = Set<String>.from(
+      userData.dislikedSongIds,
+    );
+    final Set<String> incomingLikedSongIds = Set<String>.from(
+      userData.likedSongIds,
+    )..removeAll(incomingDislikedSongIds);
+
+    if (!setEquals(_cloudLikedSongIds, incomingLikedSongIds) ||
+        !setEquals(_cloudDislikedSongIds, incomingDislikedSongIds) ||
+        _playlists.length != userData.playlists.length) {
+      return false;
+    }
+
+    for (int index = 0; index < _playlists.length; index++) {
+      final UserPlaylist currentPlaylist = _playlists[index];
+      final UserPlaylist incomingPlaylist = userData.playlists[index];
+      if (currentPlaylist.id != incomingPlaylist.id ||
+          currentPlaylist.name != incomingPlaylist.name ||
+          currentPlaylist.createdAt != incomingPlaylist.createdAt ||
+          currentPlaylist.updatedAt != incomingPlaylist.updatedAt ||
+          !listEquals(currentPlaylist.songIds, incomingPlaylist.songIds)) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   Future<void> _syncLikedSongToCloud({
@@ -4332,21 +4500,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         throw const FormatException('Enter a valid URL.');
       }
 
-      final LibrarySong song = LibrarySong(
-        id: 'url:${uri.toString()}',
-        path: uri.toString(),
-        title: p.basename(uri.path).isEmpty ? uri.host : p.basename(uri.path),
-        artist: uri.host,
-        album: 'Online Stream',
-        albumArtist: uri.host,
-        folderName: 'Online',
-        folderPath: uri.toString(),
-        sourceLabel: 'URL',
-        addedAt: DateTime.now(),
-        durationMs: 0,
-        isRemote: true,
-        externalUrl: uri.toString(),
-      );
+      final LibrarySong song = _urlToSong(uri);
       await _clearPreparedPlaybackState();
       final LibrarySong prepared = await _preparePlayableSong(
         song,
@@ -4883,7 +5037,9 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         );
       }
 
-      _songs = scanned;
+      _songs = scanned
+          .map(_withKnownCloudPreferenceState)
+          .toList(growable: false);
       _playlists = _playlists
           .map(
             (UserPlaylist playlist) => playlist.copyWith(
@@ -5093,6 +5249,24 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       isRemote: true,
       artworkUrl: artwork,
       externalUrl: 'https://music.youtube.com/watch?v=${video.id.value}',
+    );
+  }
+
+  LibrarySong _urlToSong(Uri uri) {
+    return LibrarySong(
+      id: 'url:${uri.toString()}',
+      path: uri.toString(),
+      title: p.basename(uri.path).isEmpty ? uri.host : p.basename(uri.path),
+      artist: uri.host,
+      album: 'Online Stream',
+      albumArtist: uri.host,
+      folderName: 'Online',
+      folderPath: uri.toString(),
+      sourceLabel: 'URL',
+      addedAt: DateTime.now(),
+      durationMs: 0,
+      isRemote: true,
+      externalUrl: uri.toString(),
     );
   }
 
@@ -7521,14 +7695,16 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     if (song.isRemote) {
       final LibrarySong? existing = _transientSongsById[song.id];
       if (existing == null) {
-        _transientSongsById[song.id] = song;
+        _transientSongsById[song.id] = _withKnownCloudPreferenceState(song);
         return;
       }
-      _transientSongsById[song.id] = song.copyWith(
-        playCount: existing.playCount,
-        lastPlayedAt: existing.lastPlayedAt,
-        isLiked: existing.isLiked,
-        isDisliked: existing.isDisliked,
+      _transientSongsById[song.id] = _withKnownCloudPreferenceState(
+        song.copyWith(
+          playCount: existing.playCount,
+          lastPlayedAt: existing.lastPlayedAt,
+          isLiked: existing.isLiked,
+          isDisliked: existing.isDisliked,
+        ),
       );
     }
   }
@@ -7942,6 +8118,8 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     _subscriptions.clear();
     _dataUsageSnapshotTimer?.cancel();
     _dataUsageSnapshotTimer = null;
+    unawaited(_cloudUserDataSubscription?.cancel());
+    _cloudUserDataSubscription = null;
     unawaited(_notificationActionSubscription?.cancel());
     _notificationActionSubscription = null;
     unawaited(_windowsMediaActionSubscription?.cancel());
