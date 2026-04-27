@@ -37,6 +37,12 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   static const int _smartQueueBatchSize = 7;
   static const Duration _minBrowsableSongDuration = Duration(seconds: 30);
   static const Duration _maxBrowsableSongDuration = Duration(minutes: 10);
+  static const Duration _playbackActivationMinimumLoading = Duration(
+    seconds: 1,
+  );
+  static const Duration _playbackActivationForcedStableDuration = Duration(
+    seconds: 2,
+  );
 
   static const List<String> supportedExtensions = <String>[
     'mp3',
@@ -154,10 +160,12 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   DateTime? _lastAutoHomeRefreshAt;
   AppDataUsageStats _dataUsage = const AppDataUsageStats();
   Timer? _dataUsageSnapshotTimer;
+  Timer? _playbackActivationTimer;
   bool _playbackFallbackRecoveryInFlight = false;
   String? _playbackFallbackRecoverySongId;
   int? _playbackFallbackRecoveryIndex;
   String? _playbackActivationSongId;
+  DateTime? _playbackActivationStartedAt;
   bool _refreshingOfflinePlaybackCache = false;
   bool _offlinePlaybackCacheRefreshQueued = false;
   int _offlinePlaybackCacheEpoch = 0;
@@ -658,6 +666,8 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     _playbackActivationSongId = song.id;
+    _playbackActivationStartedAt = DateTime.now();
+    _schedulePlaybackActivationCheck();
     if (resetMetrics) {
       _position = Duration.zero;
       _duration = Duration.zero;
@@ -668,29 +678,101 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _clearPlaybackActivation({bool notify = false}) {
-    if (_playbackActivationSongId == null) {
+    if (_playbackActivationSongId == null &&
+        _playbackActivationStartedAt == null &&
+        _playbackActivationTimer == null) {
       return;
     }
+    _playbackActivationTimer?.cancel();
+    _playbackActivationTimer = null;
     _playbackActivationSongId = null;
+    _playbackActivationStartedAt = null;
     if (notify) {
       notifyListeners();
     }
   }
 
-  void _maybeResolvePlaybackActivation() {
+  void _maybeResolvePlaybackActivation({bool notify = false}) {
     final String? targetSongId = _playbackActivationSongId;
     if (targetSongId == null) {
       return;
     }
-    final LibrarySong? active = currentSong;
-    if (active == null || active.id != targetSongId) {
+    if (!_hasPlaybackActivationMinimumElapsed()) {
+      _schedulePlaybackActivationCheck();
       return;
     }
-    if (_isPlaying ||
-        (!_shouldHoldTransitionMetrics() &&
-            (_duration > Duration.zero || _position > Duration.zero))) {
-      _playbackActivationSongId = null;
+    if (!_isPlaybackActivationStable(targetSongId)) {
+      _schedulePlaybackActivationCheck();
+      return;
     }
+    _clearPlaybackActivation(notify: notify);
+  }
+
+  Duration _playbackActivationElapsed() {
+    final DateTime? startedAt = _playbackActivationStartedAt;
+    if (startedAt == null) {
+      return Duration.zero;
+    }
+    return DateTime.now().difference(startedAt);
+  }
+
+  bool _hasPlaybackActivationMinimumElapsed() {
+    return _playbackActivationElapsed() >= _playbackActivationMinimumLoading;
+  }
+
+  bool _hasPlaybackActivationForcedStableElapsed() {
+    return _playbackActivationElapsed() >=
+        _playbackActivationForcedStableDuration;
+  }
+
+  bool _isPlaybackActivationStable(String targetSongId) {
+    if (_playbackFallbackRecoveryInFlight ||
+        _playbackFallbackRecoverySongId != null ||
+        _offlineQueueWaitingSongId != null ||
+        _offlineQueueActivationTargetSongId != null ||
+        _shouldHoldTransitionMetrics()) {
+      return false;
+    }
+    final LibrarySong? active = currentSong;
+    if (active == null ||
+        active.id != targetSongId ||
+        !_playerHasLoadedCurrentSong(active) ||
+        !_isPlaying) {
+      return false;
+    }
+    if (_position > Duration.zero) {
+      return true;
+    }
+    if (!_hasPlaybackActivationForcedStableElapsed()) {
+      return false;
+    }
+    return _duration > Duration.zero || _playerHasLoadedCurrentSong(active);
+  }
+
+  void _schedulePlaybackActivationCheck() {
+    _playbackActivationTimer?.cancel();
+    _playbackActivationTimer = null;
+    if (_isDisposed || _isDisposing || _playbackActivationSongId == null) {
+      return;
+    }
+    final Duration elapsed = _playbackActivationElapsed();
+    Duration? delay;
+    if (elapsed < _playbackActivationMinimumLoading) {
+      delay = _playbackActivationMinimumLoading - elapsed;
+    } else if (elapsed < _playbackActivationForcedStableDuration) {
+      delay = _playbackActivationForcedStableDuration - elapsed;
+    } else {
+      delay = const Duration(milliseconds: 220);
+    }
+    if (delay <= Duration.zero) {
+      return;
+    }
+    _playbackActivationTimer = Timer(delay, () {
+      if (_isDisposed || _isDisposing) {
+        return;
+      }
+      _maybeResolvePlaybackActivation(notify: true);
+    });
   }
 
   void _recordOtherUsage({
@@ -884,7 +966,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     _playbackFallbackRecoveryInFlight = false;
     _playbackFallbackRecoverySongId = null;
     _playbackFallbackRecoveryIndex = null;
-    _playbackActivationSongId = null;
+    _clearPlaybackActivation();
     for (final String sessionId in sessionIds) {
       unawaited(_playbackProxy.unregister(sessionId));
     }
@@ -6392,7 +6474,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     }
     _syncControllerQueueIndexToPlayer();
     final LibrarySong? activeSong = currentSong;
-    _beginPlaybackActivation(activeSong);
     if (_playerHasLoadedCurrentSong(activeSong)) {
       try {
         await _player.play();
@@ -6407,6 +6488,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         );
       }
     }
+    _beginPlaybackActivation(activeSong);
     if (activeSong != null &&
         !_playerQueueHasControllerPlaylist() &&
         _songHasImmediatePlaybackSource(activeSong)) {
@@ -8271,6 +8353,8 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     _subscriptions.clear();
     _dataUsageSnapshotTimer?.cancel();
     _dataUsageSnapshotTimer = null;
+    _playbackActivationTimer?.cancel();
+    _playbackActivationTimer = null;
     unawaited(_cloudUserDataSubscription?.cancel());
     _cloudUserDataSubscription = null;
     unawaited(_notificationActionSubscription?.cancel());
