@@ -1498,57 +1498,69 @@ class _DesktopLibraryScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Wrap(
-            spacing: 20,
-            runSpacing: 20,
-            children: <Widget>[
-              SizedBox(
-                width: 300,
-                child: _LibraryFeatureCard(
-                  title: 'Liked\nSongs',
-                  subtitle: '${likedSongs.length} tracks',
-                  icon: Icons.favorite_rounded,
-                  accent: const Color(0xFFFF8A3D),
-                  secondary: const Color(0xFFFF7D2F),
-                  watermark: Icons.favorite_rounded,
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (BuildContext context) => _MusixPlaylistScreen(
-                          controller: controller,
-                          title: 'Liked Songs',
-                          songs: likedSongs,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              SizedBox(
-                width: 300,
-                child: _LibraryFeatureCard(
-                  title: 'Offline',
-                  subtitle: 'Synced locally',
-                  icon: Icons.download_rounded,
-                  accent: const Color(0xFF4A1D06),
-                  secondary: const Color(0xFF512007),
-                  watermark: Icons.download_rounded,
-                  darkText: false,
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (BuildContext context) => _MusixPlaylistScreen(
-                          controller: controller,
-                          title: 'Offline',
-                          songs: controller.browsableSongs,
-                          localPlaybackOnly: true,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
+          LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final int columns = _isDesktopPlatform() ? 2 : 1;
+              final double spacing = 20;
+              final double totalSpacing = spacing * (columns - 1);
+              final double availableWidth = constraints.maxWidth - totalSpacing;
+              final double itemWidth = availableWidth / columns;
+
+              return Wrap(
+                spacing: spacing,
+                runSpacing: spacing,
+                children: <Widget>[
+                  SizedBox(
+                    width: itemWidth,
+                    child: _LibraryFeatureCard(
+                      title: 'Liked\nSongs',
+                      subtitle: '${likedSongs.length} tracks',
+                      icon: Icons.favorite_rounded,
+                      accent: const Color(0xFFFF8A3D),
+                      secondary: const Color(0xFFFF7D2F),
+                      watermark: Icons.favorite_rounded,
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (BuildContext context) =>
+                                _MusixPlaylistScreen(
+                                  controller: controller,
+                                  title: 'Liked Songs',
+                                  songs: likedSongs,
+                                ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  SizedBox(
+                    width: itemWidth,
+                    child: _LibraryFeatureCard(
+                      title: 'Offline',
+                      subtitle: 'Synced locally',
+                      icon: Icons.download_rounded,
+                      accent: const Color(0xFF4A1D06),
+                      secondary: const Color(0xFF512007),
+                      watermark: Icons.download_rounded,
+                      darkText: false,
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (BuildContext context) =>
+                                _MusixPlaylistScreen(
+                                  controller: controller,
+                                  title: 'Offline',
+                                  songs: controller.browsableSongs,
+                                  localPlaybackOnly: true,
+                                ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 20),
           _DesktopPanel(
@@ -1598,21 +1610,16 @@ class _DesktopLibraryScreen extends StatelessWidget {
                   LayoutBuilder(
                     builder:
                         (BuildContext context, BoxConstraints constraints) {
-                          final int columns = constraints.maxWidth >= 1380
-                              ? 3
-                              : constraints.maxWidth >= 760
-                              ? 2
-                              : 1;
-                          final double rawItemWidth =
-                              (constraints.maxWidth - ((columns - 1) * 18)) /
-                              columns;
-                          final double itemWidth = rawItemWidth.clamp(
-                            260.0,
-                            420.0,
-                          );
+                          final int columns = _isDesktopPlatform() ? 2 : 1;
+                          final double spacing = 18;
+                          final double totalSpacing = spacing * (columns - 1);
+                          final double availableWidth =
+                              constraints.maxWidth - totalSpacing;
+                          final double itemWidth = availableWidth / columns;
+
                           return Wrap(
-                            spacing: 18,
-                            runSpacing: 18,
+                            spacing: spacing,
+                            runSpacing: spacing,
                             children: playlistEntries.map((
                               _DesktopLibraryPlaylistEntry entry,
                             ) {
@@ -1726,6 +1733,7 @@ class _DesktopPlaylistBox extends StatelessWidget {
                 child: Row(
                   children: <Widget>[
                     artwork,
+
                     const SizedBox(width: 18),
                     Expanded(
                       child: Column(
