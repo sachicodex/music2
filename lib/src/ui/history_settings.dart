@@ -297,17 +297,13 @@ class _SettingsScreen extends StatelessWidget {
                     width: 86,
                     height: 86,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4A1D0E),
+                      color: const Color(0xFF050000),
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: Center(
-                      child: Text(
-                        userInitials,
-                        style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(
-                              color: const Color(0xFFFFC8A1),
-                              fontWeight: FontWeight.w900,
-                            ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(15),
+                        child: Image.asset('assets/icons/Musix - Full.png'),
                       ),
                     ),
                   ),

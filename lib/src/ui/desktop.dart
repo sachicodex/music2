@@ -1777,7 +1777,7 @@ class _DesktopPlaylistBox extends StatelessWidget {
             }
 
             return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 artwork,
@@ -1951,17 +1951,13 @@ class _DesktopSettingsScreen extends StatelessWidget {
                   width: 100,
                   height: 100,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF4A1D0E),
+                    color: const Color(0xFF050000),
                     borderRadius: BorderRadius.circular(22),
                   ),
                   child: Center(
-                    child: Text(
-                      userInitials,
-                      style: Theme.of(context).textTheme.headlineMedium
-                          ?.copyWith(
-                            color: const Color(0xFFFFC8A1),
-                            fontWeight: FontWeight.w900,
-                          ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(15),
+                      child: Image.asset('assets/icons/Musix - Full.png'),
                     ),
                   ),
                 ),
