@@ -85,6 +85,116 @@ const List<AppRegion> kAppRegions = <AppRegion>[
   AppRegion(countryCode: 'KR', label: 'South Korea', languageCode: 'ko'),
 ];
 
+String? normalizeArtworkUrl(
+  String? artworkUrl, {
+  String? songId,
+  String? path,
+  bool isRemote = false,
+}) {
+  final String value = (artworkUrl ?? '').trim();
+  final String? videoId = isRemote
+      ? _extractYouTubeVideoId(songId: songId, path: path)
+      : null;
+  if (value.isEmpty) {
+    return videoId == null ? null : _youtubeArtworkUrl(videoId);
+  }
+
+  final Uri? uri = Uri.tryParse(value);
+  if (uri == null) {
+    return videoId == null ? value : _youtubeArtworkUrl(videoId);
+  }
+  if (uri.host.isEmpty && videoId != null) {
+    return _youtubeArtworkUrl(videoId);
+  }
+
+  final String host = uri.host.toLowerCase();
+  if (host.contains('googleusercontent.com') ||
+      host.contains('yt3.ggpht.com')) {
+    final String normalizedPath = uri.path.replaceFirst(
+      RegExp(r'=[^/?#]+$'),
+      '=w600-h600-l90-rj',
+    );
+    final Map<String, String> params = Map<String, String>.from(
+      uri.queryParameters,
+    );
+    bool changed = normalizedPath != uri.path;
+    if (params.containsKey('w') && params['w'] != '600') {
+      params['w'] = '600';
+      changed = true;
+    }
+    if (params.containsKey('h') && params['h'] != '600') {
+      params['h'] = '600';
+      changed = true;
+    }
+    if (changed) {
+      return uri
+          .replace(
+            path: normalizedPath,
+            queryParameters: params.isEmpty ? null : params,
+          )
+          .toString();
+    }
+    return value;
+  }
+
+  if (videoId != null && host.contains('ytimg.com')) {
+    return _youtubeArtworkUrl(videoId);
+  }
+
+  return value;
+}
+
+String? _extractYouTubeVideoId({String? songId, String? path}) {
+  final String normalizedSongId = (songId ?? '').trim();
+  if (normalizedSongId.startsWith('yt:')) {
+    final String value = normalizedSongId.substring(3).trim();
+    if (value.isNotEmpty) {
+      return value;
+    }
+  }
+
+  final String normalizedPath = (path ?? '').trim();
+  if (normalizedPath.isEmpty) {
+    return null;
+  }
+  if (normalizedPath.startsWith('yt:')) {
+    final String value = normalizedPath.substring(3).trim();
+    if (value.isNotEmpty) {
+      return value;
+    }
+  }
+
+  final Uri? uri = Uri.tryParse(normalizedPath);
+  if (uri == null) {
+    return null;
+  }
+
+  final String host = uri.host.toLowerCase();
+  if (host.contains('youtu.be')) {
+    final String value = uri.pathSegments.firstWhere(
+      (String segment) => segment.trim().isNotEmpty,
+      orElse: () => '',
+    );
+    return value.isEmpty ? null : value;
+  }
+  if (host.contains('youtube.com') || host.contains('music.youtube.com')) {
+    final String value = (uri.queryParameters['v'] ?? '').trim();
+    return value.isEmpty ? null : value;
+  }
+  if (host.contains('ytimg.com') && uri.pathSegments.length >= 2) {
+    final String kind = uri.pathSegments.first;
+    if (kind == 'vi' || kind == 'vi_webp') {
+      final String value = uri.pathSegments[1].trim();
+      return value.isEmpty ? null : value;
+    }
+  }
+  return null;
+}
+
+String _youtubeArtworkUrl(String videoId) {
+  return 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg';
+}
+
 class AppSettings {
   const AppSettings({
     this.themeModeIndex = 0,
@@ -194,7 +304,7 @@ class AppSettings {
 }
 
 class LibrarySong {
-  const LibrarySong({
+  LibrarySong({
     required this.id,
     required this.path,
     required this.title,
@@ -214,11 +324,16 @@ class LibrarySong {
     this.playCount = 0,
     this.lastPlayedAt,
     this.isRemote = false,
-    this.artworkUrl,
+    String? artworkUrl,
     this.externalUrl,
     this.isLiked = false,
     this.isDisliked = false,
-  });
+  }) : artworkUrl = normalizeArtworkUrl(
+         artworkUrl,
+         songId: id,
+         path: path,
+         isRemote: isRemote,
+       );
 
   final String id;
   final String path;

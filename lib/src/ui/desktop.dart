@@ -232,6 +232,7 @@ class _DesktopWindowTitleBarState extends State<_DesktopWindowTitleBar>
           _DesktopTitleBarActionButton(
             icon: Icons.minimize_rounded,
             onTap: () => unawaited(windowManager.minimize()),
+            iconOffset: const Offset(0, -5),
           ),
           const SizedBox(width: 10),
           _DesktopTitleBarActionButton(
@@ -257,11 +258,13 @@ class _DesktopTitleBarActionButton extends StatefulWidget {
     required this.icon,
     required this.onTap,
     this.hoverColor = const Color(0xFF3A1B10),
+    this.iconOffset = Offset.zero,
   });
 
   final IconData icon;
   final VoidCallback onTap;
   final Color hoverColor;
+  final Offset iconOffset;
 
   @override
   State<_DesktopTitleBarActionButton> createState() =>
@@ -294,12 +297,15 @@ class _DesktopTitleBarActionButtonState
             ),
           ),
           child: Center(
-            child: Icon(
-              widget.icon,
-              color: _hovering
-                  ? const Color(0xFFD7D0CA)
-                  : const Color(0xFFAAA39D),
-              size: 18,
+            child: Transform.translate(
+              offset: widget.iconOffset,
+              child: Icon(
+                widget.icon,
+                color: _hovering
+                    ? const Color(0xFFD7D0CA)
+                    : const Color(0xFFAAA39D),
+                size: 18,
+              ),
             ),
           ),
         ),
@@ -970,6 +976,9 @@ class _DesktopHomeScreen extends StatelessWidget {
         .toList(growable: false);
     final bool hasRevealableContent =
         feed.isNotEmpty || mayYouLikeFull.isNotEmpty;
+    final bool showRecommendationLoadingState =
+        !hasRevealableContent &&
+        (controller.homeLoading || !controller.homeRefreshResolvedOnce);
     final List<LibrarySong> jumpBackIn = controller.recentlyPlayedSongs
         .take(4)
         .toList(growable: false);
@@ -985,7 +994,7 @@ class _DesktopHomeScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           _DesktopPanel(
-            child: controller.homeLoading && !hasRevealableContent
+            child: showRecommendationLoadingState
                 ? const _MusixHeroSkeleton()
                 : featured != null
                 ? _MusixHeroCard(
@@ -1021,7 +1030,7 @@ class _DesktopHomeScreen extends StatelessWidget {
                   },
                 ),
                 const SizedBox(height: 10),
-                if (controller.homeLoading && !hasRevealableContent)
+                if (showRecommendationLoadingState)
                   const _MusixListSkeleton(count: 4)
                 else if (mayYouLike.isEmpty)
                   const _PersonalizationHintCard(

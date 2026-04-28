@@ -162,6 +162,9 @@ class _HomeScreenState extends State<_HomeScreen>
         .toList(growable: false);
     final bool hasRevealableContent =
         feed.isNotEmpty || mayYouLikeFull.isNotEmpty;
+    final bool showRecommendationLoadingState =
+        !hasRevealableContent &&
+        (controller.homeLoading || !controller.homeRefreshResolvedOnce);
 
     final List<LibrarySong> jumpBackIn = controller.recentlyPlayedSongs
         .take(4)
@@ -203,7 +206,7 @@ class _HomeScreenState extends State<_HomeScreen>
                 children: <Widget>[
                   const _MusixTopBar(),
                   const SizedBox(height: 14),
-                  if (controller.homeLoading && !hasRevealableContent)
+                  if (showRecommendationLoadingState)
                     const _MusixHeroSkeleton()
                   else if (featured != null)
                     _MusixHeroCard(
@@ -235,7 +238,7 @@ class _HomeScreenState extends State<_HomeScreen>
                     },
                   ),
                   const SizedBox(height: 10),
-                  if (controller.homeLoading && !hasRevealableContent)
+                  if (showRecommendationLoadingState)
                     const _MusixListSkeleton(count: 4)
                   else if (mayYouLike.isEmpty)
                     const _PersonalizationHintCard(

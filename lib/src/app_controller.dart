@@ -107,6 +107,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   bool _onlineLoading = false;
   bool _trendingNowLoading = false;
   bool _homeLoading = false;
+  bool _homeRefreshResolvedOnce = false;
   bool _smartQueueLoading = false;
   bool _isOffline = false;
   bool _startupOfflineMode = false;
@@ -215,6 +216,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   bool get onlineLoading => _onlineLoading;
   bool get trendingNowLoading => _trendingNowLoading;
   bool get homeLoading => _homeLoading;
+  bool get homeRefreshResolvedOnce => _homeRefreshResolvedOnce;
   bool get smartQueueLoading => _smartQueueLoading;
   bool get isOffline => _isOffline;
   bool get isOfflineViewActive => _startupOfflineMode || offlineMusicMode;
@@ -580,6 +582,14 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         trimmedQueueLabel.isEmpty || trimmedQueueLabel == 'Now Playing'
         ? 'Jump back in'
         : trimmedQueueLabel;
+    final List<LibrarySong> restoredQueue = queueSongs;
+    final int restoredIndex = restoredQueue.indexWhere(
+      (LibrarySong queuedSong) => queuedSong.id == song.id,
+    );
+    if (restoredIndex >= 0) {
+      await playSongs(restoredQueue, startIndex: restoredIndex, label: label);
+      return true;
+    }
     await playSong(song, label: label);
     return true;
   }
@@ -2294,6 +2304,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       }
       _homeError = _friendlyOnlineError(error);
     } finally {
+      _homeRefreshResolvedOnce = true;
       _homeLoading = false;
       notifyListeners();
     }
@@ -3317,34 +3328,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   String _upgradeArtworkUrl(String? url) {
-    final String value = (url ?? '').trim();
-    if (value.isEmpty) {
-      return value;
-    }
-    // Prefer higher quality Google artwork where possible.
-    if (value.contains('googleusercontent.com') ||
-        value.contains('yt3.ggpht.com')) {
-      final Uri uri = Uri.parse(value);
-      final String path = uri.path.replaceAllMapped(
-        RegExp(r'=w\d+-h\d+'),
-        (Match m) => '=w600-h600',
-      );
-      final Map<String, String> params = Map<String, String>.from(
-        uri.queryParameters,
-      );
-      if (params.containsKey('w')) {
-        params['w'] = '600';
-      }
-      if (params.containsKey('h')) {
-        params['h'] = '600';
-      }
-      final Uri upgraded = uri.replace(
-        path: path,
-        queryParameters: params.isEmpty ? null : params,
-      );
-      return upgraded.toString();
-    }
-    return value;
+    return normalizeArtworkUrl(url) ?? '';
   }
 
   int _parseDurationMs(dynamic rawDuration) {
@@ -6492,10 +6476,11 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     if (activeSong != null &&
         !_playerQueueHasControllerPlaylist() &&
         _songHasImmediatePlaybackSource(activeSong)) {
+      final bool shouldPreferDetachedPlayback = _queueSongIds.length <= 1;
       await _reopenQueueAtIndex(
         _queueIndex,
         forcePlay: true,
-        preferDetached: true,
+        preferDetached: shouldPreferDetachedPlayback,
       );
       return;
     }
@@ -8243,7 +8228,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
             .map((dynamic item) => item as String)
             .where((String songId) {
               final LibrarySong? song = songById(songId);
-              return song != null && song.isRemote;
+              return song != null && shouldShowSongOutsideSearch(song);
             })
             .toList(growable: false);
     _queueSongIds = restoredQueueSongIds;
