@@ -34,7 +34,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       _firestoreUserDataService = firestoreUserDataService {
     WidgetsBinding.instance.addObserver(this);
   }
-  static const int _smartQueueBatchSize = 7;
+  static const int _smartQueueBatchSize = 15;
   static const Duration _minBrowsableSongDuration = Duration(seconds: 30);
   static const Duration _maxBrowsableSongDuration = Duration(minutes: 10);
   static const Duration _playbackActivationMinimumLoading = Duration(
@@ -109,6 +109,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   bool _homeLoading = false;
   bool _homeRefreshResolvedOnce = false;
   bool _smartQueueLoading = false;
+  bool _smartQueueRefillQueued = false;
   bool _isOffline = false;
   bool _startupOfflineMode = false;
   String? _statusMessage;
@@ -1007,6 +1008,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     _playbackFallbackRecoveryInFlight = false;
     _playbackFallbackRecoverySongId = null;
     _playbackFallbackRecoveryIndex = null;
+    _smartQueueRefillQueued = false;
     _clearPlaybackActivation();
     for (final String sessionId in sessionIds) {
       unawaited(_playbackProxy.unregister(sessionId));
@@ -1845,6 +1847,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       }
       _startConnectivityMonitoring();
       notifyListeners();
+      unawaited(_refillRestoredSmartQueueIfNeeded());
       unawaited(rescanLibrary());
       _requestAutoHomeRefresh();
     } catch (error, stackTrace) {
@@ -3417,9 +3420,52 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     return ytm_browser.setupBrowser(headersRaw: input);
   }
 
+  void _scheduleSmartQueueWindowRefill({LibrarySong? seed}) {
+    if (_isDisposing || _isDisposed) {
+      return;
+    }
+    if (_smartQueueLoading) {
+      _smartQueueRefillQueued = true;
+      return;
+    }
+    final bool syncPlayerQueue =
+        !_offlineDetachedQueueMode && _playerQueueHasControllerPlaylist();
+    unawaited(
+      _maybeExtendSmartQueue(
+        seed: seed,
+        force: true,
+        syncPlayerQueue: syncPlayerQueue,
+      ),
+    );
+  }
+
+  Future<void> _refillRestoredSmartQueueIfNeeded() async {
+    if (_queueSongIds.isEmpty ||
+        _queueIndex < 0 ||
+        _queueIndex >= _queueSongIds.length) {
+      return;
+    }
+
+    final LibrarySong? anchor = currentSong;
+    if (anchor == null) {
+      return;
+    }
+
+    final int previousQueueLength = _queueSongIds.length;
+    await _maybeExtendSmartQueue(
+      seed: anchor,
+      force: true,
+      syncPlayerQueue: false,
+    );
+    if (_queueSongIds.length > previousQueueLength) {
+      _scheduleSnapshotSave();
+    }
+  }
+
   Future<void> _maybeExtendSmartQueue({
     LibrarySong? seed,
     bool force = false,
+    bool syncPlayerQueue = true,
   }) async {
     if (_isDisposing ||
         _isDisposed ||
@@ -3451,12 +3497,14 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     await _appendSmartQueuePredictions(
       anchor,
       limit: _smartQueueBatchSize - remaining,
+      syncPlayerQueue: syncPlayerQueue,
     );
   }
 
   Future<void> _appendSmartQueuePredictions(
     LibrarySong anchor, {
     int limit = 6,
+    bool syncPlayerQueue = true,
   }) async {
     if (limit <= 0 || _isDisposing || _isDisposed) {
       return;
@@ -3508,6 +3556,8 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
           .toSet();
       final Set<String> queuedIds = <String>{..._queueSongIds};
       final Set<String> queuedKeys = queueSongs.map(_songIdentityKey).toSet();
+      final bool shouldSyncPlayerQueue =
+          syncPlayerQueue && _playerQueueHasControllerPlaylist();
       int addedCount = 0;
       for (final LibrarySong song in predictions) {
         if (_isDisposing || _isDisposed) {
@@ -3525,7 +3575,9 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
 
         _queueSongIds = <String>[..._queueSongIds, song.id];
         _smartQueueSongIds.add(song.id);
-        await _player.add(_mediaForSong(song));
+        if (shouldSyncPlayerQueue) {
+          await _player.add(_mediaForSong(song));
+        }
         addedCount += 1;
       }
 
@@ -3543,6 +3595,10 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     } finally {
       _smartQueueLoading = false;
       notifyListeners();
+      if (_smartQueueRefillQueued) {
+        _smartQueueRefillQueued = false;
+        _scheduleSmartQueueWindowRefill(seed: currentSong);
+      }
     }
   }
 
@@ -4991,6 +5047,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
           if (song != null && song.id != _lastTrackedSongId) {
             _trackPlayback(song.id);
           }
+          _scheduleSmartQueueWindowRefill(seed: song);
           _publishNotificationState();
           notifyListeners();
           return;
@@ -5046,7 +5103,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         if (song != null && song.id != _lastTrackedSongId) {
           _trackPlayback(song.id);
         }
-        unawaited(_maybeExtendSmartQueue(seed: song, force: true));
+        _scheduleSmartQueueWindowRefill(seed: song);
         unawaited(_refreshOfflinePlaybackCache(anchor: song));
         _publishNotificationState();
         notifyListeners();
@@ -5180,7 +5237,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     if (song != null && song.id != _lastTrackedSongId) {
       _trackPlayback(song.id);
     }
-    unawaited(_maybeExtendSmartQueue(seed: song, force: true));
+    _scheduleSmartQueueWindowRefill(seed: song);
     unawaited(_refreshOfflinePlaybackCache(anchor: song));
   }
 
@@ -5634,9 +5691,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       await _player.play();
       _trackPlayback(preparedSongs[safeIndex].id);
       if (!_isOffline && !offlineMusicMode) {
-        unawaited(
-          _maybeExtendSmartQueue(seed: preparedSongs[safeIndex], force: true),
-        );
+        _scheduleSmartQueueWindowRefill(seed: preparedSongs[safeIndex]);
       }
       notifyListeners();
     } catch (_) {
@@ -5915,7 +5970,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       await _player.open(Playlist(<Media>[_mediaForSong(song)]));
       await _player.play();
       _trackPlayback(song.id);
-      unawaited(_maybeExtendSmartQueue(seed: song, force: true));
+      _scheduleSmartQueueWindowRefill(seed: song);
       unawaited(_refreshOfflinePlaybackCache(anchor: song));
       notifyListeners();
     } catch (_) {
@@ -6417,6 +6472,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     try {
       await _player.jump(index);
       _queueIndex = index;
+      _scheduleSmartQueueWindowRefill(seed: targetSong);
       notifyListeners();
     } catch (error) {
       if (await _recoverTransitionFromError(index, error)) {
@@ -6443,7 +6499,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     } else {
       _queueIndex = _queueIndex.clamp(0, _queueSongIds.length - 1);
     }
-    unawaited(_maybeExtendSmartQueue(force: true));
+    _scheduleSmartQueueWindowRefill();
     notifyListeners();
   }
 
@@ -7506,6 +7562,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       _clearOfflineQueueActivationState();
       _resolveTrackTransition(preparedQueue[index]);
       _trackPlayback(preparedQueue[index].id);
+      _scheduleSmartQueueWindowRefill(seed: preparedQueue[index]);
       unawaited(_refreshOfflinePlaybackCache(anchor: preparedQueue[index]));
       _debugPlayback(
         'queue.reopen complete index=$index '
