@@ -112,18 +112,18 @@ String? normalizeArtworkUrl(
       host.contains('yt3.ggpht.com')) {
     final String normalizedPath = uri.path.replaceFirst(
       RegExp(r'=[^/?#]+$'),
-      '=w600-h600-l90-rj',
+      '=w320-h320-l90-rj',
     );
     final Map<String, String> params = Map<String, String>.from(
       uri.queryParameters,
     );
     bool changed = normalizedPath != uri.path;
-    if (params.containsKey('w') && params['w'] != '600') {
-      params['w'] = '600';
+    if (params.containsKey('w') && params['w'] != '320') {
+      params['w'] = '320';
       changed = true;
     }
-    if (params.containsKey('h') && params['h'] != '600') {
-      params['h'] = '600';
+    if (params.containsKey('h') && params['h'] != '320') {
+      params['h'] = '320';
       changed = true;
     }
     if (changed) {

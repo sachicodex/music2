@@ -139,6 +139,9 @@ class PlaybackProxyServer {
     }
 
     try {
+      if (await _tryServeFromCompletedCache(incoming, session)) {
+        return;
+      }
       final HttpClientRequest upstream = await _client.openUrl(
         incoming.method,
         session.upstreamUri,
@@ -219,6 +222,110 @@ class PlaybackProxyServer {
       } catch (_) {}
       await incoming.response.close();
     }
+  }
+
+  Future<bool> _tryServeFromCompletedCache(
+    HttpRequest incoming,
+    _PlaybackProxySession session,
+  ) async {
+    final String? cachePath = session.cacheFilePath?.trim();
+    if (cachePath == null || cachePath.isEmpty) {
+      return false;
+    }
+    final String method = incoming.method.toUpperCase();
+    if (method != 'GET' && method != 'HEAD') {
+      return false;
+    }
+    final File cachedFile = File(cachePath);
+    if (!await cachedFile.exists() &&
+        session.cacheWriteInProgress &&
+        !session.cacheCompleted) {
+      final bool ready = await _waitForCacheFile(
+        file: cachedFile,
+        session: session,
+      );
+      if (!ready) {
+        return false;
+      }
+    }
+    if (!await cachedFile.exists()) {
+      return false;
+    }
+
+    final int fileLength = await cachedFile.length();
+    int start = 0;
+    int end = fileLength > 0 ? fileLength - 1 : 0;
+    int statusCode = HttpStatus.ok;
+    final String? rangeHeader = incoming.headers.value(HttpHeaders.rangeHeader);
+    final _ByteRange? parsedRange = _ByteRange.tryParse(rangeHeader);
+    if (parsedRange != null && fileLength > 0) {
+      final int? resolvedStart = parsedRange.start;
+      final int? resolvedEnd = parsedRange.end;
+      if (resolvedStart != null && resolvedStart >= fileLength) {
+        incoming.response.statusCode = HttpStatus.requestedRangeNotSatisfiable;
+        incoming.response.headers.set(
+          HttpHeaders.contentRangeHeader,
+          'bytes */$fileLength',
+        );
+        await incoming.response.close();
+        return true;
+      }
+      if (resolvedStart == null && resolvedEnd != null) {
+        final int suffixLength = resolvedEnd.clamp(0, fileLength);
+        start = fileLength - suffixLength;
+        end = fileLength - 1;
+      } else {
+        start = (resolvedStart ?? 0).clamp(0, fileLength - 1);
+        end = (resolvedEnd ?? (fileLength - 1)).clamp(start, fileLength - 1);
+      }
+      statusCode = HttpStatus.partialContent;
+    }
+
+    final int length = fileLength == 0 ? 0 : (end - start + 1);
+    incoming.response.statusCode = statusCode;
+    incoming.response.headers.contentType = ContentType('audio', 'mp4');
+    incoming.response.headers.set(HttpHeaders.acceptRangesHeader, 'bytes');
+    if (statusCode == HttpStatus.partialContent) {
+      incoming.response.headers.set(
+        HttpHeaders.contentRangeHeader,
+        'bytes $start-$end/$fileLength',
+      );
+    }
+    incoming.response.headers.contentLength = length;
+
+    if (method == 'HEAD' || fileLength == 0 || length <= 0) {
+      await incoming.response.close();
+      return true;
+    }
+
+    await incoming.response.addStream(cachedFile.openRead(start, end + 1));
+    await incoming.response.close();
+    onBytesTransferred(
+      PlaybackProxyTransfer(
+        sessionId: session.sessionId,
+        songId: session.songId,
+        bytesTransferred: length,
+      ),
+    );
+    return true;
+  }
+
+  Future<bool> _waitForCacheFile({
+    required File file,
+    required _PlaybackProxySession session,
+  }) async {
+    const Duration step = Duration(milliseconds: 120);
+    const int maxPolls = 250; // ~30 seconds
+    for (int attempt = 0; attempt < maxPolls; attempt += 1) {
+      if (await file.exists()) {
+        return true;
+      }
+      if (!session.cacheWriteInProgress || session.cacheCompleted) {
+        break;
+      }
+      await Future<void>.delayed(step);
+    }
+    return await file.exists();
   }
 
   void _copyRequestHeaders({
@@ -446,6 +553,34 @@ class _ContentRangeHeader {
       start: int.parse(match.group(1)!),
       end: int.parse(match.group(2)!),
       totalLength: match.group(3) == '*' ? null : int.parse(match.group(3)!),
+    );
+  }
+}
+
+class _ByteRange {
+  const _ByteRange({this.start, this.end});
+
+  final int? start;
+  final int? end;
+
+  static final RegExp _pattern = RegExp(r'^bytes=(\d*)-(\d*)$');
+
+  static _ByteRange? tryParse(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return null;
+    }
+    final RegExpMatch? match = _pattern.firstMatch(value.trim());
+    if (match == null) {
+      return null;
+    }
+    final String startPart = match.group(1) ?? '';
+    final String endPart = match.group(2) ?? '';
+    if (startPart.isEmpty && endPart.isEmpty) {
+      return null;
+    }
+    return _ByteRange(
+      start: startPart.isEmpty ? null : int.tryParse(startPart),
+      end: endPart.isEmpty ? null : int.tryParse(endPart),
     );
   }
 }
