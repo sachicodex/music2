@@ -299,6 +299,22 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       List<String>.unmodifiable(_recentSearchTerms);
   String get queueLabel => _queueLabel;
   int get queueIndex => _queueIndex;
+  int get visibleQueueIndex {
+    final int? waitingIndex = _offlineQueueWaitingIndex;
+    if (waitingIndex != null &&
+        waitingIndex >= 0 &&
+        waitingIndex < _queueSongIds.length) {
+      return waitingIndex;
+    }
+    final int? transitioningIndex = _transitioningQueueIndex;
+    if (transitioningIndex != null &&
+        transitioningIndex >= 0 &&
+        transitioningIndex < _queueSongIds.length) {
+      return transitioningIndex;
+    }
+    return _queueIndex;
+  }
+
   bool get hasHomeRecommendations =>
       _homeFeed.isNotEmpty || _personalizedHomeRecommendations.isNotEmpty;
   bool get hasYtMusicAuth =>
@@ -611,7 +627,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       isLoading: miniPlayerSelectionLoading,
       isShuffleEnabled: _isShuffleEnabled,
       repeatMode: _repeatMode,
-      queueIndex: _queueIndex,
+      queueIndex: visibleQueueIndex,
       queueLength: _queueSongIds.length,
       streamInfo: song == null ? null : _playbackStreamInfoBySongId[song.id],
     );
@@ -7405,6 +7421,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     if (queue.isEmpty || index >= queue.length) {
       return;
     }
+    _primePendingTrackTransition(index);
     final bool actionOffline =
         offlineMusicMode || await _resolveOfflineStateForAction();
     final bool requiresDetachedSequentialQueue =
@@ -7427,8 +7444,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       );
     }
     final LibrarySong target = preparedQueue[index];
-
-    _primePendingTrackTransition(index);
     try {
       final bool shouldResume = forcePlay || _isPlaying;
       if (shouldResume) {

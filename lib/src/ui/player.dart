@@ -1115,7 +1115,7 @@ class _DesktopPlayerQueuePanel extends StatelessWidget {
                       final _VisibleQueueSong queuedItem = songs[index];
                       final LibrarySong queuedSong = queuedItem.song;
                       final bool active =
-                          controller.queueIndex == queuedItem.queueIndex;
+                          controller.visibleQueueIndex == queuedItem.queueIndex;
                       return Material(
                         color: active
                             ? accent.withValues(alpha: 0.14)
@@ -1806,7 +1806,8 @@ class _PlayerQueueSheetState extends State<_PlayerQueueSheet> {
                             final _VisibleQueueSong queueItem = songs[index];
                             final LibrarySong song = queueItem.song;
                             final bool active =
-                                controller.queueIndex == queueItem.queueIndex;
+                                controller.visibleQueueIndex ==
+                                queueItem.queueIndex;
 
                             return Padding(
                               key: ValueKey<String>('queue-${song.id}-$index'),
