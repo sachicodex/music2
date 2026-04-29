@@ -181,6 +181,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   List<String>? _offlineQueueActivationSongIds;
   String? _offlineQueueWaitingSongId;
   int? _offlineQueueWaitingIndex;
+  bool _offlineQueueWaitingShouldResume = false;
   Future<void>? _offlinePlaybackCacheWorker;
   bool _offlineDetachedQueueMode = false;
   String? _activeCloudUserId;
@@ -480,12 +481,11 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     if (_playbackActivationSongId != null) {
       return true;
     }
-    final LibrarySong? active = currentSong;
     final String? waitingSongId = _offlineQueueWaitingSongId;
-    if (waitingSongId != null &&
-        (active == null || active.id != waitingSongId)) {
+    if (waitingSongId != null) {
       return true;
     }
+    final LibrarySong? active = currentSong;
     final String? transitioningSongId = _transitioningSongId;
     if (transitioningSongId != null &&
         (active == null || active.id != transitioningSongId)) {
@@ -537,6 +537,11 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   bool _syncControllerQueueIndexToPlayer({bool notify = false}) {
+    if (_offlineDetachedQueueMode ||
+        _offlineQueueWaitingSongId != null ||
+        _offlineQueueActivationTargetSongId != null) {
+      return false;
+    }
     if (!_playerQueueHasControllerPlaylist()) {
       return false;
     }
@@ -7543,7 +7548,10 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       await _reopenQueueAtIndex(targetIndex, forcePlay: bootstrapPlayback);
       return true;
     }
-    await _enterOfflineQueueWait(targetIndex);
+    await _enterOfflineQueueWait(
+      targetIndex,
+      shouldResume: bootstrapPlayback || _isPlaying,
+    );
     return true;
   }
 
@@ -7679,7 +7687,10 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
-  Future<void> _enterOfflineQueueWait(int targetIndex) async {
+  Future<void> _enterOfflineQueueWait(
+    int targetIndex, {
+    bool shouldResume = false,
+  }) async {
     if (targetIndex < 0 || targetIndex >= _queueSongIds.length) {
       return;
     }
@@ -7689,6 +7700,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     }
     _offlineQueueWaitingSongId = targetSong.id;
     _offlineQueueWaitingIndex = targetIndex;
+    _offlineQueueWaitingShouldResume = shouldResume;
     _queueIndex = targetIndex;
     _transitioningSongId = targetSong.id;
     _transitioningQueueIndex = targetIndex;
@@ -7699,7 +7711,8 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     _clearPlaybackActivation();
     _debugPlayback(
       'offline.wait enter '
-      'targetIndex=$targetIndex song=${_debugSongLabel(targetSong)}',
+      'targetIndex=$targetIndex song=${_debugSongLabel(targetSong)} '
+      'shouldResume=$shouldResume',
     );
     try {
       await _player.pause();
@@ -7714,6 +7727,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     }
     _offlineQueueWaitingSongId = null;
     _offlineQueueWaitingIndex = null;
+    _offlineQueueWaitingShouldResume = false;
     _statusMessage = null;
     if (notify) {
       notifyListeners();
@@ -7722,6 +7736,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _resumeOfflineWaitingQueue() async {
     final int? targetIndex = _offlineQueueWaitingIndex;
+    final bool shouldResume = _offlineQueueWaitingShouldResume;
     final bool offline = await _resolveOfflineStateForAction();
     if (targetIndex == null || offline || offlineMusicMode) {
       return;
@@ -7733,11 +7748,10 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     final LibrarySong? targetSong = songById(_queueSongIds[targetIndex]);
     _debugPlayback(
       'offline.wait resume '
-      'targetIndex=$targetIndex target=${_debugSongLabel(targetSong)}',
+      'targetIndex=$targetIndex target=${_debugSongLabel(targetSong)} '
+      'shouldResume=$shouldResume',
     );
-    _clearOfflineQueueWait(notify: false);
-    await _reopenQueueAtIndex(targetIndex);
-    await play();
+    await _reopenQueueAtIndex(targetIndex, forcePlay: shouldResume);
   }
 
   void _primeOfflineQueueActivation({
