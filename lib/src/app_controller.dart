@@ -6551,6 +6551,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         if (activeSong != null && _lastTrackedSongId != activeSong.id) {
           _trackPlayback(activeSong.id);
         }
+        unawaited(_refreshOfflinePlaybackCache(anchor: activeSong));
         return;
       } catch (error) {
         _debugPlayback(
@@ -6581,6 +6582,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       await _reopenQueueAtIndex(_queueIndex);
     }
     await _player.play();
+    unawaited(_refreshOfflinePlaybackCache(anchor: activeSong));
   }
 
   Future<void> pause() async {
@@ -7255,10 +7257,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _cacheSongForOfflinePlayback(LibrarySong song) async {
-    final String? activeSongId = currentSong?.id;
     if (!offlinePlaybackCacheEnabled ||
-        activeSongId == null ||
-        song.id != activeSongId ||
         !_shouldCacheSongForOfflinePlayback(song) ||
         _blockingPlaybackCacheTasksBySongId.containsKey(song.id) ||
         _offlinePlaybackPrefetchInFlight.contains(song.id) ||
@@ -7311,10 +7310,12 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     if (!offlinePlaybackCacheEnabled) {
       return <LibrarySong>[];
     }
-    final LibrarySong? target = currentSong;
+    final LibrarySong? target = anchor ?? currentSong;
+    final int upcomingWindow = nextChanceSongCount.clamp(0, 5);
     final int? queueIndex = _offlinePlaybackCacheAnchorQueueIndex(
       anchor: target,
     );
+    final List<LibrarySong> queue = queueSongs;
     final List<LibrarySong> result = <LibrarySong>[];
     final Set<String> seenSongIds = <String>{};
 
@@ -7329,11 +7330,21 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
 
     addCandidate(target);
 
+    if (queueIndex != null && upcomingWindow > 0) {
+      final int upperBound = math.min(
+        queue.length,
+        queueIndex + upcomingWindow + 1,
+      );
+      for (int index = queueIndex + 1; index < upperBound; index += 1) {
+        addCandidate(queue[index]);
+      }
+    }
+
     _debugPlayback(
       'cache.refresh candidates '
       'anchor=${_debugSongLabel(target)} '
       'queueIndex=${queueIndex ?? -1} '
-      'upcomingWindow=0 '
+      'upcomingWindow=$upcomingWindow '
       'count=${result.length} '
       'songs=${result.map((LibrarySong song) => song.id).join(', ')}',
     );
@@ -7341,13 +7352,8 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _enqueueOfflinePlaybackCacheSongs(List<LibrarySong> songs) {
-    final String? activeSongId = currentSong?.id;
-    if (activeSongId == null) {
-      return;
-    }
     for (final LibrarySong song in songs) {
-      if (song.id != activeSongId ||
-          !_shouldCacheSongForOfflinePlayback(song) ||
+      if (!_shouldCacheSongForOfflinePlayback(song) ||
           _hasOfflinePlaybackCache(song.id) ||
           _blockingPlaybackCacheTasksBySongId.containsKey(song.id) ||
           _offlinePlaybackPrefetchInFlight.contains(song.id) ||
