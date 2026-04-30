@@ -1281,39 +1281,6 @@ class _PlayerProgressAndControls extends StatelessWidget {
     return scaled.clamp(min ?? double.negativeInfinity, max ?? double.infinity);
   }
 
-  Widget _buildTransportIcon() {
-    if (isPlayerLoading) {
-      return SizedBox(
-        width: _scale(25, min: 20, max: 25),
-        height: _scale(25, min: 20, max: 25),
-        child: const CircularProgressIndicator(
-          strokeWidth: 3.2,
-          valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
-        ),
-      );
-    }
-
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 220),
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
-      transitionBuilder: (Widget child, Animation<double> animation) {
-        return FadeTransition(
-          opacity: animation,
-          child: ScaleTransition(scale: animation, child: child),
-        );
-      },
-      child: Icon(
-        showPauseIcon ? Icons.pause_rounded : Icons.play_arrow_rounded,
-        key: ValueKey<bool>(showPauseIcon),
-        size: showPauseIcon
-            ? _scale(36, min: 30, max: 36)
-            : _scale(42, min: 34, max: 42),
-        color: Colors.black,
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -1363,59 +1330,19 @@ class _PlayerProgressAndControls extends StatelessWidget {
           ],
         ),
         SizedBox(height: _scale(22, min: 14, max: 22)),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: <Widget>[
-            _PlayerIconButton(
-              icon: Icons.shuffle_rounded,
-              onPressed: onToggleShuffle,
-              color: isShuffleEnabled
-                  ? accent
-                  : textPrimary.withValues(alpha: 0.6),
-              size: _scale(28, min: 24, max: 28),
-            ),
-            _PlayerIconButton(
-              icon: Icons.skip_previous_rounded,
-              onPressed: onPrevious,
-              color: textPrimary,
-              size: _scale(34, min: 28, max: 34),
-            ),
-            GestureDetector(
-              onTap: onTogglePlayback,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
-                width: _scale(70, min: 58, max: 70),
-                height: _scale(70, min: 58, max: 70),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(
-                    _scale(24, min: 18, max: 24),
-                  ),
-                  color: accent,
-                  boxShadow: <BoxShadow>[
-                    BoxShadow(
-                      color: accent.withValues(alpha: 0.38),
-                      blurRadius: _scale(28, min: 18, max: 28),
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-                child: Center(child: _buildTransportIcon()),
-              ),
-            ),
-            _PlayerIconButton(
-              icon: Icons.skip_next_rounded,
-              onPressed: onNext,
-              color: textPrimary,
-              size: _scale(34, min: 28, max: 34),
-            ),
-            _PlayerIconButton(
-              icon: _repeatIcon(repeatMode),
-              onPressed: onCycleRepeatMode,
-              color: textPrimary.withValues(alpha: 0.6),
-              size: _scale(28, min: 24, max: 28),
-            ),
-          ],
+        _PlayerTransportControls(
+          layoutScale: layoutScale,
+          accent: accent,
+          textPrimary: textPrimary,
+          isPlayerLoading: isPlayerLoading,
+          isShuffleEnabled: isShuffleEnabled,
+          repeatMode: repeatMode,
+          showPauseIcon: showPauseIcon,
+          onToggleShuffle: onToggleShuffle,
+          onPrevious: onPrevious,
+          onTogglePlayback: onTogglePlayback,
+          onNext: onNext,
+          onCycleRepeatMode: onCycleRepeatMode,
         ),
         if (showQueueHandle && onShowQueue != null) ...<Widget>[
           SizedBox(height: _scale(10, min: 6, max: 20)),
@@ -1428,6 +1355,159 @@ class _PlayerProgressAndControls extends StatelessWidget {
             ),
           ),
         ],
+      ],
+    );
+  }
+}
+
+class _PlayerTransportControls extends StatelessWidget {
+  const _PlayerTransportControls({
+    required this.layoutScale,
+    required this.accent,
+    required this.textPrimary,
+    required this.isPlayerLoading,
+    required this.isShuffleEnabled,
+    required this.repeatMode,
+    required this.showPauseIcon,
+    required this.onToggleShuffle,
+    required this.onPrevious,
+    required this.onTogglePlayback,
+    required this.onNext,
+    required this.onCycleRepeatMode,
+    this.inactiveColor,
+    this.iconButtonSize = 48,
+    this.smallIconSize = 28,
+    this.skipIconSize = 34,
+    this.playButtonSize = 70,
+    this.playButtonRadius = 24,
+    this.playIconSize = 42,
+    this.pauseIconSize = 36,
+    this.loadingSize = 25,
+    this.loadingStrokeWidth = 3.2,
+    this.shadowBlur = 28,
+  });
+
+  final double layoutScale;
+  final Color accent;
+  final Color textPrimary;
+  final Color? inactiveColor;
+  final bool isPlayerLoading;
+  final bool isShuffleEnabled;
+  final PlaylistMode repeatMode;
+  final bool showPauseIcon;
+  final VoidCallback onToggleShuffle;
+  final VoidCallback onPrevious;
+  final VoidCallback onTogglePlayback;
+  final VoidCallback onNext;
+  final VoidCallback onCycleRepeatMode;
+  final double iconButtonSize;
+  final double smallIconSize;
+  final double skipIconSize;
+  final double playButtonSize;
+  final double playButtonRadius;
+  final double playIconSize;
+  final double pauseIconSize;
+  final double loadingSize;
+  final double loadingStrokeWidth;
+  final double shadowBlur;
+
+  double _scale(double value, {double? min, double? max}) {
+    final double scaled = value * layoutScale;
+    return scaled.clamp(min ?? double.negativeInfinity, max ?? double.infinity);
+  }
+
+  Widget _buildTransportIcon() {
+    if (isPlayerLoading) {
+      return SizedBox(
+        width: _scale(loadingSize, min: 16, max: loadingSize),
+        height: _scale(loadingSize, min: 16, max: loadingSize),
+        child: CircularProgressIndicator(
+          strokeWidth: loadingStrokeWidth,
+          valueColor: const AlwaysStoppedAnimation<Color>(Colors.black),
+        ),
+      );
+    }
+
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 220),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (Widget child, Animation<double> animation) {
+        return FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(scale: animation, child: child),
+        );
+      },
+      child: Icon(
+        showPauseIcon ? Icons.pause_rounded : Icons.play_arrow_rounded,
+        key: ValueKey<bool>(showPauseIcon),
+        size: showPauseIcon
+            ? _scale(pauseIconSize, min: 20, max: pauseIconSize)
+            : _scale(playIconSize, min: 22, max: playIconSize),
+        color: Colors.black,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Color effectiveInactive =
+        inactiveColor ?? textPrimary.withValues(alpha: 0.6);
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: <Widget>[
+        _PlayerIconButton(
+          icon: Icons.shuffle_rounded,
+          onPressed: onToggleShuffle,
+          color: isShuffleEnabled ? accent : effectiveInactive,
+          size: _scale(smallIconSize, min: 20, max: smallIconSize),
+          buttonSize: _scale(iconButtonSize, min: 28, max: iconButtonSize),
+        ),
+        _PlayerIconButton(
+          icon: Icons.skip_previous_rounded,
+          onPressed: onPrevious,
+          color: textPrimary,
+          size: _scale(skipIconSize, min: 22, max: skipIconSize),
+          buttonSize: _scale(iconButtonSize, min: 28, max: iconButtonSize),
+        ),
+        GestureDetector(
+          onTap: onTogglePlayback,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            width: _scale(playButtonSize, min: 42, max: playButtonSize),
+            height: _scale(playButtonSize, min: 42, max: playButtonSize),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(
+                _scale(playButtonRadius, min: 14, max: playButtonRadius),
+              ),
+              color: accent,
+              boxShadow: <BoxShadow>[
+                BoxShadow(
+                  color: accent.withValues(alpha: 0.38),
+                  blurRadius: _scale(shadowBlur, min: 0, max: shadowBlur),
+                  spreadRadius: shadowBlur <= 0 ? 0 : 1,
+                ),
+              ],
+            ),
+            child: Center(child: _buildTransportIcon()),
+          ),
+        ),
+        _PlayerIconButton(
+          icon: Icons.skip_next_rounded,
+          onPressed: onNext,
+          color: textPrimary,
+          size: _scale(skipIconSize, min: 22, max: skipIconSize),
+          buttonSize: _scale(iconButtonSize, min: 28, max: iconButtonSize),
+        ),
+        _PlayerIconButton(
+          icon: _repeatIcon(repeatMode),
+          onPressed: onCycleRepeatMode,
+          color: effectiveInactive,
+          size: _scale(smallIconSize, min: 20, max: smallIconSize),
+          buttonSize: _scale(iconButtonSize, min: 28, max: iconButtonSize),
+        ),
       ],
     );
   }
@@ -1575,19 +1655,25 @@ class _PlayerIconButton extends StatelessWidget {
     required this.onPressed,
     required this.color,
     this.size = 28,
+    this.buttonSize,
   });
 
   final IconData icon;
   final VoidCallback onPressed;
   final Color color;
   final double size;
+  final double? buttonSize;
 
   @override
   Widget build(BuildContext context) {
     return IconButton(
       onPressed: onPressed,
       icon: Icon(icon, color: color, size: size),
+      padding: EdgeInsets.zero,
       splashRadius: 24,
+      constraints: buttonSize == null
+          ? null
+          : BoxConstraints.tightFor(width: buttonSize, height: buttonSize),
     );
   }
 }
@@ -3618,227 +3704,144 @@ class _MiniPlayer extends StatelessWidget {
                       const SizedBox(width: 14),
                       Expanded(
                         child: LayoutBuilder(
-                          builder: (BuildContext context, BoxConstraints constraints) {
-                            final bool compact = constraints.maxWidth < 250;
-                            final double playButtonSize = compact ? 42 : 48;
+                          builder:
+                              (
+                                BuildContext context,
+                                BoxConstraints constraints,
+                              ) {
+                                final bool compact = constraints.maxWidth < 250;
 
-                            return ValueListenableBuilder<
-                              PlaybackProgressState
-                            >(
-                              valueListenable: controller.playbackProgressState,
-                              builder:
-                                  (
-                                    BuildContext context,
-                                    PlaybackProgressState progressState,
-                                    Widget? child,
-                                  ) {
-                                    final bool isMiniLoading =
-                                        nowPlaying.isLoading;
-                                    final Duration position = isMiniLoading
-                                        ? Duration.zero
-                                        : progressState.position;
-                                    final Duration duration =
-                                        progressState.duration == Duration.zero
-                                        ? song.duration
-                                        : progressState.duration;
-                                    final double progress =
-                                        duration.inMilliseconds <= 0
-                                        ? 0
-                                        : position.inMilliseconds /
-                                              duration.inMilliseconds;
-                                    final double safeProgress =
-                                        progress.isFinite
-                                        ? progress.clamp(0.0, 1.0)
-                                        : 0.0;
-                                    final bool showPauseIcon =
-                                        progressState.isPlaying &&
-                                        !isMiniLoading;
+                                return ValueListenableBuilder<
+                                  PlaybackProgressState
+                                >(
+                                  valueListenable:
+                                      controller.playbackProgressState,
+                                  builder:
+                                      (
+                                        BuildContext context,
+                                        PlaybackProgressState progressState,
+                                        Widget? child,
+                                      ) {
+                                        final bool isMiniLoading =
+                                            nowPlaying.isLoading;
+                                        final Duration position = isMiniLoading
+                                            ? Duration.zero
+                                            : progressState.position;
+                                        final Duration duration =
+                                            progressState.duration ==
+                                                Duration.zero
+                                            ? song.duration
+                                            : progressState.duration;
+                                        final double progress =
+                                            duration.inMilliseconds <= 0
+                                            ? 0
+                                            : position.inMilliseconds /
+                                                  duration.inMilliseconds;
+                                        final double safeProgress =
+                                            progress.isFinite
+                                            ? progress.clamp(0.0, 1.0)
+                                            : 0.0;
+                                        final bool showPauseIcon =
+                                            progressState.isPlaying &&
+                                            !isMiniLoading;
 
-                                    return Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: <Widget>[
-                                        Row(
+                                        return Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: <Widget>[
-                                            Expanded(
-                                              child: Row(
-                                                mainAxisAlignment:
-                                                    MainAxisAlignment
-                                                        .spaceBetween,
-                                                children: <Widget>[
-                                                  _MiniPlayerIcon(
-                                                    icon: Icons.shuffle_rounded,
-                                                    color:
-                                                        nowPlaying
-                                                            .isShuffleEnabled
-                                                        ? accent
-                                                        : inactive.withValues(
-                                                            alpha: 0.6,
-                                                          ),
-                                                    onPressed: controller
+                                            Row(
+                                              children: <Widget>[
+                                                Expanded(
+                                                  child: _PlayerTransportControls(
+                                                    layoutScale: 1,
+                                                    accent: accent,
+                                                    textPrimary: inactive,
+                                                    inactiveColor: inactive
+                                                        .withValues(alpha: 0.6),
+                                                    isPlayerLoading:
+                                                        isMiniLoading,
+                                                    isShuffleEnabled: nowPlaying
+                                                        .isShuffleEnabled,
+                                                    repeatMode:
+                                                        nowPlaying.repeatMode,
+                                                    showPauseIcon:
+                                                        showPauseIcon,
+                                                    onToggleShuffle: controller
                                                         .toggleShuffle,
-                                                    compact: compact,
-                                                  ),
-                                                  _MiniPlayerIcon(
-                                                    icon: Icons
-                                                        .skip_previous_rounded,
-                                                    color: inactive,
-                                                    onPressed: controller
+                                                    onPrevious: controller
                                                         .previousTrack,
-                                                    compact: compact,
-                                                  ),
-                                                  GestureDetector(
-                                                    onTap: controller
+                                                    onTogglePlayback: controller
                                                         .togglePlayback,
-                                                    child: AnimatedContainer(
-                                                      duration: const Duration(
-                                                        milliseconds: 180,
-                                                      ),
-                                                      curve:
-                                                          Curves.easeOutCubic,
-                                                      width: playButtonSize,
-                                                      height: playButtonSize,
-                                                      decoration:
-                                                          const BoxDecoration(
-                                                            shape:
-                                                                BoxShape.circle,
-                                                            color: accent,
-                                                          ),
-                                                      child: Center(
-                                                        child: isMiniLoading
-                                                            ? SizedBox(
-                                                                width: compact
-                                                                    ? 18
-                                                                    : 20,
-                                                                height: compact
-                                                                    ? 18
-                                                                    : 20,
-                                                                child: const CircularProgressIndicator(
-                                                                  strokeWidth:
-                                                                      2.5,
-                                                                  valueColor:
-                                                                      AlwaysStoppedAnimation<
-                                                                        Color
-                                                                      >(
-                                                                        Colors
-                                                                            .black,
-                                                                      ),
-                                                                ),
-                                                              )
-                                                            : AnimatedSwitcher(
-                                                                duration:
-                                                                    const Duration(
-                                                                      milliseconds:
-                                                                          180,
-                                                                    ),
-                                                                switchInCurve:
-                                                                    Curves
-                                                                        .easeOutCubic,
-                                                                switchOutCurve:
-                                                                    Curves
-                                                                        .easeInCubic,
-                                                                transitionBuilder:
-                                                                    (
-                                                                      Widget
-                                                                      child,
-                                                                      Animation<
-                                                                        double
-                                                                      >
-                                                                      animation,
-                                                                    ) {
-                                                                      return FadeTransition(
-                                                                        opacity:
-                                                                            animation,
-                                                                        child: ScaleTransition(
-                                                                          scale:
-                                                                              animation,
-                                                                          child:
-                                                                              child,
-                                                                        ),
-                                                                      );
-                                                                    },
-                                                                child: Icon(
-                                                                  showPauseIcon
-                                                                      ? Icons
-                                                                            .pause_rounded
-                                                                      : Icons
-                                                                            .play_arrow_rounded,
-                                                                  key:
-                                                                      ValueKey<
-                                                                        bool
-                                                                      >(
-                                                                        showPauseIcon,
-                                                                      ),
-                                                                  color: Colors
-                                                                      .black,
-                                                                  size: compact
-                                                                      ? 22
-                                                                      : showPauseIcon
-                                                                      ? 24
-                                                                      : 28,
-                                                                ),
-                                                              ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  _MiniPlayerIcon(
-                                                    icon:
-                                                        Icons.skip_next_rounded,
-                                                    color: inactive,
-                                                    onPressed:
+                                                    onNext:
                                                         controller.nextTrack,
-                                                    compact: compact,
+                                                    onCycleRepeatMode:
+                                                        controller
+                                                            .cycleRepeatMode,
+                                                    iconButtonSize: compact
+                                                        ? 28
+                                                        : 34,
+                                                    smallIconSize: compact
+                                                        ? 22
+                                                        : 28,
+                                                    skipIconSize: compact
+                                                        ? 22
+                                                        : 28,
+                                                    playButtonSize: compact
+                                                        ? 42
+                                                        : 48,
+                                                    playButtonRadius: compact
+                                                        ? 15
+                                                        : 17,
+                                                    playIconSize: compact
+                                                        ? 25
+                                                        : 28,
+                                                    pauseIconSize: compact
+                                                        ? 22
+                                                        : 24,
+                                                    loadingSize: compact
+                                                        ? 18
+                                                        : 20,
+                                                    loadingStrokeWidth: 2.5,
+                                                    shadowBlur: 0,
                                                   ),
-                                                  _MiniPlayerIcon(
-                                                    icon: _repeatIcon(
-                                                      nowPlaying.repeatMode,
-                                                    ),
-                                                    color: inactive.withValues(
-                                                      alpha: 0.6,
-                                                    ),
-                                                    onPressed: controller
-                                                        .cycleRepeatMode,
-                                                    compact: compact,
-                                                  ),
-                                                ],
-                                              ),
+                                                ),
+                                              ],
                                             ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 8),
-                                        ClipRRect(
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                          child: SizedBox(
-                                            height: 5,
-                                            width: double.infinity,
-                                            child: ColoredBox(
-                                              color: track,
-                                              child: Align(
-                                                alignment: Alignment.centerLeft,
-                                                child: FractionallySizedBox(
-                                                  widthFactor: isMiniLoading
-                                                      ? 0.0
-                                                      : safeProgress,
-                                                  alignment:
-                                                      Alignment.centerLeft,
-                                                  child: const SizedBox.expand(
-                                                    child: ColoredBox(
-                                                      color: accent,
+                                            const SizedBox(height: 8),
+                                            ClipRRect(
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
+                                              child: SizedBox(
+                                                height: 5,
+                                                width: double.infinity,
+                                                child: ColoredBox(
+                                                  color: track,
+                                                  child: Align(
+                                                    alignment:
+                                                        Alignment.centerLeft,
+                                                    child: FractionallySizedBox(
+                                                      widthFactor: isMiniLoading
+                                                          ? 0.0
+                                                          : safeProgress,
+                                                      alignment:
+                                                          Alignment.centerLeft,
+                                                      child:
+                                                          const SizedBox.expand(
+                                                            child: ColoredBox(
+                                                              color: accent,
+                                                            ),
+                                                          ),
                                                     ),
                                                   ),
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                        ),
-                                      ],
-                                    );
-                                  },
-                            );
-                          },
+                                          ],
+                                        );
+                                      },
+                                );
+                              },
                         ),
                       ),
                     ],
@@ -3849,35 +3852,6 @@ class _MiniPlayer extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-}
-
-class _MiniPlayerIcon extends StatelessWidget {
-  const _MiniPlayerIcon({
-    required this.icon,
-    required this.onPressed,
-    required this.color,
-    this.compact = false,
-  });
-
-  final IconData icon;
-  final VoidCallback onPressed;
-  final Color color;
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      onPressed: onPressed,
-      iconSize: compact ? 22 : 28,
-      padding: EdgeInsets.zero,
-      visualDensity: VisualDensity.compact,
-      constraints: BoxConstraints.tightFor(
-        width: compact ? 28 : 34,
-        height: compact ? 28 : 34,
-      ),
-      icon: Icon(icon, color: color),
     );
   }
 }

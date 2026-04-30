@@ -774,65 +774,32 @@ class _DesktopNowPlayingRail extends StatelessWidget {
                               ],
                             ),
                             SizedBox(height: compactHeight ? 18 : 22),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: <Widget>[
-                                _MiniPlayerIcon(
-                                  icon: Icons.shuffle_rounded,
-                                  onPressed: controller.toggleShuffle,
-                                  color: nowPlaying.isShuffleEnabled
-                                      ? _kAccent
-                                      : _kTextSecondary.withValues(alpha: 0.7),
-                                ),
-                                _MiniPlayerIcon(
-                                  icon: Icons.skip_previous_rounded,
-                                  onPressed: controller.previousTrack,
-                                  color: _kTextPrimary,
-                                ),
-                                InkWell(
-                                  onTap: controller.togglePlayback,
-                                  borderRadius: BorderRadius.circular(999),
-                                  child: Container(
-                                    width: compactHeight ? 72 : 80,
-                                    height: compactHeight ? 72 : 80,
-                                    decoration: const BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: _kAccent,
-                                    ),
-                                    child: Center(
-                                      child: nowPlaying.isLoading
-                                          ? const SizedBox(
-                                              width: 22,
-                                              height: 22,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2.6,
-                                                valueColor:
-                                                    AlwaysStoppedAnimation<
-                                                      Color
-                                                    >(Colors.black),
-                                              ),
-                                            )
-                                          : Icon(
-                                              showPauseIcon
-                                                  ? Icons.pause_rounded
-                                                  : Icons.play_arrow_rounded,
-                                              color: Colors.black,
-                                              size: showPauseIcon ? 34 : 38,
-                                            ),
-                                    ),
-                                  ),
-                                ),
-                                _MiniPlayerIcon(
-                                  icon: Icons.skip_next_rounded,
-                                  onPressed: controller.nextTrack,
-                                  color: _kTextPrimary,
-                                ),
-                                _MiniPlayerIcon(
-                                  icon: _repeatIcon(nowPlaying.repeatMode),
-                                  onPressed: controller.cycleRepeatMode,
-                                  color: _kTextSecondary.withValues(alpha: 0.7),
-                                ),
-                              ],
+                            _PlayerTransportControls(
+                              layoutScale: 1,
+                              accent: _kAccent,
+                              textPrimary: _kTextPrimary,
+                              inactiveColor: _kTextSecondary.withValues(
+                                alpha: 0.7,
+                              ),
+                              isPlayerLoading: nowPlaying.isLoading,
+                              isShuffleEnabled: nowPlaying.isShuffleEnabled,
+                              repeatMode: nowPlaying.repeatMode,
+                              showPauseIcon: showPauseIcon,
+                              onToggleShuffle: controller.toggleShuffle,
+                              onPrevious: controller.previousTrack,
+                              onTogglePlayback: controller.togglePlayback,
+                              onNext: controller.nextTrack,
+                              onCycleRepeatMode: controller.cycleRepeatMode,
+                              iconButtonSize: compactHeight ? 42 : 48,
+                              smallIconSize: compactHeight ? 26 : 28,
+                              skipIconSize: compactHeight ? 30 : 34,
+                              playButtonSize: compactHeight ? 72 : 80,
+                              playButtonRadius: compactHeight ? 25 : 28,
+                              playIconSize: compactHeight ? 36 : 38,
+                              pauseIconSize: compactHeight ? 32 : 34,
+                              loadingSize: 22,
+                              loadingStrokeWidth: 2.6,
+                              shadowBlur: 0,
                             ),
                             SizedBox(height: compactHeight ? 22 : 26),
                             SizedBox(
