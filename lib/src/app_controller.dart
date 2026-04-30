@@ -155,6 +155,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   final Map<String, int> _offlinePlaybackCacheExpectedBytesBySongId =
       <String, int>{};
   final Set<String> _offlinePlaybackPrefetchInFlight = <String>{};
+  final Set<String> _autoOfflineDownloadQueuedSongIds = <String>{};
   final Set<String> _offlinePlaybackCacheFailedSongIds = <String>{};
   String? _activePlaybackSongId;
   double _activePlaybackCompletionRatio = 0;
@@ -1057,7 +1058,8 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   bool isSongOfflineDownloadInProgress(String songId) {
-    return _offlinePlaybackPrefetchInFlight.contains(songId);
+    return _offlinePlaybackPrefetchInFlight.contains(songId) ||
+        _autoOfflineDownloadQueuedSongIds.contains(songId);
   }
 
   Future<void> downloadSongForOffline(LibrarySong song) async {
@@ -2067,6 +2069,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _maybeAdvanceOfflineQueueAtTrackEnd() {
+    _maybeAutoDownloadCurrentPlaybackAtEnd();
     _requestQueueAdvanceAtTrackEnd('position');
   }
 
@@ -2074,7 +2077,80 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     if (!completed || _isDisposing || _isDisposed) {
       return;
     }
+    _maybeAutoDownloadCompletedPlayback();
     _requestQueueAdvanceAtTrackEnd('completed');
+  }
+
+  void _maybeAutoDownloadCompletedPlayback() {
+    final String? songId = _activePlaybackSongId ?? currentSong?.id;
+    if (songId == null) {
+      return;
+    }
+    _activePlaybackCompletionRatio = math.max(
+      _activePlaybackCompletionRatio,
+      1,
+    );
+    _queueAutoOfflineDownloadAfterFullListen(songId);
+  }
+
+  void _maybeAutoDownloadCurrentPlaybackAtEnd() {
+    if (!_isPlaying || _duration <= Duration.zero) {
+      return;
+    }
+    final Duration remaining = _duration - _position;
+    if (remaining > const Duration(milliseconds: 250)) {
+      return;
+    }
+    final String? songId = _activePlaybackSongId ?? currentSong?.id;
+    if (songId == null) {
+      return;
+    }
+    _queueAutoOfflineDownloadAfterFullListen(songId);
+  }
+
+  bool _shouldStartAutoOfflineDownload(
+    LibrarySong song, {
+    bool allowQueued = false,
+  }) {
+    return offlinePlaybackCacheEnabled &&
+        !offlineMusicMode &&
+        song.isRemote &&
+        shouldShowSongOutsideSearch(song) &&
+        !_hasOfflinePlaybackCache(song.id) &&
+        !_offlinePlaybackPrefetchInFlight.contains(song.id) &&
+        (allowQueued || !_autoOfflineDownloadQueuedSongIds.contains(song.id)) &&
+        !_offlinePlaybackCacheFailedSongIds.contains(song.id) &&
+        !_isDisposing &&
+        !_isDisposed;
+  }
+
+  void _queueAutoOfflineDownloadAfterFullListen(String songId) {
+    final LibrarySong? song = songById(songId);
+    if (song == null || !_shouldStartAutoOfflineDownload(song)) {
+      return;
+    }
+    _autoOfflineDownloadQueuedSongIds.add(song.id);
+    unawaited(() async {
+      try {
+        if (await _resolveOfflineStateForAction()) {
+          return;
+        }
+        if (!_autoOfflineDownloadQueuedSongIds.contains(song.id)) {
+          return;
+        }
+        if (!_shouldStartAutoOfflineDownload(song, allowQueued: true)) {
+          return;
+        }
+        _rememberTransientSong(song);
+        await _cacheSongForOfflinePlayback(song);
+      } finally {
+        _autoOfflineDownloadQueuedSongIds.remove(song.id);
+        if (!_isDisposing && !_isDisposed) {
+          notifyListeners();
+        }
+      }
+    }());
+    notifyListeners();
   }
 
   void _requestAutoHomeRefresh({bool force = false}) {
@@ -6858,6 +6934,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _clearOfflinePlaybackCache() async {
     _offlinePlaybackCacheEpoch += 1;
     _offlinePlaybackPrefetchInFlight.clear();
+    _autoOfflineDownloadQueuedSongIds.clear();
     _offlinePlaybackCacheFailedSongIds.clear();
     _offlinePlaybackCacheSizesBySongId.clear();
     _offlinePlaybackCacheProgressBytesBySongId.clear();
