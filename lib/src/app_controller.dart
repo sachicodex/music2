@@ -154,11 +154,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       <String, int>{};
   final Map<String, int> _offlinePlaybackCacheExpectedBytesBySongId =
       <String, int>{};
-  final List<String> _offlinePlaybackCacheQueue = <String>[];
-  final Set<String> _offlinePlaybackCacheQueuedSongIds = <String>{};
   final Set<String> _offlinePlaybackPrefetchInFlight = <String>{};
-  final Map<String, Future<void>> _blockingPlaybackCacheTasksBySongId =
-      <String, Future<void>>{};
   final Set<String> _offlinePlaybackCacheFailedSongIds = <String>{};
   String? _activePlaybackSongId;
   double _activePlaybackCompletionRatio = 0;
@@ -172,8 +168,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   bool _playbackRecoveryQueueLocked = false;
   String? _playbackActivationSongId;
   DateTime? _playbackActivationStartedAt;
-  bool _refreshingOfflinePlaybackCache = false;
-  bool _offlinePlaybackCacheRefreshQueued = false;
   int _offlinePlaybackCacheEpoch = 0;
   bool _offlineQueueAdvancePending = false;
   bool _queueNavigationInFlight = false;
@@ -183,7 +177,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   String? _offlineQueueWaitingSongId;
   int? _offlineQueueWaitingIndex;
   bool _offlineQueueWaitingShouldResume = false;
-  Future<void>? _offlinePlaybackCacheWorker;
   bool _offlineDetachedQueueMode = false;
   String? _activeCloudUserId;
   bool _cloudUserDataLoaded = false;
@@ -200,6 +193,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   String? _startupMiniPlayerSongId;
   String? _transitioningSongId;
   int? _transitioningQueueIndex;
+  int _playbackSelectionRevision = 0;
   bool _hasPublishedPlaybackNotification = false;
   String _searchDraft = '';
   List<String> _recentSearchTerms = <String>[];
@@ -666,11 +660,14 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     final String? songId = miniPlayerSong?.id ?? currentSong?.id;
     final (int currentCacheBytes, int currentCacheExpectedBytes) =
         songId == null ? (0, 0) : _currentSongCacheProgress(songId);
+    final int currentSongBytes = songId == null
+        ? 0
+        : _songPlaybackBytes[songId] ?? 0;
     final AppDataUsageStats next = _dataUsage.copyWith(
       totalBytes: _dataUsage.streamBytes + _dataUsage.otherBytes,
       cacheBytes: 0,
       currentSongId: songId,
-      currentSongBytes: currentCacheBytes,
+      currentSongBytes: currentSongBytes,
       currentCacheSongId: songId,
       currentCacheBytes: currentCacheBytes,
       currentCacheExpectedBytes: currentCacheExpectedBytes,
@@ -930,6 +927,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     if (_isDisposed || _isDisposing) {
       return;
     }
+    _recordStreamBytes(transfer.songId, transfer.bytesTransferred);
   }
 
   void _handlePlaybackProxyCacheProgress(PlaybackProxyCacheProgress progress) {
@@ -1010,10 +1008,40 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     _playbackFallbackRecoveryIndex = null;
     _smartQueueRefillQueued = false;
     _clearPlaybackActivation();
-    for (final String sessionId in sessionIds) {
-      unawaited(_playbackProxy.unregister(sessionId));
+    if (sessionIds.isNotEmpty) {
+      await Future.wait<void>(
+        sessionIds.map(_playbackProxy.unregister),
+        eagerError: false,
+      );
     }
     _syncDataUsageState();
+  }
+
+  int _startPlaybackSelection(LibrarySong song) {
+    _playbackSelectionRevision += 1;
+    _pendingSelectionSong = song;
+    _beginPlaybackActivation(song, resetMetrics: true, notify: false);
+    return _playbackSelectionRevision;
+  }
+
+  bool _isCurrentPlaybackSelection(int revision) {
+    return !_isDisposing &&
+        !_isDisposed &&
+        revision == _playbackSelectionRevision;
+  }
+
+  Future<void> _interruptCurrentPlayback() async {
+    final Player? player = _playerInstance;
+    if (player == null) {
+      return;
+    }
+    try {
+      await player.stop();
+    } catch (_) {
+      try {
+        await player.pause();
+      } catch (_) {}
+    }
   }
 
   @override
@@ -1023,6 +1051,54 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   bool isSmartQueueSong(String songId) => _smartQueueSongIds.contains(songId);
+
+  bool isSongAvailableOffline(LibrarySong song) {
+    return !song.isRemote || _offlinePlaybackCachePathForSong(song.id) != null;
+  }
+
+  bool isSongOfflineDownloadInProgress(String songId) {
+    return _offlinePlaybackPrefetchInFlight.contains(songId);
+  }
+
+  Future<void> downloadSongForOffline(LibrarySong song) async {
+    if (!song.isRemote) {
+      _statusMessage = 'This song is already stored locally.';
+      notifyListeners();
+      return;
+    }
+    if (_offlinePlaybackCachePathForSong(song.id) != null) {
+      _statusMessage = 'Song is already available offline.';
+      notifyListeners();
+      return;
+    }
+    if (isSongOfflineDownloadInProgress(song.id)) {
+      _statusMessage = 'Offline download is already running.';
+      notifyListeners();
+      return;
+    }
+    if (await _resolveOfflineStateForAction()) {
+      _errorMessage = 'Internet is unavailable right now.';
+      notifyListeners();
+      return;
+    }
+
+    _rememberTransientSong(song);
+    _offlinePlaybackCacheFailedSongIds.remove(song.id);
+    _statusMessage = 'Downloading for offline playback...';
+    notifyListeners();
+    try {
+      await _cacheSongForOfflinePlayback(song);
+      if (_offlinePlaybackCachePathForSong(song.id) != null) {
+        _statusMessage = 'Song is available offline.';
+      } else {
+        _errorMessage = 'Could not download this song for offline playback.';
+      }
+    } catch (error) {
+      _errorMessage = 'Could not download this song: $error';
+    } finally {
+      notifyListeners();
+    }
+  }
 
   Future<void> extendSmartQueueIfNeeded({LibrarySong? seed}) async {
     await _maybeExtendSmartQueue(seed: seed);
@@ -4792,10 +4868,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
 
       final LibrarySong song = _urlToSong(uri);
       await _clearPreparedPlaybackState();
-      final LibrarySong prepared = await _preparePlayableSong(
-        song,
-        primeOfflineCache: true,
-      );
+      final LibrarySong prepared = await _preparePlayableSong(song);
       await _openPreparedSong(prepared, label: 'URL Stream');
     } catch (error) {
       _errorMessage = '$error';
@@ -4816,20 +4889,26 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
       return;
     }
-    _pendingSelectionSong = song;
-    notifyListeners();
+    final int selectionRevision = _startPlaybackSelection(song);
     try {
-      await _player.stop();
+      await _interruptCurrentPlayback();
+      notifyListeners();
       await _clearPreparedPlaybackState();
-      final LibrarySong prepared = await _preparePlayableSong(
-        song,
-        primeOfflineCache: true,
-      );
+      if (!_isCurrentPlaybackSelection(selectionRevision)) {
+        return;
+      }
+      _beginPlaybackActivation(song, resetMetrics: true, notify: false);
+      final LibrarySong prepared = await _preparePlayableSong(song);
+      if (!_isCurrentPlaybackSelection(selectionRevision)) {
+        return;
+      }
       await _openPreparedSong(prepared, label: 'YouTube');
     } catch (_) {
-      _pendingSelectionSong = null;
-      _clearPlaybackActivation();
-      notifyListeners();
+      if (_isCurrentPlaybackSelection(selectionRevision)) {
+        _pendingSelectionSong = null;
+        _clearPlaybackActivation();
+        notifyListeners();
+      }
       rethrow;
     }
   }
@@ -4997,6 +5076,15 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
           'transitionSong=$_transitioningSongId '
           'transitionIndex=$_transitioningQueueIndex',
         );
+        if (nextQueueSongIds.isEmpty &&
+            (_transitioningSongId != null ||
+                _queueNavigationInFlight ||
+                _pendingSelectionSong != null)) {
+          _debugPlayback(
+            'player.playlist ignored temporary empty playlist during manual transition',
+          );
+          return;
+        }
         if (_playbackFallbackRecoverySongId != null) {
           final String? activeSongId = nextQueueSongIds.isEmpty
               ? null
@@ -5651,21 +5739,24 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     final int safeIndex = startIndex.clamp(0, songs.length - 1);
     _clearOfflineQueueWait(notify: false);
     _offlineDetachedQueueMode = false;
-    _pendingSelectionSong = songs[safeIndex];
-    _beginPlaybackActivation(
-      songs[safeIndex],
-      resetMetrics: true,
-      notify: false,
-    );
-    notifyListeners();
+    final int selectionRevision = _startPlaybackSelection(songs[safeIndex]);
     try {
-      await _player.stop();
+      await _interruptCurrentPlayback();
+      notifyListeners();
       await _clearPreparedPlaybackState();
-      final List<LibrarySong> preparedSongs = List<LibrarySong>.from(songs);
-      preparedSongs[safeIndex] = await _preparePlayableSong(
+      if (!_isCurrentPlaybackSelection(selectionRevision)) {
+        return;
+      }
+      _beginPlaybackActivation(
         songs[safeIndex],
-        primeOfflineCache: true,
+        resetMetrics: true,
+        notify: false,
       );
+      final List<LibrarySong> preparedSongs = List<LibrarySong>.from(songs);
+      preparedSongs[safeIndex] = await _preparePlayableSong(songs[safeIndex]);
+      if (!_isCurrentPlaybackSelection(selectionRevision)) {
+        return;
+      }
 
       // Keep the native player on a single prepared track for queues that
       // still require resolved YouTube playback URLs. This prevents native
@@ -5680,6 +5771,9 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       _queueLabel = label;
       _queueIndex = safeIndex;
       await _ensureSequentialPlayback();
+      if (!_isCurrentPlaybackSelection(selectionRevision)) {
+        return;
+      }
       if (_offlineDetachedQueueMode) {
         await _player.open(
           Playlist(<Media>[_mediaForSong(preparedSongs[safeIndex])]),
@@ -5688,6 +5782,9 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         final List<Media> medias = preparedSongs.map(_mediaForSong).toList();
         await _player.open(Playlist(medias, index: safeIndex));
       }
+      if (!_isCurrentPlaybackSelection(selectionRevision)) {
+        return;
+      }
       await _player.play();
       _trackPlayback(preparedSongs[safeIndex].id);
       if (!_isOffline && !offlineMusicMode) {
@@ -5695,9 +5792,11 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       }
       notifyListeners();
     } catch (_) {
-      _pendingSelectionSong = null;
-      _clearPlaybackActivation();
-      notifyListeners();
+      if (_isCurrentPlaybackSelection(selectionRevision)) {
+        _pendingSelectionSong = null;
+        _clearPlaybackActivation();
+        notifyListeners();
+      }
       rethrow;
     }
   }
@@ -5814,10 +5913,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
-  Future<LibrarySong> _preparePlayableSong(
-    LibrarySong song, {
-    bool primeOfflineCache = false,
-  }) async {
+  Future<LibrarySong> _preparePlayableSong(LibrarySong song) async {
     _rememberTransientSong(song);
     final String? cachedPath = _offlinePlaybackCachePathForSong(song.id);
     if (cachedPath != null) {
@@ -5837,13 +5933,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     if (activeProxy != null &&
         _preparedMediaUrlsBySongId[song.id] == activeProxy.proxyUrl &&
         !_playbackProxyBypassSongIds.contains(song.id)) {
-      if (primeOfflineCache) {
-        _maybePrimeAndroidPlaybackCache(
-          song: song,
-          resolvedUrl: activeProxy.upstreamUrl,
-          upstreamHeaders: activeProxy.upstreamHeaders,
-        );
-      }
       return song;
     }
 
@@ -5856,99 +5945,33 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     if (offlineMusicMode || await _resolveOfflineStateForAction()) {
-      throw const SocketException('Song is not cached for offline playback.');
-    }
-
-    String? cachedPlaybackPath;
-    try {
-      cachedPlaybackPath = await _ensureRemoteSongCachedForImmediatePlayback(
-        song,
+      throw const SocketException(
+        'Song is not downloaded for offline playback.',
       );
-    } catch (_) {
-      // If cache download fails for this song, avoid re-downloading it in
-      // the background (prevents "stream + cache" double data usage).
-      _offlinePlaybackCacheFailedSongIds.add(song.id);
     }
 
-    if (cachedPlaybackPath != null) {
-      _disablePlaybackProxyForSong(song.id, bypass: true);
-      _preparedMediaUrlsBySongId[song.id] = cachedPlaybackPath;
-      _preparedMediaHeadersBySongId[song.id] = null;
-      _playbackStreamInfoBySongId[song.id] = buildCachedPlaybackStreamInfo(
-        song: song,
-        cachedPath: cachedPlaybackPath,
-        previousInfo: _playbackStreamInfoBySongId[song.id],
-      );
-      _debugPlayback(
-        'stream.cached song=${_debugSongLabel(song)} path=$cachedPlaybackPath',
-      );
-      return song;
-    }
-
-    if (!primeOfflineCache) {
-      throw const SocketException('Could not cache song for playback.');
-    }
-
-    // Cache is not available for immediate playback. Fall back to resolving
-    // the YouTube stream URL and play it without caching.
     final _ResolvedRemotePlayback resolved = await _resolvePlayableRemoteStream(
       song,
       preferPlaybackCompatibility: true,
     );
-    _offlinePlaybackCacheFailedSongIds.add(song.id);
-    _disablePlaybackProxyForSong(song.id, bypass: true);
-    _preparedMediaUrlsBySongId[song.id] = resolved.resolvedUrl;
-    _preparedMediaHeadersBySongId[song.id] = resolved.upstreamHeaders;
+    await _prepareResolvedRemoteStreamForPlayback(song, resolved);
     _playbackStreamInfoBySongId[song.id] = resolved.streamInfo;
     _debugPlayback(
-      'stream.resolved fallback song=${_debugSongLabel(song)} '
+      'stream.resolved song=${_debugSongLabel(song)} '
       '${resolved.streamInfo.debugSummary}',
     );
     return song;
   }
 
-  Future<String?> _ensureRemoteSongCachedForImmediatePlayback(
+  Future<void> _prepareResolvedRemoteStreamForPlayback(
     LibrarySong song,
+    _ResolvedRemotePlayback resolved,
   ) async {
-    final String? existing = _offlinePlaybackCachePathForSong(song.id);
-    if (existing != null) {
-      return existing;
-    }
-    if (!offlinePlaybackCacheEnabled ||
-        !_shouldCacheSongForOfflinePlayback(song)) {
-      return null;
-    }
-
-    final Future<void>? running = _blockingPlaybackCacheTasksBySongId[song.id];
-    if (running != null) {
-      await running;
-      return _offlinePlaybackCachePathForSong(song.id);
-    }
-
-    final Completer<void> completer = Completer<void>();
-    _blockingPlaybackCacheTasksBySongId[song.id] = completer.future;
-    _offlinePlaybackPrefetchInFlight.add(song.id);
-    try {
-      final _ResolvedRemotePlayback resolved =
-          await _resolvePlayableRemoteStream(
-            song,
-            preferPlaybackCompatibility: false,
-          );
-      await _cacheResolvedSongForOfflinePlayback(
-        song: song,
-        resolvedUrl: resolved.resolvedUrl,
-        upstreamHeaders: resolved.upstreamHeaders,
-        manageInFlight: false,
-      );
-      completer.complete();
-    } catch (error, stackTrace) {
-      completer.completeError(error, stackTrace);
-      rethrow;
-    } finally {
-      _offlinePlaybackPrefetchInFlight.remove(song.id);
-      _blockingPlaybackCacheTasksBySongId.remove(song.id);
-    }
-    return _offlinePlaybackCachePathForSong(song.id);
+    // Live playback should bind directly to the resolved stream so a manual
+    // song switch can interrupt immediately without waiting on proxy teardown.
+    _disablePlaybackProxyForSong(song.id, bypass: true);
+    _preparedMediaUrlsBySongId[song.id] = resolved.resolvedUrl;
+    _preparedMediaHeadersBySongId[song.id] = resolved.upstreamHeaders;
   }
 
   Future<void> _openPreparedSong(
@@ -6315,10 +6338,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         await _reopenQueueAtIndex(queueSongIndex);
         await _player.play();
       } else {
-        final LibrarySong prepared = await _preparePlayableSong(
-          song,
-          primeOfflineCache: true,
-        );
+        final LibrarySong prepared = await _preparePlayableSong(song);
         await _openPreparedSong(prepared, label: _queueLabel);
       }
       notifyListeners();
@@ -6439,10 +6459,9 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     }
     final bool shouldBootstrapPlayback =
         _shouldBootstrapPlaybackForQueueNavigation();
-    final bool shouldShowPlaybackLoading =
-        _isPlaying || shouldBootstrapPlayback;
+    final bool shouldResumePlayback = _isPlaying || shouldBootstrapPlayback;
     final LibrarySong? targetSong = songById(_queueSongIds[index]);
-    if (shouldShowPlaybackLoading) {
+    if (shouldResumePlayback) {
       _beginPlaybackActivation(targetSong, resetMetrics: true);
     }
     _debugPlayback(
@@ -6450,37 +6469,15 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       'currentIndex=$_queueIndex '
       'target=${_debugSongLabel(songById(_queueSongIds[index]))}',
     );
+    _primePendingTrackTransition(index);
+    await _interruptCurrentPlayback();
     if (await _tryHandleOfflineTargetTransition(
       index,
-      bootstrapPlayback: shouldBootstrapPlayback,
+      bootstrapPlayback: shouldResumePlayback,
     )) {
       return;
     }
-    if (!_playerQueueHasControllerPlaylist()) {
-      await _reopenQueueAtIndex(index, forcePlay: shouldBootstrapPlayback);
-      return;
-    }
-    if (await _shouldUseOfflineQueueTransition(index)) {
-      await _reopenQueueAtIndex(index, forcePlay: shouldBootstrapPlayback);
-      return;
-    }
-    if (targetSong != null && _queueSongNeedsQueueRefresh(targetSong, index)) {
-      await _reopenQueueAtIndex(index, forcePlay: shouldBootstrapPlayback);
-      return;
-    }
-    _primePendingTrackTransition(index);
-    try {
-      await _player.jump(index);
-      _queueIndex = index;
-      _scheduleSmartQueueWindowRefill(seed: targetSong);
-      notifyListeners();
-    } catch (error) {
-      if (await _recoverTransitionFromError(index, error)) {
-        return;
-      }
-      _clearTrackTransition();
-      rethrow;
-    }
+    await _reopenQueueAtIndex(index, forcePlay: shouldResumePlayback);
   }
 
   Future<void> removeFromQueue(int index) async {
@@ -6663,10 +6660,9 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       }
       final bool shouldBootstrapPlayback =
           forcePlay || _shouldBootstrapPlaybackForQueueNavigation();
-      final bool shouldShowPlaybackLoading =
-          _isPlaying || shouldBootstrapPlayback;
+      final bool shouldResumePlayback = _isPlaying || shouldBootstrapPlayback;
       final LibrarySong? targetSong = songById(_queueSongIds[targetIndex]);
-      if (shouldShowPlaybackLoading) {
+      if (shouldResumePlayback) {
         _beginPlaybackActivation(targetSong, resetMetrics: true);
       }
       _debugPlayback(
@@ -6675,44 +6671,15 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         'current=${_debugSongLabel(currentSong)} '
         'target=${_debugSongLabel(songById(_queueSongIds[targetIndex]))}',
       );
+      _primePendingTrackTransition(targetIndex);
+      await _interruptCurrentPlayback();
       if (await _tryHandleOfflineTargetTransition(
         targetIndex,
-        bootstrapPlayback: shouldBootstrapPlayback,
+        bootstrapPlayback: shouldResumePlayback,
       )) {
         return;
       }
-      if (!_playerQueueHasControllerPlaylist()) {
-        await _reopenQueueAtIndex(
-          targetIndex,
-          forcePlay: shouldBootstrapPlayback,
-        );
-        return;
-      }
-      if (await _shouldUseOfflineQueueTransition(targetIndex)) {
-        await _reopenQueueAtIndex(
-          targetIndex,
-          forcePlay: shouldBootstrapPlayback,
-        );
-        return;
-      }
-      if (targetSong != null &&
-          _queueSongNeedsQueueRefresh(targetSong, targetIndex)) {
-        await _reopenQueueAtIndex(
-          targetIndex,
-          forcePlay: shouldBootstrapPlayback,
-        );
-        return;
-      }
-      _primePendingTrackTransition(targetIndex);
-      try {
-        await _player.next();
-      } catch (error) {
-        if (await _recoverTransitionFromError(targetIndex, error)) {
-          return;
-        }
-        _clearTrackTransition();
-        rethrow;
-      }
+      await _reopenQueueAtIndex(targetIndex, forcePlay: shouldResumePlayback);
     } finally {
       _queueNavigationInFlight = false;
     }
@@ -6734,10 +6701,9 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       }
       final bool shouldBootstrapPlayback =
           _shouldBootstrapPlaybackForQueueNavigation();
-      final bool shouldShowPlaybackLoading =
-          _isPlaying || shouldBootstrapPlayback;
+      final bool shouldResumePlayback = _isPlaying || shouldBootstrapPlayback;
       final LibrarySong? targetSong = songById(_queueSongIds[targetIndex]);
-      if (shouldShowPlaybackLoading) {
+      if (shouldResumePlayback) {
         _beginPlaybackActivation(targetSong, resetMetrics: true);
       }
       _debugPlayback(
@@ -6745,44 +6711,15 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         'current=${_debugSongLabel(currentSong)} '
         'target=${_debugSongLabel(songById(_queueSongIds[targetIndex]))}',
       );
+      _primePendingTrackTransition(targetIndex);
+      await _interruptCurrentPlayback();
       if (await _tryHandleOfflineTargetTransition(
         targetIndex,
-        bootstrapPlayback: shouldBootstrapPlayback,
+        bootstrapPlayback: shouldResumePlayback,
       )) {
         return;
       }
-      if (!_playerQueueHasControllerPlaylist()) {
-        await _reopenQueueAtIndex(
-          targetIndex,
-          forcePlay: shouldBootstrapPlayback,
-        );
-        return;
-      }
-      if (await _shouldUseOfflineQueueTransition(targetIndex)) {
-        await _reopenQueueAtIndex(
-          targetIndex,
-          forcePlay: shouldBootstrapPlayback,
-        );
-        return;
-      }
-      if (targetSong != null &&
-          _queueSongNeedsQueueRefresh(targetSong, targetIndex)) {
-        await _reopenQueueAtIndex(
-          targetIndex,
-          forcePlay: shouldBootstrapPlayback,
-        );
-        return;
-      }
-      _primePendingTrackTransition(targetIndex);
-      try {
-        await _player.previous();
-      } catch (error) {
-        if (await _recoverTransitionFromError(targetIndex, error)) {
-          return;
-        }
-        _clearTrackTransition();
-        rethrow;
-      }
+      await _reopenQueueAtIndex(targetIndex, forcePlay: shouldResumePlayback);
     } finally {
       _queueNavigationInFlight = false;
     }
@@ -6920,11 +6857,8 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _clearOfflinePlaybackCache() async {
     _offlinePlaybackCacheEpoch += 1;
-    _offlinePlaybackCacheQueue.clear();
-    _offlinePlaybackCacheQueuedSongIds.clear();
     _offlinePlaybackPrefetchInFlight.clear();
     _offlinePlaybackCacheFailedSongIds.clear();
-    _blockingPlaybackCacheTasksBySongId.clear();
     _offlinePlaybackCacheSizesBySongId.clear();
     _offlinePlaybackCacheProgressBytesBySongId.clear();
     _offlinePlaybackCacheExpectedBytesBySongId.clear();
@@ -7010,35 +6944,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         }
       }
     }
-  }
-
-  void _maybePrimeAndroidPlaybackCache({
-    required LibrarySong song,
-    required String resolvedUrl,
-    required Map<String, String>? upstreamHeaders,
-  }) {
-    final String? activeSongId = currentSong?.id;
-    if (!Platform.isAndroid ||
-        !offlinePlaybackCacheEnabled ||
-        activeSongId == null ||
-        song.id != activeSongId ||
-        !_shouldCacheSongForOfflinePlayback(song) ||
-        _hasOfflinePlaybackCache(song.id) ||
-        _offlinePlaybackPrefetchInFlight.contains(song.id) ||
-        _isOffline ||
-        offlineMusicMode ||
-        _isDisposing ||
-        _isDisposed ||
-        resolvedUrl.trim().isEmpty) {
-      return;
-    }
-    unawaited(
-      _cacheResolvedSongForOfflinePlayback(
-        song: song,
-        resolvedUrl: resolvedUrl,
-        upstreamHeaders: upstreamHeaders,
-      ),
-    );
   }
 
   Future<void> _cacheResolvedSongForOfflinePlayback({
@@ -7315,7 +7220,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _cacheSongForOfflinePlayback(LibrarySong song) async {
     if (!offlinePlaybackCacheEnabled ||
         !_shouldCacheSongForOfflinePlayback(song) ||
-        _blockingPlaybackCacheTasksBySongId.containsKey(song.id) ||
         _offlinePlaybackPrefetchInFlight.contains(song.id) ||
         _hasOfflinePlaybackCache(song.id) ||
         _isDisposing ||
@@ -7342,138 +7246,8 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  int? _offlinePlaybackCacheAnchorQueueIndex({LibrarySong? anchor}) {
-    if (_queueSongIds.isEmpty) {
-      return null;
-    }
-    if (anchor != null) {
-      final int anchorIndex = _queueSongIds.indexOf(anchor.id);
-      if (anchorIndex >= 0) {
-        return anchorIndex;
-      }
-    }
-    final int? playerIndex = _activePlayerQueueIndex();
-    if (playerIndex != null) {
-      return playerIndex;
-    }
-    if (_queueIndex < 0 || _queueIndex >= _queueSongIds.length) {
-      return null;
-    }
-    return _queueIndex;
-  }
-
-  List<LibrarySong> _offlinePlaybackCacheCandidates({LibrarySong? anchor}) {
-    if (!offlinePlaybackCacheEnabled) {
-      return <LibrarySong>[];
-    }
-    final LibrarySong? target = anchor ?? currentSong;
-    final int upcomingWindow = nextChanceSongCount.clamp(0, 5);
-    final int? queueIndex = _offlinePlaybackCacheAnchorQueueIndex(
-      anchor: target,
-    );
-    final List<LibrarySong> queue = queueSongs;
-    final List<LibrarySong> result = <LibrarySong>[];
-    final Set<String> seenSongIds = <String>{};
-
-    void addCandidate(LibrarySong? song) {
-      if (song == null ||
-          !_shouldCacheSongForOfflinePlayback(song) ||
-          !seenSongIds.add(song.id)) {
-        return;
-      }
-      result.add(song);
-    }
-
-    addCandidate(target);
-
-    if (queueIndex != null && upcomingWindow > 0) {
-      final int upperBound = math.min(
-        queue.length,
-        queueIndex + upcomingWindow + 1,
-      );
-      for (int index = queueIndex + 1; index < upperBound; index += 1) {
-        addCandidate(queue[index]);
-      }
-    }
-
-    _debugPlayback(
-      'cache.refresh candidates '
-      'anchor=${_debugSongLabel(target)} '
-      'queueIndex=${queueIndex ?? -1} '
-      'upcomingWindow=$upcomingWindow '
-      'count=${result.length} '
-      'songs=${result.map((LibrarySong song) => song.id).join(', ')}',
-    );
-    return result;
-  }
-
-  void _enqueueOfflinePlaybackCacheSongs(List<LibrarySong> songs) {
-    for (final LibrarySong song in songs) {
-      if (!_shouldCacheSongForOfflinePlayback(song) ||
-          _hasOfflinePlaybackCache(song.id) ||
-          _blockingPlaybackCacheTasksBySongId.containsKey(song.id) ||
-          _offlinePlaybackPrefetchInFlight.contains(song.id) ||
-          !_offlinePlaybackCacheQueuedSongIds.add(song.id)) {
-        continue;
-      }
-      _offlinePlaybackCacheQueue.add(song.id);
-    }
-  }
-
-  Future<void> _ensureOfflinePlaybackCacheWorkerRunning() {
-    final Future<void>? activeWorker = _offlinePlaybackCacheWorker;
-    if (activeWorker != null) {
-      return activeWorker;
-    }
-    final Future<void> worker = () async {
-      while (_offlinePlaybackCacheQueue.isNotEmpty &&
-          !_isDisposed &&
-          !_isDisposing &&
-          offlinePlaybackCacheEnabled) {
-        final String songId = _offlinePlaybackCacheQueue.removeAt(0);
-        _offlinePlaybackCacheQueuedSongIds.remove(songId);
-        final LibrarySong? song = songById(songId);
-        if (song == null) {
-          continue;
-        }
-        await _cacheSongForOfflinePlayback(song);
-      }
-    }();
-    _offlinePlaybackCacheWorker = worker;
-    return worker.whenComplete(() {
-      if (identical(_offlinePlaybackCacheWorker, worker)) {
-        _offlinePlaybackCacheWorker = null;
-      }
-    });
-  }
-
   Future<void> _refreshOfflinePlaybackCache({LibrarySong? anchor}) async {
-    if (!offlinePlaybackCacheEnabled) {
-      await _clearOfflinePlaybackCache();
-      return;
-    }
-    if (_isDisposing || _isDisposed) {
-      return;
-    }
-    if (_refreshingOfflinePlaybackCache) {
-      _offlinePlaybackCacheRefreshQueued = true;
-      return;
-    }
-    _refreshingOfflinePlaybackCache = true;
-    try {
-      do {
-        _offlinePlaybackCacheRefreshQueued = false;
-        _offlinePlaybackCacheQueue.clear();
-        _offlinePlaybackCacheQueuedSongIds.clear();
-        final List<LibrarySong> candidates = _offlinePlaybackCacheCandidates(
-          anchor: anchor,
-        );
-        _enqueueOfflinePlaybackCacheSongs(candidates);
-        await _ensureOfflinePlaybackCacheWorkerRunning();
-      } while (_offlinePlaybackCacheRefreshQueued);
-    } finally {
-      _refreshingOfflinePlaybackCache = false;
-    }
+    return;
   }
 
   Future<void> _reopenQueueAtIndex(
@@ -7505,10 +7279,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       if (queueIndex != index && !_queueSongNeedsPreparedMediaSource(song)) {
         continue;
       }
-      preparedQueue[queueIndex] = await _preparePlayableSong(
-        song,
-        primeOfflineCache: queueIndex == index,
-      );
+      preparedQueue[queueIndex] = await _preparePlayableSong(song);
     }
     final LibrarySong target = preparedQueue[index];
     try {
@@ -7623,65 +7394,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         _queueSongIds.isNotEmpty &&
         currentSong != null &&
         _player.state.playlist.medias.isEmpty;
-  }
-
-  Future<bool> _shouldUseOfflineQueueTransition(int targetIndex) async {
-    final bool offline = await _resolveOfflineStateForAction();
-    if (offlineMusicMode || offline) {
-      _debugPlayback(
-        'queue.transition offline shortcut '
-        'targetIndex=$targetIndex offline=$offline offlineMode=$offlineMusicMode',
-      );
-      return true;
-    }
-    if (targetIndex < 0 || targetIndex >= _queueSongIds.length) {
-      return false;
-    }
-    final LibrarySong? targetSong = songById(_queueSongIds[targetIndex]);
-    if (targetSong == null || !targetSong.isRemote) {
-      return false;
-    }
-    if (_offlinePlaybackCachePathForSong(targetSong.id) == null) {
-      return false;
-    }
-    final bool online = await refreshConnectivityStatus(
-      notify: false,
-      syncOfflineMode: false,
-      announceLoss: true,
-    );
-    _debugPlayback(
-      'queue.transition connectivity check '
-      'targetIndex=$targetIndex target=${_debugSongLabel(targetSong)} online=$online',
-    );
-    return !online;
-  }
-
-  Future<bool> _recoverTransitionFromError(
-    int targetIndex,
-    Object error,
-  ) async {
-    _debugPlayback(
-      'transition.recover check '
-      'targetIndex=$targetIndex error=$error',
-    );
-    if (!_isConnectivityError(error)) {
-      return false;
-    }
-    _setConnectivityOffline(true, notify: false, announceLoss: true);
-    if (targetIndex < 0 || targetIndex >= _queueSongIds.length) {
-      return false;
-    }
-    final LibrarySong? targetSong = songById(_queueSongIds[targetIndex]);
-    if (targetSong == null ||
-        _offlinePlaybackCachePathForSong(targetSong.id) == null) {
-      return false;
-    }
-    _debugPlayback(
-      'transition.recover reopening cached target '
-      'targetIndex=$targetIndex target=${_debugSongLabel(targetSong)}',
-    );
-    await _reopenQueueAtIndex(targetIndex);
-    return true;
   }
 
   void _primePendingTrackTransition(int targetIndex) {

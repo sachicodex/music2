@@ -72,6 +72,8 @@ class _PlayerScreenState extends State<_PlayerScreen>
         await controller.dislikeSong(song.id);
       case 'queue':
         await controller.enqueueSong(song);
+      case 'download_offline':
+        await controller.downloadSongForOffline(song);
     }
   }
 
@@ -351,6 +353,20 @@ class _PlayerScreenState extends State<_PlayerScreen>
                                         'queue',
                                         'Add to queue',
                                       ),
+                                      if (song.isRemote)
+                                        _musixPopupMenuItem(
+                                          'download_offline',
+                                          controller.isSongAvailableOffline(
+                                                song,
+                                              )
+                                              ? 'Available offline'
+                                              : controller
+                                                    .isSongOfflineDownloadInProgress(
+                                                      song.id,
+                                                    )
+                                              ? 'Downloading offline'
+                                              : 'Download offline',
+                                        ),
                                     ],
                               ),
                             ],
@@ -816,6 +832,15 @@ class _DesktopPlayerArtworkPanel extends StatelessWidget {
                     song.isDisliked ? 'Remove dislike' : 'Dislike song',
                   ),
                   _musixPopupMenuItem('queue', 'Add to queue'),
+                  if (song.isRemote)
+                    _musixPopupMenuItem(
+                      'download_offline',
+                      controller.isSongAvailableOffline(song)
+                          ? 'Available offline'
+                          : controller.isSongOfflineDownloadInProgress(song.id)
+                          ? 'Downloading offline'
+                          : 'Download offline',
+                    ),
                 ],
               ),
             ],
@@ -3112,6 +3137,15 @@ class _SongTile extends StatelessWidget {
           song.isFavorite ? 'Unfavorite' : 'Favorite',
         ),
       _musixPopupMenuItem('enqueue', 'Add to queue'),
+      if (song.isRemote)
+        _musixPopupMenuItem(
+          'download_offline',
+          controller.isSongAvailableOffline(song)
+              ? 'Available offline'
+              : controller.isSongOfflineDownloadInProgress(song.id)
+              ? 'Downloading offline'
+              : 'Download offline',
+        ),
       if (!song.isRemote) _musixPopupMenuItem('playlist', 'Add to playlist'),
       if (extraPlaylistId != null)
         _musixPopupMenuItem('remove_playlist', 'Remove from playlist'),
@@ -3211,14 +3245,18 @@ class _SongTile extends StatelessWidget {
                       case 'favorite':
                         controller.toggleFavorite(song.id);
                       case 'enqueue':
-                        controller.enqueueSong(song);
+                        unawaited(controller.enqueueSong(song));
+                      case 'download_offline':
+                        unawaited(controller.downloadSongForOffline(song));
                       case 'playlist':
                         _showAddToPlaylistDialog(context, controller, song);
                       case 'remove_playlist':
                         if (extraPlaylistId != null) {
-                          controller.removeSongFromPlaylist(
-                            extraPlaylistId!,
-                            song.id,
+                          unawaited(
+                            controller.removeSongFromPlaylist(
+                              extraPlaylistId!,
+                              song.id,
+                            ),
                           );
                         }
                     }

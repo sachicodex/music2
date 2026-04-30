@@ -1468,10 +1468,10 @@ class _DesktopLibraryScreen extends StatelessWidget {
         <_DesktopLibraryPlaylistEntry>[
           if (hasCachedPlaylist)
             _DesktopLibraryPlaylistEntry(
-              title: 'Cached Songs',
+              title: 'Offline Downloads',
               seed: 'cached_songs',
               songs: cachedSongs,
-              subtitle: '${cachedSongs.length} cached tracks',
+              subtitle: '${cachedSongs.length} downloaded tracks',
             ),
           if (hasDislikedPlaylist)
             _DesktopLibraryPlaylistEntry(
@@ -1896,12 +1896,10 @@ class _DesktopSettingsActionRow extends StatelessWidget {
 class _DesktopSettingsScreen extends StatelessWidget {
   const _DesktopSettingsScreen({
     required this.controller,
-    required this.onPickNextChanceSongCount,
     required this.onPickRegion,
   });
 
   final MusixController controller;
-  final Future<void> Function() onPickNextChanceSongCount;
   final Future<void> Function() onPickRegion;
 
   @override
@@ -1914,10 +1912,8 @@ class _DesktopSettingsScreen extends StatelessWidget {
 
     final AuthService authService = context.read<AuthService>();
     final bool gapless = controller.settings.gaplessPlayback;
-    final int nextChanceSongCount = controller.settings.nextChanceSongCount;
     final String userName = authService.currentUserDisplayName;
     final String userEmail = authService.currentUserEmail;
-    final String userInitials = authService.currentUserInitials;
     final String userId = authService.currentUserShortUid;
     final bool emailVerified = authService.isCurrentUserEmailVerified;
 
@@ -2082,34 +2078,12 @@ class _DesktopSettingsScreen extends StatelessWidget {
                         ),
                         const Divider(color: cardEdge, height: 24),
                         _DesktopSettingsActionRow(
-                          title: 'Upcoming Offline Songs',
-                          subtitle: nextChanceSongCount == 0
-                              ? 'Off'
-                              : 'Keep the next $nextChanceSongCount song${nextChanceSongCount == 1 ? '' : 's'} ready offline',
-                          onTap: onPickNextChanceSongCount,
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              Flexible(
-                                child: Text(
-                                  nextChanceSongCount == 0
-                                      ? 'Off'
-                                      : '$nextChanceSongCount',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.titleSmall
-                                      ?.copyWith(
-                                        color: accent,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              const Icon(
-                                Icons.chevron_right_rounded,
-                                color: subtitleColor,
-                              ),
-                            ],
+                          title: 'Offline Downloads',
+                          subtitle:
+                              'Songs stream immediately. Use Download offline from a song menu to save a track.',
+                          trailing: const Icon(
+                            Icons.download_for_offline_rounded,
+                            color: subtitleColor,
                           ),
                         ),
                       ],

@@ -67,11 +67,9 @@ class _SettingsScreen extends StatelessWidget {
 
     final AuthService authService = context.read<AuthService>();
     final bool gapless = controller.settings.gaplessPlayback;
-    final int nextChanceSongCount = controller.settings.nextChanceSongCount;
     final String preferredRegion = controller.preferredRegionLabel;
     final String userName = authService.currentUserDisplayName;
     final String userEmail = authService.currentUserEmail;
-    final String userInitials = authService.currentUserInitials;
     final String userId = authService.currentUserShortUid;
     final bool emailVerified = authService.isCurrentUserEmailVerified;
 
@@ -90,82 +88,6 @@ class _SettingsScreen extends StatelessWidget {
         if (context.mounted) {
           _showMusixSnackBar(context, error.message);
         }
-      }
-    }
-
-    Future<void> pickNextChanceSongCount() async {
-      const List<int> options = <int>[0, 1, 2, 3, 4, 5];
-      final int? selected = await showModalBottomSheet<int>(
-        context: context,
-        backgroundColor: const Color(0xFF1C0904),
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        builder: (BuildContext context) {
-          return SafeArea(
-            top: false,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.sizeOf(context).height * 0.72,
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      'Choose upcoming offline songs',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: titleColor,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Played songs stay cached until you clear them. Pick how many upcoming songs to keep ready offline.',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodySmall?.copyWith(color: subtitleColor),
-                    ),
-                    const SizedBox(height: 12),
-                    Flexible(
-                      child: ListView(
-                        shrinkWrap: true,
-                        children: options.map((int option) {
-                          final bool active = option == nextChanceSongCount;
-                          final String label = option == 0 ? 'Off' : '$option';
-                          return ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            onTap: () => Navigator.of(context).pop(option),
-                            title: Text(
-                              label,
-                              style: TextStyle(
-                                color: active ? accent : titleColor,
-                                fontWeight: active
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
-                              ),
-                            ),
-                            trailing: active
-                                ? const Icon(Icons.check_rounded, color: accent)
-                                : null,
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      );
-      if (selected != null) {
-        await controller.setNextChanceSongCount(selected);
       }
     }
 
@@ -256,7 +178,6 @@ class _SettingsScreen extends StatelessWidget {
     if (_isDesktopPlatform()) {
       return _DesktopSettingsScreen(
         controller: controller,
-        onPickNextChanceSongCount: pickNextChanceSongCount,
         onPickRegion: pickRegion,
       );
     }
@@ -436,41 +357,22 @@ class _SettingsScreen extends StatelessWidget {
                   const Divider(color: cardEdge, height: 20),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    onTap: pickNextChanceSongCount,
                     title: Text(
-                      'Upcoming Offline Songs',
+                      'Offline Downloads',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         color: titleColor,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                     subtitle: Text(
-                      nextChanceSongCount == 0
-                          ? 'Off'
-                          : 'Keep the next $nextChanceSongCount song${nextChanceSongCount == 1 ? '' : 's'} ready offline',
+                      'Songs stream immediately. Use Download offline from a song menu to save a track.',
                       style: Theme.of(
                         context,
                       ).textTheme.bodySmall?.copyWith(color: subtitleColor),
                     ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Text(
-                          nextChanceSongCount == 0
-                              ? 'Off'
-                              : '$nextChanceSongCount',
-                          style: Theme.of(context).textTheme.titleSmall
-                              ?.copyWith(
-                                color: accent,
-                                fontWeight: FontWeight.w800,
-                              ),
-                        ),
-                        const SizedBox(width: 8),
-                        const Icon(
-                          Icons.chevron_right_rounded,
-                          color: subtitleColor,
-                        ),
-                      ],
+                    trailing: const Icon(
+                      Icons.download_for_offline_rounded,
+                      color: subtitleColor,
                     ),
                   ),
                 ],
@@ -700,10 +602,10 @@ class _ProfileDataUsageCard extends StatelessWidget {
         Future<void> clearCache() async {
           final bool confirmed = await _showProfileActionConfirmationDialog(
             context,
-            title: 'Clear offline cache?',
+            title: 'Clear offline downloads?',
             message:
-                'This removes cached songs saved for offline replay. Streaming will use data again until the songs are cached another time.',
-            confirmLabel: 'Clear Cache',
+                'This removes songs saved with Download offline. Streaming playback is not affected.',
+            confirmLabel: 'Clear Downloads',
             confirmColor: const Color(0xFFDE6B48),
           );
           if (!confirmed || !context.mounted) {
@@ -711,7 +613,7 @@ class _ProfileDataUsageCard extends StatelessWidget {
           }
           await controller.clearOfflinePlaybackCacheAndNotify();
           if (context.mounted) {
-            _showMusixSnackBar(context, 'Offline cache cleared');
+            _showMusixSnackBar(context, 'Offline downloads cleared');
           }
         }
 
@@ -720,7 +622,7 @@ class _ProfileDataUsageCard extends StatelessWidget {
             context,
             title: 'Reset data usage?',
             message:
-                'This clears streaming, cache, search, discovery, artwork, and metadata totals shown on your profile.',
+                'This clears streaming, search, discovery, artwork, and metadata totals shown on your profile.',
             confirmLabel: 'Reset Usage',
             confirmColor: accent,
           );
@@ -764,7 +666,7 @@ class _ProfileDataUsageCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'Streaming grows only from live caching bytes. Total is Other plus Streaming.',
+                'Streaming grows while online playback is active. Total is Other plus Streaming.',
                 style: Theme.of(
                   context,
                 ).textTheme.bodySmall?.copyWith(color: subtitleColor),
@@ -789,7 +691,7 @@ class _ProfileDataUsageCard extends StatelessWidget {
                     subtitleColor: subtitleColor,
                   ),
                   _UsageChip(
-                    label: 'Offline Cache',
+                    label: 'Offline Downloads',
                     value: usage.cacheLabel,
                     accent: accent,
                     titleColor: titleColor,
@@ -804,11 +706,8 @@ class _ProfileDataUsageCard extends StatelessWidget {
                   ),
                   if (activeUsageSong != null)
                     _UsageChip(
-                      label: 'Caching Now',
-                      value: controller.currentCacheProgressLabel(
-                        song: activeUsageSong,
-                        fallbackLabel: usage.currentCacheLabel,
-                      ),
+                      label: 'Current Stream',
+                      value: usage.currentSongLabel,
                       accent: accent,
                       titleColor: titleColor,
                       subtitleColor: subtitleColor,
@@ -908,8 +807,8 @@ class _ProfileDataUsageCard extends StatelessWidget {
                     icon: const Icon(Icons.delete_sweep_rounded, size: 18),
                     label: Text(
                       controller.offlinePlaybackCacheSongCount == 0
-                          ? 'Cache Empty'
-                          : 'Clear Cache',
+                          ? 'Downloads Empty'
+                          : 'Clear Downloads',
                     ),
                   ),
                   OutlinedButton.icon(
@@ -1129,7 +1028,7 @@ class _ProfileCurrentStreamCard extends StatelessWidget {
                       valueColor: accent,
                     ),
                     _ProfileDetailRow(
-                      title: 'Caching Now',
+                      title: 'Offline Download',
                       value: controller.currentCacheProgressLabel(
                         song: song,
                         fallbackLabel: usage.currentCacheLabel,

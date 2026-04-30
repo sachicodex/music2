@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -100,7 +101,10 @@ void main() {
   test(
     'PlaybackProxyServer avoids duplicate upstream download during cache write',
     () async {
-      final List<int> payload = List<int>.generate(512 * 1024, (int i) => i % 251);
+      final List<int> payload = List<int>.generate(
+        512 * 1024,
+        (int i) => i % 251,
+      );
       final Directory tempDir = await Directory.systemTemp.createTemp(
         'playback-proxy-dedupe-',
       );
@@ -169,6 +173,89 @@ void main() {
         } finally {
           firstClient.close(force: true);
           secondClient.close(force: true);
+        }
+      } finally {
+        await proxy.dispose();
+        await upstream.close(force: true);
+        await tempDir.delete(recursive: true);
+      }
+    },
+  );
+
+  test(
+    'PlaybackProxyServer cancels active upstream stream on unregister',
+    () async {
+      final List<int> chunk = List<int>.filled(256 * 1024, 7);
+      const int totalChunks = 200;
+      final Directory tempDir = await Directory.systemTemp.createTemp(
+        'playback-proxy-cancel-',
+      );
+      final String cachePath =
+          '${tempDir.path}${Platform.pathSeparator}song.m4a';
+      int upstreamChunksSent = 0;
+      final HttpServer upstream = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      upstream.listen((HttpRequest request) async {
+        request.response.statusCode = HttpStatus.ok;
+        request.response.headers.contentType = ContentType(
+          'application',
+          'octet-stream',
+        );
+        request.response.headers.contentLength = chunk.length * totalChunks;
+        try {
+          for (int i = 0; i < totalChunks; i += 1) {
+            request.response.add(chunk);
+            await request.response.flush();
+            upstreamChunksSent += 1;
+            await Future<void>.delayed(const Duration(milliseconds: 2));
+          }
+          await request.response.close();
+        } catch (_) {}
+      });
+
+      final PlaybackProxyServer proxy = PlaybackProxyServer(
+        onBytesTransferred: (_) {},
+      );
+
+      try {
+        final String proxyUrl = await proxy.register(
+          sessionId: 'session-cancel',
+          songId: 'song-cancel',
+          upstreamUri: Uri.parse(
+            'http://${upstream.address.address}:${upstream.port}/audio',
+          ),
+          cacheFilePath: cachePath,
+          cacheEpoch: 1,
+        );
+
+        final HttpClient client = HttpClient();
+        final Completer<void> receivedFirstChunk = Completer<void>();
+        try {
+          final HttpClientRequest request = await client.getUrl(
+            Uri.parse(proxyUrl),
+          );
+          final HttpClientResponse response = await request.close();
+          final StreamSubscription<List<int>> subscription = response.listen((
+            List<int> data,
+          ) {
+            if (data.isNotEmpty && !receivedFirstChunk.isCompleted) {
+              receivedFirstChunk.complete();
+            }
+          });
+
+          await receivedFirstChunk.future.timeout(const Duration(seconds: 2));
+          await proxy.unregister('session-cancel');
+          final int chunksAfterCancel = upstreamChunksSent;
+          await Future<void>.delayed(const Duration(milliseconds: 250));
+          await subscription.cancel();
+
+          expect(chunksAfterCancel, lessThan(totalChunks));
+          expect(upstreamChunksSent, lessThan(totalChunks));
+          expect(await File(cachePath).exists(), isFalse);
+        } finally {
+          client.close(force: true);
         }
       } finally {
         await proxy.dispose();

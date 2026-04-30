@@ -60,7 +60,6 @@ class PlaybackProxyServer {
   final PlaybackProxyTransferCallback onBytesTransferred;
   final PlaybackProxyCacheProgressCallback? onCacheProgress;
   final PlaybackProxyCacheCompletedCallback? onCacheCompleted;
-  final HttpClient _client = HttpClient();
   final Map<String, _PlaybackProxySession> _sessions =
       <String, _PlaybackProxySession>{};
   HttpServer? _server;
@@ -88,12 +87,19 @@ class PlaybackProxyServer {
   }
 
   Future<void> unregister(String sessionId) async {
-    _sessions.remove(sessionId);
+    final _PlaybackProxySession? session = _sessions.remove(sessionId);
+    if (session != null) {
+      await session.cancel();
+    }
   }
 
   Future<void> dispose() async {
+    final List<_PlaybackProxySession> sessions = _sessions.values.toList();
     _sessions.clear();
-    _client.close(force: true);
+    await Future.wait<void>(
+      sessions.map((_PlaybackProxySession session) => session.cancel()),
+      eagerError: false,
+    );
     final HttpServer? server = _server;
     _server = null;
     if (server != null) {
@@ -142,16 +148,30 @@ class PlaybackProxyServer {
       if (await _tryServeFromCompletedCache(incoming, session)) {
         return;
       }
-      final HttpClientRequest upstream = await _client.openUrl(
-        incoming.method,
-        session.upstreamUri,
-      );
+      if (session.isCancelled) {
+        await incoming.response.close();
+        return;
+      }
+      final _PlaybackProxyActiveRequest activeRequest =
+          _PlaybackProxyActiveRequest(incoming.response);
+      session.addActiveRequest(activeRequest);
+      final HttpClientRequest upstream = await activeRequest.upstreamClient
+          .openUrl(incoming.method, session.upstreamUri);
+      activeRequest.upstreamRequest = upstream;
       _copyRequestHeaders(
         from: incoming.headers,
         to: upstream.headers,
         overrides: session.upstreamHeaders,
       );
       final HttpClientResponse upstreamResponse = await upstream.close();
+      activeRequest.upstreamRequest = null;
+      if (session.isCancelled) {
+        await _discardActiveRequest(
+          session: session,
+          activeRequest: activeRequest,
+        );
+        return;
+      }
 
       incoming.response.statusCode = upstreamResponse.statusCode;
       _copyResponseHeaders(
@@ -177,33 +197,48 @@ class PlaybackProxyServer {
 
       if (incoming.method.toUpperCase() == 'HEAD') {
         await incoming.response.close();
+        session.removeActiveRequest(activeRequest);
         return;
       }
 
       try {
-        await for (final List<int> chunk in upstreamResponse) {
-          incoming.response.add(chunk);
-          if (cacheSink != null && chunk.isNotEmpty) {
-            cacheSink.add(chunk);
-            cachedBytes += chunk.length;
-            onCacheProgress?.call(
-              PlaybackProxyCacheProgress(
-                sessionId: session.sessionId,
-                songId: session.songId,
-                bytesWritten: cachedBytes,
-                expectedBytes: cachePlan?.expectedBytes,
-              ),
-            );
-          }
-          if (chunk.isNotEmpty) {
-            onBytesTransferred(
-              PlaybackProxyTransfer(
-                sessionId: session.sessionId,
-                songId: session.songId,
-                bytesTransferred: chunk.length,
-              ),
-            );
-          }
+        activeRequest.upstreamSubscription = upstreamResponse.listen(
+          (List<int> chunk) {
+            if (session.isCancelled || activeRequest.isCancelled) {
+              activeRequest.cancel();
+              return;
+            }
+            incoming.response.add(chunk);
+            if (cacheSink != null && chunk.isNotEmpty) {
+              cacheSink.add(chunk);
+              cachedBytes += chunk.length;
+              onCacheProgress?.call(
+                PlaybackProxyCacheProgress(
+                  sessionId: session.sessionId,
+                  songId: session.songId,
+                  bytesWritten: cachedBytes,
+                  expectedBytes: cachePlan?.expectedBytes,
+                ),
+              );
+            }
+            if (chunk.isNotEmpty) {
+              onBytesTransferred(
+                PlaybackProxyTransfer(
+                  sessionId: session.sessionId,
+                  songId: session.songId,
+                  bytesTransferred: chunk.length,
+                ),
+              );
+            }
+          },
+          onError: activeRequest.completeError,
+          onDone: activeRequest.complete,
+          cancelOnError: true,
+        );
+        await activeRequest.done;
+        if (session.isCancelled || activeRequest.isCancelled) {
+          await _discardCacheWrite(plan: cachePlan, sink: cacheSink);
+          return;
         }
         await incoming.response.close();
         await _completeCacheWrite(
@@ -215,6 +250,8 @@ class PlaybackProxyServer {
       } catch (_) {
         await _discardCacheWrite(plan: cachePlan, sink: cacheSink);
         rethrow;
+      } finally {
+        session.removeActiveRequest(activeRequest);
       }
     } catch (_) {
       try {
@@ -222,6 +259,14 @@ class PlaybackProxyServer {
       } catch (_) {}
       await incoming.response.close();
     }
+  }
+
+  Future<void> _discardActiveRequest({
+    required _PlaybackProxySession session,
+    required _PlaybackProxyActiveRequest activeRequest,
+  }) async {
+    await activeRequest.cancel();
+    session.removeActiveRequest(activeRequest);
   }
 
   Future<bool> _tryServeFromCompletedCache(
@@ -372,12 +417,6 @@ class PlaybackProxyServer {
         to.add(name, value);
       }
     });
-
-    final int contentLength = from.contentLength;
-    if (contentLength >= 0) {
-      to.contentLength = contentLength;
-      to.chunkedTransferEncoding = false;
-    }
   }
 
   _PlaybackProxyCachePlan? _createCachePlan({
@@ -509,6 +548,81 @@ class _PlaybackProxySession {
   final int cacheEpoch;
   bool cacheCompleted = false;
   bool cacheWriteInProgress = false;
+  bool _cancelled = false;
+  final Set<_PlaybackProxyActiveRequest> _activeRequests =
+      <_PlaybackProxyActiveRequest>{};
+
+  bool get isCancelled => _cancelled;
+
+  void addActiveRequest(_PlaybackProxyActiveRequest request) {
+    if (_cancelled) {
+      request.cancel();
+      return;
+    }
+    _activeRequests.add(request);
+  }
+
+  void removeActiveRequest(_PlaybackProxyActiveRequest request) {
+    _activeRequests.remove(request);
+  }
+
+  Future<void> cancel() async {
+    if (_cancelled && _activeRequests.isEmpty) {
+      return;
+    }
+    _cancelled = true;
+    final List<_PlaybackProxyActiveRequest> activeRequests = _activeRequests
+        .toList(growable: false);
+    _activeRequests.clear();
+    await Future.wait<void>(
+      activeRequests.map((_PlaybackProxyActiveRequest request) {
+        return request.cancel();
+      }),
+      eagerError: false,
+    );
+  }
+}
+
+class _PlaybackProxyActiveRequest {
+  _PlaybackProxyActiveRequest(this.response) : upstreamClient = HttpClient();
+
+  final HttpResponse response;
+  final HttpClient upstreamClient;
+  final Completer<void> _done = Completer<void>();
+  HttpClientRequest? upstreamRequest;
+  StreamSubscription<List<int>>? upstreamSubscription;
+  bool _cancelled = false;
+
+  Future<void> get done => _done.future;
+  bool get isCancelled => _cancelled;
+
+  void complete() {
+    if (!_done.isCompleted) {
+      _done.complete();
+    }
+  }
+
+  void completeError(Object error, [StackTrace? stackTrace]) {
+    if (!_done.isCompleted) {
+      _done.completeError(error, stackTrace);
+    }
+  }
+
+  Future<void> cancel() async {
+    if (_cancelled && _done.isCompleted) {
+      return;
+    }
+    _cancelled = true;
+    upstreamRequest?.abort();
+    upstreamClient.close(force: true);
+    try {
+      await upstreamSubscription?.cancel();
+    } catch (_) {}
+    try {
+      await response.close();
+    } catch (_) {}
+    complete();
+  }
 }
 
 class _PlaybackProxyCachePlan {

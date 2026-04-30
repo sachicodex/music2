@@ -140,10 +140,10 @@ class _LibraryScreen extends StatelessWidget {
                 padding: const EdgeInsets.only(bottom: 18),
                 child: _LibraryPlaylistRow(
                   controller: controller,
-                  title: 'Cached Songs',
+                  title: 'Offline Downloads',
                   seed: 'cached_songs',
                   songs: cachedSongs,
-                  subtitle: 'Playlist - ${cachedSongs.length} Cached',
+                  subtitle: 'Playlist - ${cachedSongs.length} Downloaded',
                   forceEnabled: true,
                 ),
               ),

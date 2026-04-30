@@ -322,15 +322,26 @@ class _SearchTrendingTile extends StatelessWidget {
                       }
                     case 'queue':
                       if (canQueue) {
-                        controller.enqueueSong(song);
+                        unawaited(controller.enqueueSong(song));
                       }
+                    case 'download_offline':
+                      unawaited(controller.downloadSongForOffline(song));
                     case 'favorite':
-                      controller.toggleFavorite(song.id);
+                      unawaited(controller.toggleFavorite(song.id));
                   }
                 },
                 itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
                   _musixPopupMenuItem('play', 'Play now'),
                   if (canQueue) _musixPopupMenuItem('queue', 'Add to queue'),
+                  if (song.isRemote)
+                    _musixPopupMenuItem(
+                      'download_offline',
+                      controller.isSongAvailableOffline(song)
+                          ? 'Available offline'
+                          : controller.isSongOfflineDownloadInProgress(song.id)
+                          ? 'Downloading offline'
+                          : 'Download offline',
+                    ),
                   _musixPopupMenuItem(
                     'favorite',
                     song.isFavorite ? 'Remove favorite' : 'Add favorite',
