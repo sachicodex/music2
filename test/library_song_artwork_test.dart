@@ -34,7 +34,7 @@ void main() {
 
     expect(
       song.artworkUrl,
-      'https://lh3.googleusercontent.com/abc=w600-h600-l90-rj',
+      'https://lh3.googleusercontent.com/abc=w320-h320-l90-rj',
     );
   });
 

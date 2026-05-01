@@ -192,116 +192,111 @@ class _HomeScreenState extends State<_HomeScreen>
         children: <Widget>[
           SafeArea(
             bottom: false,
-            child: RefreshIndicator(
-              color: const Color(0xFFFF8A2A),
-              backgroundColor: const Color(0xFF2A1007),
-              onRefresh: () => controller.refreshHomeFeed(force: true),
-              child: ListView(
-                controller: _scroll,
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: _rootScreenContentPadding(
-                  context,
-                  hasMiniPlayer: controller.miniPlayerSong != null,
+            child: ListView(
+              controller: _scroll,
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: _rootScreenContentPadding(
+                context,
+                hasMiniPlayer: controller.miniPlayerSong != null,
+              ),
+              children: <Widget>[
+                const _MusixTopBar(),
+                const SizedBox(height: 14),
+                if (showRecommendationLoadingState)
+                  const _MusixHeroSkeleton()
+                else if (featured != null)
+                  _MusixHeroCard(
+                    badge: featured.badge,
+                    title: featured.title,
+                    subtitle: featured.subtitle,
+                    imageUrl: featured.imageUrl,
+                    onListenNow: featured.onListenNow,
+                  )
+                else
+                  const _PersonalizationHintCard(
+                    message:
+                        'Play local songs, like tracks, or reconnect to load personalized recommendations here.',
+                  ),
+                const SizedBox(height: 18),
+                _MusixSectionHeader(
+                  title: 'MAY YOU LIKE',
+                  onViewAll: () {
+                    if (mayYouLikeFull.isEmpty) {
+                      widget.onOpenSearch();
+                      return;
+                    }
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (BuildContext context) =>
+                            _MayYouLikeScreen(controller: controller),
+                      ),
+                    );
+                  },
                 ),
-                children: <Widget>[
-                  const _MusixTopBar(),
-                  const SizedBox(height: 14),
-                  if (showRecommendationLoadingState)
-                    const _MusixHeroSkeleton()
-                  else if (featured != null)
-                    _MusixHeroCard(
-                      badge: featured.badge,
-                      title: featured.title,
-                      subtitle: featured.subtitle,
-                      imageUrl: featured.imageUrl,
-                      onListenNow: featured.onListenNow,
-                    )
-                  else
-                    const _PersonalizationHintCard(
-                      message:
-                          'Play local songs, like tracks, or reconnect to load personalized recommendations here.',
-                    ),
+                const SizedBox(height: 10),
+                if (showRecommendationLoadingState)
+                  const _MusixListSkeleton(count: 4)
+                else if (mayYouLike.isEmpty)
+                  const _PersonalizationHintCard(
+                    message:
+                        'Play, like, and finish songs to train your personalized May You Like section.',
+                  )
+                else
+                  Column(
+                    children: List<Widget>.generate(mayYouLike.length, (
+                      int index,
+                    ) {
+                      final LibrarySong song = mayYouLike[index];
+                      return _MusixPopularTrackTile(
+                        index: index + 1,
+                        song: song,
+                        onTap: () {
+                          if (song.isRemote) {
+                            controller.playOnlineSong(song);
+                          } else {
+                            controller.playSong(song, label: 'May you like');
+                          }
+                        },
+                      );
+                    }),
+                  ),
+                ..._buildMoreShelves(
+                  context: context,
+                  controller: controller,
+                  skipCount: 1,
+                ),
+                if (!controller.homeLoading &&
+                    jumpBackIn.isNotEmpty) ...<Widget>[
                   const SizedBox(height: 18),
                   _MusixSectionHeader(
-                    title: 'MAY YOU LIKE',
+                    title: 'JUMP BACK IN',
                     onViewAll: () {
-                      if (mayYouLikeFull.isEmpty) {
-                        widget.onOpenSearch();
-                        return;
-                      }
                       Navigator.of(context).push(
                         MaterialPageRoute<void>(
                           builder: (BuildContext context) =>
-                              _MayYouLikeScreen(controller: controller),
+                              _RecentPlaysScreen(controller: controller),
                         ),
                       );
                     },
                   ),
                   const SizedBox(height: 10),
-                  if (showRecommendationLoadingState)
-                    const _MusixListSkeleton(count: 4)
-                  else if (mayYouLike.isEmpty)
-                    const _PersonalizationHintCard(
-                      message:
-                          'Play, like, and finish songs to train your personalized May You Like section.',
-                    )
-                  else
-                    Column(
-                      children: List<Widget>.generate(mayYouLike.length, (
-                        int index,
-                      ) {
-                        final LibrarySong song = mayYouLike[index];
-                        return _MusixPopularTrackTile(
-                          index: index + 1,
-                          song: song,
-                          onTap: () {
-                            if (song.isRemote) {
-                              controller.playOnlineSong(song);
-                            } else {
-                              controller.playSong(song, label: 'May you like');
-                            }
-                          },
-                        );
-                      }),
-                    ),
-                  ..._buildMoreShelves(
-                    context: context,
-                    controller: controller,
-                    skipCount: 1,
+                  _MusixJumpBackGrid(
+                    items: jumpBackIn,
+                    onTapItem: (LibrarySong song) {
+                      if (song.isRemote) {
+                        controller.playOnlineSong(song);
+                      } else {
+                        controller.playSong(song, label: 'Jump back in');
+                      }
+                    },
                   ),
-                  if (!controller.homeLoading &&
-                      jumpBackIn.isNotEmpty) ...<Widget>[
-                    const SizedBox(height: 18),
-                    _MusixSectionHeader(
-                      title: 'JUMP BACK IN',
-                      onViewAll: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (BuildContext context) =>
-                                _RecentPlaysScreen(controller: controller),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    _MusixJumpBackGrid(
-                      items: jumpBackIn,
-                      onTapItem: (LibrarySong song) {
-                        if (song.isRemote) {
-                          controller.playOnlineSong(song);
-                        } else {
-                          controller.playSong(song, label: 'Jump back in');
-                        }
-                      },
-                    ),
-                  ],
-                  if (controller.homeLoading &&
-                      !hasRevealableContent) ...<Widget>[
-                    const SizedBox(height: 16),
-                    const Opacity(opacity: 0.8, child: _HomeFeedSkeleton()),
-                  ],
                 ],
-              ),
+                if (controller.homeLoading &&
+                    !hasRevealableContent) ...<Widget>[
+                  const SizedBox(height: 16),
+                  const Opacity(opacity: 0.8, child: _HomeFeedSkeleton()),
+                ],
+              ],
             ),
           ),
         ],
@@ -379,11 +374,7 @@ class _HomeOfflineState extends StatelessWidget {
                   : 'Home recommendations need internet. Your downloaded and local tracks stay available until the connection comes back.',
               actionLabel: 'Retry',
               onAction: () async {
-                final bool online = await controller
-                    .refreshConnectivityStatus();
-                if (online && !controller.offlineMusicMode) {
-                  await controller.refreshHomeFeed(force: true);
-                }
+                await controller.refreshConnectivityStatus();
               },
               icon: controller.offlineMusicMode
                   ? Icons.offline_bolt_rounded

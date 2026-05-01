@@ -21,12 +21,14 @@ import 'package:ytmusicapi_dart/enums.dart' as ytm;
 
 import '../services/firestore_user_data_service.dart';
 import 'android_media_notification_bridge.dart';
+import 'library_scan.dart';
 import 'models.dart';
 import 'playback_proxy.dart';
+import 'snapshot_codec.dart';
 import 'streaming.dart';
 import 'windows_media_controls_bridge.dart';
 
-enum _AppNetworkUsageBucket { search, load, artwork, metadata }
+enum _AppNetworkUsageBucket { search, load, metadata }
 
 class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   MusixController({FirestoreUserDataService? firestoreUserDataService})
@@ -108,6 +110,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   bool _trendingNowLoading = false;
   bool _homeLoading = false;
   bool _homeRefreshResolvedOnce = false;
+  bool _homeStartupRefreshConsumed = false;
   bool _smartQueueLoading = false;
   bool _smartQueueRefillQueued = false;
   bool _isOffline = false;
@@ -654,47 +657,16 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     if (playbackProgressState.value != nextProgress) {
       playbackProgressState.value = nextProgress;
     }
-    _syncDataUsageState();
   }
 
   void _syncDataUsageState() {
-    final String? songId = miniPlayerSong?.id ?? currentSong?.id;
-    final (int currentCacheBytes, int currentCacheExpectedBytes) =
-        songId == null ? (0, 0) : _currentSongCacheProgress(songId);
-    final int currentSongBytes = songId == null
-        ? 0
-        : _songPlaybackBytes[songId] ?? 0;
-    final AppDataUsageStats next = _dataUsage.copyWith(
-      totalBytes: _dataUsage.streamBytes + _dataUsage.otherBytes,
-      cacheBytes: 0,
-      currentSongId: songId,
-      currentSongBytes: currentSongBytes,
-      currentCacheSongId: songId,
-      currentCacheBytes: currentCacheBytes,
-      currentCacheExpectedBytes: currentCacheExpectedBytes,
-    );
-    if (dataUsageState.value != next) {
-      _dataUsage = next;
-      dataUsageState.value = next;
+    if (dataUsageState.value != const AppDataUsageStats()) {
+      dataUsageState.value = const AppDataUsageStats();
     }
   }
 
   void _recordStreamBytes(String songId, int bytes) {
-    if (bytes <= 0) {
-      return;
-    }
-    _songPlaybackBytes.update(
-      songId,
-      (int value) => value + bytes,
-      ifAbsent: () => bytes,
-    );
-    _dataUsage = _dataUsage.copyWith(
-      totalBytes: _dataUsage.totalBytes + bytes,
-      streamBytes: _dataUsage.streamBytes + bytes,
-      lastUpdatedAt: DateTime.now(),
-    );
-    _syncDataUsageState();
-    _scheduleSnapshotSave();
+    return;
   }
 
   void _beginPlaybackActivation(
@@ -815,115 +787,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     });
   }
 
-  void _recordOtherUsage({
-    int searchBytes = 0,
-    int loadBytes = 0,
-    int artworkBytes = 0,
-    int metadataBytes = 0,
-  }) {
-    final int safeSearchBytes = math.max(0, searchBytes);
-    final int safeLoadBytes = math.max(0, loadBytes);
-    final int safeArtworkBytes = math.max(0, artworkBytes);
-    final int safeMetadataBytes = math.max(0, metadataBytes);
-    final int totalIncrement =
-        safeSearchBytes + safeLoadBytes + safeArtworkBytes + safeMetadataBytes;
-    if (totalIncrement <= 0) {
-      return;
-    }
-    _dataUsage = _dataUsage.copyWith(
-      totalBytes: _dataUsage.totalBytes + totalIncrement,
-      searchBytes: _dataUsage.searchBytes + safeSearchBytes,
-      loadBytes: _dataUsage.loadBytes + safeLoadBytes,
-      artworkBytes: _dataUsage.artworkBytes + safeArtworkBytes,
-      metadataBytes: _dataUsage.metadataBytes + safeMetadataBytes,
-      lastUpdatedAt: DateTime.now(),
-    );
-    _syncDataUsageState();
-    _scheduleSnapshotSave();
-  }
-
-  int _estimateUsagePayloadBytes(Object? payload) {
-    final Object? normalized = _normalizeUsagePayload(payload);
-    return utf8.encode(jsonEncode(normalized)).length;
-  }
-
-  Object? _normalizeUsagePayload(Object? payload) {
-    if (payload == null ||
-        payload is num ||
-        payload is bool ||
-        payload is String) {
-      return payload;
-    }
-    if (payload is DateTime) {
-      return payload.toIso8601String();
-    }
-    if (payload is LibrarySong) {
-      return payload.toJson();
-    }
-    if (payload is PlaybackStreamCandidate) {
-      return <String, dynamic>{
-        'transport': payload.transport.name,
-        'url': payload.url,
-        'bitrateBitsPerSecond': payload.bitrateBitsPerSecond,
-        'streamTag': payload.streamTag,
-        'videoHeight': payload.videoHeight,
-        'qualityLabel': payload.qualityLabel,
-        'containerName': payload.containerName,
-        'codecDescription': payload.codecDescription,
-        'audioCodec': payload.audioCodec,
-        'videoCodec': payload.videoCodec,
-      };
-    }
-    if (payload is Map<Object?, Object?>) {
-      return <String, Object?>{
-        for (final MapEntry<Object?, Object?> entry in payload.entries)
-          '${entry.key}': _normalizeUsagePayload(entry.value),
-      };
-    }
-    if (payload is Iterable<Object?>) {
-      return payload.map(_normalizeUsagePayload).toList(growable: false);
-    }
-    return '$payload';
-  }
-
-  int _estimateArtworkUsageBytesFromSongs(Iterable<LibrarySong> songs) {
-    final List<String> artworkUrls = songs
-        .map((LibrarySong song) => (song.artworkUrl ?? '').trim())
-        .where((String url) => url.isNotEmpty)
-        .toList(growable: false);
-    if (artworkUrls.isEmpty) {
-      return 0;
-    }
-    return _estimateUsagePayloadBytes(artworkUrls);
-  }
-
-  void _recordSongCollectionUsage(
-    Iterable<LibrarySong> songs, {
-    required _AppNetworkUsageBucket bucket,
-    String? query,
-  }) {
-    final List<LibrarySong> materialized = songs.toList(growable: false);
-    if (materialized.isEmpty) {
-      return;
-    }
-    final int artworkBytes = _estimateArtworkUsageBytesFromSongs(materialized);
-    final int totalBytes = _estimateUsagePayloadBytes(<String, Object?>{
-      'query': query,
-      'songs': materialized.map((LibrarySong song) => song.toJson()).toList(),
-    });
-    final int bucketBytes = math.max(0, totalBytes - artworkBytes);
-    switch (bucket) {
-      case _AppNetworkUsageBucket.search:
-        _recordOtherUsage(searchBytes: bucketBytes, artworkBytes: artworkBytes);
-      case _AppNetworkUsageBucket.load:
-        _recordOtherUsage(loadBytes: bucketBytes, artworkBytes: artworkBytes);
-      case _AppNetworkUsageBucket.artwork:
-        _recordOtherUsage(artworkBytes: totalBytes);
-      case _AppNetworkUsageBucket.metadata:
-        _recordOtherUsage(metadataBytes: totalBytes);
-    }
-  }
-
   void _handlePlaybackProxyTransfer(PlaybackProxyTransfer transfer) {
     if (_isDisposed || _isDisposing) {
       return;
@@ -946,6 +809,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     if (_isDisposed || _isDisposing) {
       return;
     }
+    _autoOfflineDownloadQueuedSongIds.remove(result.songId);
     if (result.cacheEpoch != _offlinePlaybackCacheEpoch) {
       unawaited(_deleteFileIfExists(result.cachedFilePath));
       return;
@@ -1578,7 +1442,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       await _saveSnapshot();
       notifyListeners();
       if (!_isOffline && !offlineMusicMode) {
-        _requestAutoHomeRefresh(force: true);
+        _requestStartupHomeRefresh(force: true);
       }
     } on FirestoreUserDataException catch (error) {
       if (_isDisposed || _isDisposing || service.currentUserId != userId) {
@@ -1593,7 +1457,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       _queueCloudSyncMessage(
         'Could not load your Firestore library. Local data is still available.',
       );
-      debugPrint('Firestore user data load failed: $error');
+      _debugLog('Firestore user data load failed: $error');
       notifyListeners();
     }
   }
@@ -1727,15 +1591,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
           return null;
         }
         final Video video = await _yt.videos.get(videoId);
-        _recordOtherUsage(
-          metadataBytes: _estimateUsagePayloadBytes(<String, Object?>{
-            'videoId': video.id.value,
-            'title': video.title,
-            'author': video.author,
-            'durationMs': video.duration?.inMilliseconds,
-            'thumbnail': video.thumbnails.highResUrl,
-          }),
-        );
         return _withKnownCloudPreferenceState(_videoToSong(video));
       }
 
@@ -1747,7 +1602,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         return _withKnownCloudPreferenceState(_urlToSong(uri));
       }
     } catch (error) {
-      debugPrint('Cloud song hydration failed for $songId: $error');
+      _debugLog('Cloud song hydration failed for $songId: $error');
     }
     return null;
   }
@@ -1834,7 +1689,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       _queueCloudSyncMessage(
         'Could not sync liked songs to Firestore. The change was kept only on this device.',
       );
-      debugPrint('Firestore liked song sync failed: $error');
+      _debugLog('Firestore liked song sync failed: $error');
       notifyListeners();
     }
   }
@@ -1859,7 +1714,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       _queueCloudSyncMessage(
         'Could not sync disliked songs to Firestore. The change was kept only on this device.',
       );
-      debugPrint('Firestore disliked song sync failed: $error');
+      _debugLog('Firestore disliked song sync failed: $error');
       notifyListeners();
     }
   }
@@ -1881,7 +1736,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       _queueCloudSyncMessage(
         'Could not sync the playlist to Firestore. The change was kept only on this device.',
       );
-      debugPrint('Firestore playlist sync failed: $error');
+      _debugLog('Firestore playlist sync failed: $error');
       notifyListeners();
     }
   }
@@ -1903,7 +1758,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       _queueCloudSyncMessage(
         'Could not delete the playlist from Firestore. The change was kept only on this device.',
       );
-      debugPrint('Firestore playlist delete failed: $error');
+      _debugLog('Firestore playlist delete failed: $error');
       notifyListeners();
     }
   }
@@ -1927,10 +1782,12 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
       unawaited(_refillRestoredSmartQueueIfNeeded());
       unawaited(rescanLibrary());
-      _requestAutoHomeRefresh();
+      _requestStartupHomeRefresh();
     } catch (error, stackTrace) {
-      debugPrint('Startup continuation failed: $error');
-      debugPrintStack(stackTrace: stackTrace);
+      _debugLog('Startup continuation failed: $error');
+      if (kDebugMode) {
+        debugPrintStack(stackTrace: stackTrace);
+      }
     }
   }
 
@@ -2001,7 +1858,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         _homeFeed.isEmpty &&
         !_homeLoading &&
         !offlineMusicMode) {
-      _requestAutoHomeRefresh(force: true);
+      _requestStartupHomeRefresh(force: true);
     }
   }
 
@@ -2143,6 +2000,11 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         }
         _rememberTransientSong(song);
         await _cacheSongForOfflinePlayback(song);
+      } catch (error) {
+        _debugPlayback(
+          'cache.auto full-listen failed song=${_debugSongLabel(song)} '
+          'error=$error',
+        );
       } finally {
         _autoOfflineDownloadQueuedSongIds.remove(song.id);
         if (!_isDisposing && !_isDisposed) {
@@ -2153,9 +2015,9 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
-  void _requestAutoHomeRefresh({bool force = false}) {
+  void _requestStartupHomeRefresh({bool force = false}) {
     final DateTime now = DateTime.now();
-    if (_homeLoading) {
+    if (_homeLoading || _homeStartupRefreshConsumed) {
       return;
     }
     if (_lastAutoHomeRefreshAt != null &&
@@ -2163,6 +2025,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
             const Duration(milliseconds: 1500)) {
       return;
     }
+    _homeStartupRefreshConsumed = true;
     _lastAutoHomeRefreshAt = now;
     unawaited(refreshHomeFeed(force: force));
   }
@@ -2529,7 +2392,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     if (_homeFeed.isEmpty) {
-      await refreshHomeFeed();
       return;
     }
 
@@ -2795,11 +2657,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     for (final LibrarySong song in _ytMusicSearchCache[cacheKey]!) {
       _rememberTransientSong(song);
     }
-    _recordSongCollectionUsage(
-      _ytMusicSearchCache[cacheKey]!,
-      bucket: usageBucket,
-      query: trimmed,
-    );
     return _ytMusicSearchCache[cacheKey]!;
   }
 
@@ -2836,7 +2693,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         _rememberTransientSong(song);
       }
       _searchCache[cacheKey] = ranked;
-      _recordSongCollectionUsage(ranked, bucket: usageBucket, query: trimmed);
       return ranked;
     } catch (_) {
       _searchCache[cacheKey] = <LibrarySong>[];
@@ -2975,12 +2831,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         .whereType<LibrarySong>()
         .where((LibrarySong song) => !_sameSong(song, anchor))
         .toList(growable: false);
-    _recordSongCollectionUsage(
-      songs,
-      bucket: _AppNetworkUsageBucket.load,
-      query: '${anchor.artist} ${anchor.title} radio',
-    );
-
     for (final LibrarySong song in songs) {
       _rememberTransientSong(song);
     }
@@ -3244,7 +3094,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       countryCode: normalized,
       force: true,
     );
-    await refreshHomeFeed(force: true);
   }
 
   double _onlineSearchScore(LibrarySong song, {required String query}) {
@@ -3742,8 +3591,10 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         }
       }
     } catch (error, stackTrace) {
-      debugPrint('Smart queue failed: $error');
-      debugPrintStack(stackTrace: stackTrace);
+      _debugLog('Smart queue failed: $error');
+      if (kDebugMode) {
+        debugPrintStack(stackTrace: stackTrace);
+      }
     } finally {
       _smartQueueLoading = false;
       notifyListeners();
@@ -4922,16 +4773,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     try {
       if (_looksLikeYouTube(value)) {
         final Video video = await _yt.videos.get(value);
-        _recordOtherUsage(
-          metadataBytes: _estimateUsagePayloadBytes(<String, Object?>{
-            'sourceUrl': value,
-            'videoId': video.id.value,
-            'title': video.title,
-            'author': video.author,
-            'durationMs': video.duration?.inMilliseconds,
-            'thumbnail': video.thumbnails.highResUrl,
-          }),
-        );
         final LibrarySong song = _videoToSong(video);
         await playOnlineSong(song);
         return;
@@ -5562,7 +5403,9 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
           : 'Loaded ${scanned.length} tracks from device storage.';
       await _saveSnapshot();
     } catch (error, stackTrace) {
-      debugPrintStack(stackTrace: stackTrace);
+      if (kDebugMode) {
+        debugPrintStack(stackTrace: stackTrace);
+      }
       _errorMessage = '$error';
       _statusMessage = 'Device scan failed.';
     } finally {
@@ -5642,37 +5485,10 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<List<String>> _expandSourceFiles(List<String> sources) async {
-    final Set<String> results = <String>{};
-    for (final String source in sources) {
-      final FileSystemEntityType type = await FileSystemEntity.type(source);
-      if (type == FileSystemEntityType.file) {
-        if (_isAudioFile(source)) {
-          results.add(source);
-        }
-        continue;
-      }
-
-      if (type == FileSystemEntityType.directory) {
-        await for (final FileSystemEntity entity in Directory(
-          source,
-        ).list(recursive: true, followLinks: false)) {
-          if (entity is File && _isAudioFile(entity.path)) {
-            results.add(entity.path);
-          }
-        }
-      }
-    }
-
-    final List<String> sorted = results.toList()..sort();
-    return sorted;
-  }
-
-  bool _isAudioFile(String path) {
-    final String extension = p
-        .extension(path)
-        .replaceFirst('.', '')
-        .toLowerCase();
-    return supportedExtensions.contains(extension);
+    return expandAudioSourceFiles(
+      sources: sources,
+      supportedExtensions: supportedExtensions,
+    );
   }
 
   Future<LibrarySong> _buildSongFromPath(
@@ -5915,24 +5731,12 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         filter: ytm.SearchFilter.artists,
         limit: 5,
       );
-      _recordOtherUsage(
-        artworkBytes: _estimateUsagePayloadBytes(<String, Object?>{
-          'artistName': artistName,
-          'results': artistResults,
-        }),
-      );
       resolved = _pickArtistImageUrl(artistResults, artistName: artistName);
       if ((resolved ?? '').trim().isEmpty) {
         final List<dynamic> profileResults = await client.search(
           artistName.trim(),
           filter: ytm.SearchFilter.profiles,
           limit: 5,
-        );
-        _recordOtherUsage(
-          artworkBytes: _estimateUsagePayloadBytes(<String, Object?>{
-            'artistName': artistName,
-            'results': profileResults,
-          }),
         );
         resolved = _pickArtistImageUrl(profileResults, artistName: artistName);
       }
@@ -6031,7 +5835,16 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       preferPlaybackCompatibility: true,
     );
     await _prepareResolvedRemoteStreamForPlayback(song, resolved);
-    _playbackStreamInfoBySongId[song.id] = resolved.streamInfo;
+    final String? preparedCachedPath = _offlinePlaybackCachePathForSong(
+      song.id,
+    );
+    _playbackStreamInfoBySongId[song.id] = preparedCachedPath == null
+        ? resolved.streamInfo
+        : buildCachedPlaybackStreamInfo(
+            song: song,
+            cachedPath: preparedCachedPath,
+            previousInfo: resolved.streamInfo,
+          );
     _debugPlayback(
       'stream.resolved song=${_debugSongLabel(song)} '
       '${resolved.streamInfo.debugSummary}',
@@ -6043,11 +5856,69 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     LibrarySong song,
     _ResolvedRemotePlayback resolved,
   ) async {
-    // Live playback should bind directly to the resolved stream so a manual
-    // song switch can interrupt immediately without waiting on proxy teardown.
-    _disablePlaybackProxyForSong(song.id, bypass: true);
-    _preparedMediaUrlsBySongId[song.id] = resolved.resolvedUrl;
-    _preparedMediaHeadersBySongId[song.id] = resolved.upstreamHeaders;
+    final bool shouldCacheDuringPlayback =
+        _shouldStartAutoOfflineDownload(song) &&
+        _isOfflineCacheableTransport(resolved.streamInfo.transport);
+    if (!shouldCacheDuringPlayback) {
+      _disablePlaybackProxyForSong(song.id, bypass: true);
+      _preparedMediaUrlsBySongId[song.id] = resolved.resolvedUrl;
+      _preparedMediaHeadersBySongId[song.id] = resolved.upstreamHeaders;
+      return;
+    }
+
+    if (Platform.isAndroid) {
+      // Match the direct Android playback path from the known-good baseline.
+      // A separate background cache download here doubles mobile data usage.
+      _disablePlaybackProxyForSong(song.id, bypass: true);
+      _preparedMediaUrlsBySongId[song.id] = resolved.resolvedUrl;
+      _preparedMediaHeadersBySongId[song.id] = resolved.upstreamHeaders;
+      return;
+    }
+
+    final File target = await _offlinePlaybackCacheTargetFile(
+      song,
+      resolved.resolvedUrl,
+    );
+    if (await target.exists()) {
+      _offlinePlaybackCachePaths[song.id] = target.path;
+      _offlinePlaybackCacheSizesBySongId[song.id] = await target.length();
+      _preparedMediaUrlsBySongId[song.id] = target.path;
+      _preparedMediaHeadersBySongId[song.id] = null;
+      _playbackStreamInfoBySongId[song.id] = buildCachedPlaybackStreamInfo(
+        song: song,
+        cachedPath: target.path,
+        previousInfo: resolved.streamInfo,
+      );
+      return;
+    }
+
+    final Uri? upstreamUri = Uri.tryParse(resolved.resolvedUrl);
+    if (upstreamUri == null || !upstreamUri.hasScheme) {
+      _disablePlaybackProxyForSong(song.id, bypass: true);
+      _preparedMediaUrlsBySongId[song.id] = resolved.resolvedUrl;
+      _preparedMediaHeadersBySongId[song.id] = resolved.upstreamHeaders;
+      return;
+    }
+
+    _disablePlaybackProxyForSong(song.id);
+    final String sessionId = _uuid.v4();
+    final String proxyUrl = await _playbackProxy.register(
+      sessionId: sessionId,
+      songId: song.id,
+      upstreamUri: upstreamUri,
+      upstreamHeaders: resolved.upstreamHeaders,
+      cacheFilePath: target.path,
+      cacheEpoch: _offlinePlaybackCacheEpoch,
+    );
+    _activePlaybackProxiesBySongId[song.id] = _ActivePlaybackProxy(
+      sessionId: sessionId,
+      proxyUrl: proxyUrl,
+      upstreamUrl: resolved.resolvedUrl,
+      upstreamHeaders: resolved.upstreamHeaders,
+    );
+    _autoOfflineDownloadQueuedSongIds.add(song.id);
+    _preparedMediaUrlsBySongId[song.id] = proxyUrl;
+    _preparedMediaHeadersBySongId[song.id] = null;
   }
 
   Future<void> _openPreparedSong(
@@ -6238,15 +6109,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     );
     final List<PlaybackStreamCandidate> rankedCandidates =
         rankPlaybackStreamCandidates(_buildPlaybackStreamCandidates(manifest));
-    _recordOtherUsage(
-      metadataBytes: _estimateUsagePayloadBytes(<String, Object?>{
-        'songId': song.id,
-        'source': song.path,
-        'candidates': rankedCandidates
-            .map(_normalizeUsagePayload)
-            .toList(growable: false),
-      }),
-    );
     _rankedPlaybackCandidatesBySongId[song.id] = rankedCandidates;
     return rankedCandidates;
   }
@@ -6885,8 +6747,6 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
       _homeFeed = <HomeFeedSection>[];
       _personalizedHomeRecommendations = <SongRecommendation>[];
       _homeError = 'Offline Music mode is on.';
-    } else if (!_isOffline) {
-      _requestAutoHomeRefresh(force: true);
     }
     await _saveSnapshot();
     notifyListeners();
@@ -7100,6 +6960,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         _offlinePlaybackCacheProgressBytesBySongId.remove(song.id);
         _offlinePlaybackCacheExpectedBytesBySongId.remove(song.id);
       }
+      rethrow;
     } finally {
       if (manageInFlight) {
         _offlinePlaybackPrefetchInFlight.remove(song.id);
@@ -7312,12 +7173,17 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
         upstreamHeaders: _upstreamHeadersForUrl(song, song.path),
         manageInFlight: false,
       );
-    } catch (_) {
+    } catch (error) {
       _offlinePlaybackCacheFailedSongIds.add(song.id);
       final String? path = _offlinePlaybackCachePaths[song.id];
       if (path != null && !File(path).existsSync()) {
         _dropOfflinePlaybackCacheEntry(song.id);
       }
+      _debugPlayback(
+        'cache.download failed permanently song=${_debugSongLabel(song)} '
+        'error=$error',
+      );
+      rethrow;
     } finally {
       _offlinePlaybackPrefetchInFlight.remove(song.id);
     }
@@ -7630,7 +7496,13 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _debugPlayback(String message) {
-    debugPrint('[PlaybackDebug] $message');
+    _debugLog('[PlaybackDebug] $message');
+  }
+
+  void _debugLog(String message) {
+    if (kDebugMode) {
+      debugPrint(message);
+    }
   }
 
   String _debugSongLabel(LibrarySong? song) {
@@ -8134,17 +8006,14 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     late final Map<String, dynamic> json;
     try {
       final String raw = await file.readAsString();
-      if (raw.trim().isEmpty) {
+      final Map<String, dynamic>? decoded = await decodeSnapshotJson(raw);
+      if (decoded == null) {
         await file.delete();
         return;
       }
-      final Object? decoded = jsonDecode(raw);
-      if (decoded is! Map<String, dynamic>) {
-        throw const FormatException('Snapshot root is not a JSON object.');
-      }
       json = decoded;
     } on FormatException catch (error) {
-      debugPrint('Snapshot load skipped due to invalid JSON: $error');
+      _debugLog('Snapshot load skipped due to invalid JSON: $error');
       await file.delete();
       return;
     }
@@ -8207,14 +8076,13 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
               return _isOfflinePlaybackCacheFileUsable(item.value);
             }),
       );
-    _offlinePlaybackCacheSizesBySongId
-      ..clear()
-      ..addEntries(
-        _offlinePlaybackCachePaths.entries.map(
-          (MapEntry<String, String> item) =>
-              MapEntry<String, int>(item.key, File(item.value).lengthSync()),
-        ),
-      );
+    _offlinePlaybackCacheSizesBySongId.clear();
+    for (final MapEntry<String, String> item
+        in _offlinePlaybackCachePaths.entries) {
+      _offlinePlaybackCacheSizesBySongId[item.key] = await File(
+        item.value,
+      ).length();
+    }
     _purgeRestrictedDurationOfflinePlaybackCacheEntries();
     final List<String> restoredQueueSongIds =
         (json['queueSongIds'] as List<dynamic>? ?? <dynamic>[])
@@ -8234,22 +8102,7 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
     _queueLabel = restoredQueueLabel.trim().isEmpty
         ? 'Now Playing'
         : restoredQueueLabel;
-    final AppDataUsageStats restoredDataUsage = AppDataUsageStats.fromJson(
-      json['dataUsage'] as Map<String, dynamic>?,
-    );
-    _dataUsage = restoredDataUsage.copyWith(
-      totalBytes: 0,
-      streamBytes: restoredDataUsage.streamBytes,
-      cacheBytes: 0,
-      currentSongBytes: 0,
-      clearCurrentSongId: true,
-      currentCacheBytes: 0,
-      currentCacheExpectedBytes: 0,
-      clearCurrentCacheSongId: true,
-    );
-    _dataUsage = _dataUsage.copyWith(
-      totalBytes: _dataUsage.streamBytes + _dataUsage.otherBytes,
-    );
+    _dataUsage = const AppDataUsageStats();
     dataUsageState.value = _dataUsage;
   }
 
@@ -8273,33 +8126,31 @@ class MusixController extends ChangeNotifier with WidgetsBindingObserver {
             final DateTime right = b.lastPlayedAt ?? b.addedAt;
             return right.compareTo(left);
           });
-    await file.writeAsString(
-      const JsonEncoder.withIndent('  ').convert(<String, dynamic>{
-        'settings': _settings.toJson(),
-        'sources': _sources,
-        'songs': _songs.map((LibrarySong song) => song.toJson()).toList(),
-        'transientSongs': transientSongs
-            .take(200)
-            .map((LibrarySong song) => song.toJson())
-            .toList(),
-        'playlists': _playlists
-            .map((UserPlaylist playlist) => playlist.toJson())
-            .toList(),
-        'history': _history
-            .where((PlaybackEntry entry) => songById(entry.songId) != null)
-            .map((PlaybackEntry entry) => entry.toJson())
-            .toList(),
-        'queueSongIds': _queueSongIds
-            .where((String songId) => songById(songId) != null)
-            .toList(growable: false),
-        'queueIndex': _queueIndex,
-        'queueLabel': _queueLabel,
-        'searchDraft': _searchDraft,
-        'recentSearchTerms': _recentSearchTerms,
-        'offlinePlaybackCachePaths': _offlinePlaybackCachePaths,
-        'dataUsage': _dataUsage.toJson(),
-      }),
-    );
+    final String raw = await encodeSnapshotJson(<String, dynamic>{
+      'settings': _settings.toJson(),
+      'sources': _sources,
+      'songs': _songs.map((LibrarySong song) => song.toJson()).toList(),
+      'transientSongs': transientSongs
+          .take(200)
+          .map((LibrarySong song) => song.toJson())
+          .toList(),
+      'playlists': _playlists
+          .map((UserPlaylist playlist) => playlist.toJson())
+          .toList(),
+      'history': _history
+          .where((PlaybackEntry entry) => songById(entry.songId) != null)
+          .map((PlaybackEntry entry) => entry.toJson())
+          .toList(),
+      'queueSongIds': _queueSongIds
+          .where((String songId) => songById(songId) != null)
+          .toList(growable: false),
+      'queueIndex': _queueIndex,
+      'queueLabel': _queueLabel,
+      'searchDraft': _searchDraft,
+      'recentSearchTerms': _recentSearchTerms,
+      'offlinePlaybackCachePaths': _offlinePlaybackCachePaths,
+    });
+    await file.writeAsString(raw);
   }
 
   Future<File> _snapshotFile() async {

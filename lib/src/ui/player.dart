@@ -3544,7 +3544,7 @@ class _PlaylistGrid extends StatelessWidget {
     final List<_PlaylistShelf> shelves = <_PlaylistShelf>[
       if (controller.likedSongs.isNotEmpty)
         _PlaylistShelf(
-          title: 'Liked Songs',
+          title: 'Liked',
           subtitle: '${controller.likedSongs.length} liked tracks',
           seed: 'liked_songs',
           songs: controller.likedSongs,

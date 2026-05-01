@@ -672,14 +672,6 @@ class _SearchScreenState extends State<_SearchScreen> {
                   ),
                   const SizedBox(height: 34),
                   const _SearchSectionTitle('Trending Now'),
-                  const SizedBox(height: 6),
-                  Text(
-                    '${_lastMonthLabel()} chart - ${widget.controller.trendingNowRegionLabel}',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: const Color(0xFFD1A793),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
                   const SizedBox(height: 18),
                   if (monthlyTrendingSongs.isEmpty &&
                       !widget.controller.trendingNowLoading)

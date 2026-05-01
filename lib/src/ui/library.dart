@@ -53,7 +53,7 @@ class _LibraryScreen extends StatelessWidget {
               children: <Widget>[
                 Expanded(
                   child: _LibraryFeatureCard(
-                    title: 'Liked\nSongs',
+                    title: 'Liked',
                     subtitle: '${likedSongs.length} tracks',
                     icon: Icons.favorite_rounded,
                     accent: const Color(0xFFFF8A3D),
@@ -65,7 +65,7 @@ class _LibraryScreen extends StatelessWidget {
                           builder: (BuildContext context) =>
                               _MusixPlaylistScreen(
                                 controller: controller,
-                                title: 'Liked Songs',
+                                title: 'Liked',
                                 songs: likedSongs,
                               ),
                         ),
@@ -140,7 +140,7 @@ class _LibraryScreen extends StatelessWidget {
                 padding: const EdgeInsets.only(bottom: 18),
                 child: _LibraryPlaylistRow(
                   controller: controller,
-                  title: 'Offline Downloads',
+                  title: 'Downloads',
                   seed: 'cached_songs',
                   songs: cachedSongs,
                   subtitle: 'Playlist - ${cachedSongs.length} Downloaded',

@@ -880,11 +880,7 @@ class _DesktopHomeScreen extends StatelessWidget {
                         : 'Desktop recommendations need internet. Your local and downloaded music are still available.',
                     actionLabel: 'Retry',
                     onAction: () async {
-                      final bool online = await controller
-                          .refreshConnectivityStatus();
-                      if (online && !controller.offlineMusicMode) {
-                        await controller.refreshHomeFeed(force: true);
-                      }
+                      await controller.refreshConnectivityStatus();
                     },
                     icon: controller.offlineMusicMode
                         ? Icons.offline_bolt_rounded
@@ -1305,14 +1301,6 @@ class _DesktopSearchScreen extends StatelessWidget {
                         eyebrow: 'TRENDING',
                         title: 'Regional chart pulse',
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        '${_lastMonthLabel()} chart - ${controller.trendingNowRegionLabel}',
-                        style: GoogleFonts.ibmPlexSans(
-                          color: _kTextSecondary,
-                          fontSize: 13,
-                        ),
-                      ),
                       const SizedBox(height: 18),
                       if (monthlyTrendingSongs.isEmpty &&
                           !controller.trendingNowLoading)
@@ -1435,7 +1423,7 @@ class _DesktopLibraryScreen extends StatelessWidget {
         <_DesktopLibraryPlaylistEntry>[
           if (hasCachedPlaylist)
             _DesktopLibraryPlaylistEntry(
-              title: 'Offline Downloads',
+              title: 'Downloads',
               seed: 'cached_songs',
               songs: cachedSongs,
               subtitle: '${cachedSongs.length} downloaded tracks',
@@ -1480,7 +1468,7 @@ class _DesktopLibraryScreen extends StatelessWidget {
                   SizedBox(
                     width: itemWidth,
                     child: _LibraryFeatureCard(
-                      title: 'Liked\nSongs',
+                      title: 'Liked',
                       subtitle: '${likedSongs.length} tracks',
                       icon: Icons.favorite_rounded,
                       accent: const Color(0xFFFF8A3D),
@@ -1492,7 +1480,7 @@ class _DesktopLibraryScreen extends StatelessWidget {
                             builder: (BuildContext context) =>
                                 _MusixPlaylistScreen(
                                   controller: controller,
-                                  title: 'Liked Songs',
+                                  title: 'Liked',
                                   songs: likedSongs,
                                 ),
                           ),
@@ -2045,9 +2033,9 @@ class _DesktopSettingsScreen extends StatelessWidget {
                         ),
                         const Divider(color: cardEdge, height: 24),
                         _DesktopSettingsActionRow(
-                          title: 'Offline Downloads',
+                          title: 'Upcoming Downloads',
                           subtitle:
-                              'Songs stream immediately. Use Download offline from a song menu to save a track.',
+                              'Played songs stay cached until you clear them. Pick how many upcoming songs to keep ready offline.',
                           trailing: const Icon(
                             Icons.download_for_offline_rounded,
                             color: subtitleColor,
@@ -2108,24 +2096,6 @@ class _DesktopSettingsScreen extends StatelessWidget {
                         ),
                       ],
                     ),
-                  ),
-                  const SizedBox(height: 20),
-                  _ProfileDataUsageCard(
-                    controller: controller,
-                    card: card,
-                    cardEdge: cardEdge,
-                    titleColor: titleColor,
-                    subtitleColor: subtitleColor,
-                    accent: accent,
-                  ),
-                  const SizedBox(height: 20),
-                  _ProfileCurrentStreamCard(
-                    controller: controller,
-                    card: card,
-                    cardEdge: cardEdge,
-                    titleColor: titleColor,
-                    subtitleColor: subtitleColor,
-                    accent: accent,
                   ),
                   const SizedBox(height: 20),
                   Container(
